@@ -40,11 +40,12 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
       <div className="w-full max-w-md rounded-3xl bg-white shadow-xl border border-slate-200 px-6 py-7">
         <div className="flex flex-col items-center mb-6">
-          <div className="w-40 h-16 relative mb-3">
+          <div className="mb-3 flex items-center justify-center">
             <Image
               src="/ssdt-logo.png"
               alt="Sugarshack Downtown"
-              fill
+              width={220}
+              height={80}
               className="object-contain"
               priority
             />

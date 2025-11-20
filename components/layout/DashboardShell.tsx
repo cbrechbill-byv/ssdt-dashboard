@@ -1,90 +1,101 @@
+"use client";
+
 import React from "react";
-import Link from "next/link";
 import Image from "next/image";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 
-type DashboardShellProps = {
+interface DashboardShellProps {
   title: string;
-  subtitle?: string;
-  activeNav?: "dashboard" | "fan-wall";
   children: React.ReactNode;
-};
-
-const navItems: { key: "dashboard" | "fan-wall"; href: string; label: string }[] = [
-  { key: "dashboard", href: "/dashboard", label: "VIP & Rewards" },
-  { key: "fan-wall", href: "/fan-wall", label: "Fan Wall" },
-];
+}
 
 export const DashboardShell: React.FC<DashboardShellProps> = ({
   title,
-  subtitle,
-  activeNav = "dashboard",
   children,
 }) => {
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const isVipTab = pathname === "/dashboard" || pathname === "/";
+  const isFanWallTab = pathname.startsWith("/fan-wall");
+
+  async function handleLogout() {
+    try {
+      await fetch("/api/logout", { method: "POST" });
+    } catch (err) {
+      // ignore errors, we just want the cookie gone
+    } finally {
+      router.push("/login");
+      router.refresh();
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      {/* Top header - clean, solid color */}
-      <header className="border-b border-slate-300 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-4">
-          {/* Logo - no circle, larger */}
-          <div className="flex-shrink-0">
-            <Image
-              src="/ssdt-logo.png"
-              alt="Sugarshack Downtown"
-              width={180}
-              height={80}
-              className="object-contain"
-              priority
-            />
+    <div className="min-h-screen bg-slate-100">
+      {/* Top header */}
+      <header className="bg-gradient-to-r from-emerald-200 via-lime-200 to-amber-200 border-b border-amber-100">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-black flex items-center justify-center overflow-hidden shadow-md">
+              <Image
+                src="/ssdt-logo.png"
+                alt="Sugarshack Downtown"
+                width={64}
+                height={64}
+                className="object-contain"
+              />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-slate-900">
+                Sugarshack Downtown VIP Dashboard
+              </h1>
+              <p className="text-[11px] text-slate-600">
+                Check-ins, VIP activity, and fan content at a glance.
+              </p>
+            </div>
           </div>
 
-          <div className="flex flex-col">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-800">
-              {title}
-            </h1>
-            {subtitle && (
-              <p className="text-sm text-slate-500">{subtitle}</p>
-            )}
-          </div>
+          <button
+            onClick={handleLogout}
+            className="text-xs font-medium rounded-full border border-slate-700 px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800"
+          >
+            Log out
+          </button>
         </div>
 
-        {/* Navigation tabs */}
-        <div className="mx-auto max-w-6xl px-4 pb-3">
-          <nav className="flex gap-2 text-sm">
-            {navItems.map((item) => {
-              const isActive = item.key === activeNav;
-              const isFanWall = item.key === "fan-wall";
-
-              const activeClasses = isFanWall
-                ? "bg-amber-100 text-amber-900 border-amber-300"
-                : "bg-slate-800 text-white border-slate-800";
-
-              return (
-                <Link
-                  key={item.key}
-                  href={item.href}
-                  className={[
-                    "inline-flex items-center rounded-full px-4 py-1.5 border transition",
-                    isActive
-                      ? activeClasses
-                      : "border-slate-300 text-slate-700 hover:bg-slate-200",
-                  ].join(" ")}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+        {/* Tabs */}
+        <div className="max-w-6xl mx-auto px-4 pb-3">
+          <div className="inline-flex rounded-full bg-white/70 p-1 shadow-sm">
+            <Link
+              href="/dashboard"
+              className={`px-4 py-1.5 text-xs font-medium rounded-full ${
+                isVipTab
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              VIP &amp; Rewards
+            </Link>
+            <Link
+              href="/fan-wall"
+              className={`px-4 py-1.5 text-xs font-medium rounded-full ${
+                isFanWallTab
+                  ? "bg-amber-400 text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Fan Wall
+            </Link>
+          </div>
         </div>
       </header>
 
       {/* Main content */}
-      <main className="mx-auto max-w-6xl px-4 py-6">
-        <div className="rounded-3xl bg-white shadow-lg border border-slate-200 px-5 py-6">
-          {children}
-        </div>
+      <main className="max-w-6xl mx-auto px-4 py-6">
+        <h2 className="text-sm font-semibold text-slate-800 mb-4">{title}</h2>
+        {children}
       </main>
     </div>
   );
 };
-
-export default DashboardShell;
