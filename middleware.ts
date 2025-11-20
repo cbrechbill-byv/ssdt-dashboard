@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const USER = process.env.DASHBOARD_USER;
-const PASS = process.env.DASHBOARD_PASS;
+// Simple hard-coded dashboard credentials
+const USER = "admin";
+const PASS = "MrBanks143!!!";
 
 function parseBasicAuth(header: string | null) {
   if (!header) return null;
@@ -9,6 +10,7 @@ function parseBasicAuth(header: string | null) {
   const [scheme, encoded] = header.split(" ");
   if (scheme !== "Basic" || !encoded) return null;
 
+  // Edge runtime: atob is available, Buffer is not
   const decoded = atob(encoded);
   const index = decoded.indexOf(":");
   if (index === -1) return null;
@@ -22,7 +24,7 @@ function parseBasicAuth(header: string | null) {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Allow Next internals and favicon through
+  // Let Next internals and favicon through without auth
   if (
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico"
@@ -39,8 +41,7 @@ export function middleware(req: NextRequest) {
   return new NextResponse("Authentication required", {
     status: 401,
     headers: {
-      // NOTE: changed realm to v2 so browsers drop cached creds
-      "WWW-Authenticate": 'Basic realm="Sugarshack Dashboard v2"',
+      "WWW-Authenticate": 'Basic realm="Sugarshack Dashboard"',
     },
   });
 }
