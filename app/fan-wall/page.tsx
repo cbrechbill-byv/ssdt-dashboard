@@ -1,5 +1,5 @@
 import React from "react";
-import DashboardShell from "../../components/layout/DashboardShell";
+import { DashboardShell } from "../../components/layout/DashboardShell";
 import { FanWallModeration } from "../../components/fanwall/FanWallModeration";
 
 const FanWallPage = () => {
