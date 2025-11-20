@@ -1,16 +1,21 @@
 "use client";
 
 import React from "react";
-import Image from "next/image";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 
 interface DashboardShellProps {
+  children: React.ReactNode;
   title?: string;
-children: React.ReactNode;
+  subtitle?: string;
 }
 
-export const DashboardShell: React.FC<DashboardShellProps> = ({ children }) => {
+export const DashboardShell: React.FC<DashboardShellProps> = ({
+  children,
+  title = "Sugarshack Downtown VIP Dashboard",
+  subtitle = "Check-ins, VIP activity, and fan content at a glance.",
+}) => {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -20,7 +25,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({ children }) => {
   async function handleLogout() {
     try {
       await fetch("/api/logout", { method: "POST" });
-    } catch (err) {
+    } catch (_err) {
       // ignore errors, we just want the cookie gone
     } finally {
       router.push("/login");
@@ -31,31 +36,34 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({ children }) => {
   return (
     <div className="min-h-screen bg-slate-100">
       {/* Top header */}
-      <header className="bg-gradient-to-r from-emerald-200 via-lime-200 to-amber-200 border-b border-amber-100">
+      <header className="bg-slate-950 text-white border-b border-slate-800">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-black flex items-center justify-center overflow-hidden shadow-md">
+            {/* Logo */}
+            <div className="relative w-44 h-12 sm:w-56 sm:h-14">
               <Image
                 src="/ssdt-logo.png"
                 alt="Sugarshack Downtown"
-                width={64}
-                height={64}
+                fill
                 className="object-contain"
+                priority
               />
             </div>
-            <div>
-              <h1 className="text-lg font-semibold text-slate-900">
-                Sugarshack Downtown VIP Dashboard
+
+            {/* Title / subtitle */}
+            <div className="hidden sm:block">
+              <h1 className="text-sm font-semibold leading-tight">
+                {title}
               </h1>
-              <p className="text-[11px] text-slate-600">
-                Check-ins, VIP activity, and fan content at a glance.
+              <p className="text-[11px] text-slate-300">
+                {subtitle}
               </p>
             </div>
           </div>
 
           <button
             onClick={handleLogout}
-            className="text-xs font-medium rounded-full border border-slate-700 px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800"
+            className="text-xs font-medium rounded-full border border-slate-600 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 shadow-sm"
           >
             Log out
           </button>
@@ -63,23 +71,23 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({ children }) => {
 
         {/* Tabs */}
         <div className="max-w-6xl mx-auto px-4 pb-3">
-          <div className="inline-flex rounded-full bg-white/70 p-1 shadow-sm">
+          <div className="inline-flex rounded-full bg-slate-900/70 p-1 border border-slate-700 shadow-sm">
             <Link
               href="/dashboard"
-              className={`px-4 py-1.5 text-xs font-medium rounded-full ${
+              className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
                 isVipTab
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-300 hover:text-white"
               }`}
             >
               VIP Dashboard
             </Link>
             <Link
               href="/fan-wall"
-              className={`px-4 py-1.5 text-xs font-medium rounded-full ${
+              className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
                 isFanWallTab
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-300 hover:text-white"
               }`}
             >
               Fan Wall
