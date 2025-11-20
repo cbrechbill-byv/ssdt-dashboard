@@ -1,18 +1,15 @@
 "use client";
 
 import React, { FormEvent, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const from = searchParams.get("from") || "/dashboard";
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -22,14 +19,12 @@ export default function LoginPage() {
     try {
       const res = await fetch("/api/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
 
       if (res.ok) {
-        router.push(from);
+        router.push("/dashboard");
         router.refresh();
       } else {
         setError("Invalid username or password.");
@@ -69,10 +64,9 @@ export default function LoginPage() {
             </label>
             <input
               type="text"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
               required
             />
           </div>
@@ -83,10 +77,9 @@ export default function LoginPage() {
             </label>
             <input
               type="password"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
               required
             />
           </div>
@@ -100,7 +93,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full rounded-xl bg-slate-900 text-white text-sm font-medium py-2.5 mt-2 hover:bg-slate-800 disabled:opacity-70 disabled:cursor-not-allowed"
+            className="w-full rounded-xl bg-slate-900 text-white text-sm font-medium py-2.5 mt-2 hover:bg-slate-800 disabled:opacity-70"
           >
             {isSubmitting ? "Signing in..." : "Sign in"}
           </button>
