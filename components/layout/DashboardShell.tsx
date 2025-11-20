@@ -26,7 +26,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
     try {
       await fetch("/api/logout", { method: "POST" });
     } catch (_err) {
-      // ignore errors, we just want the cookie gone
+      // ignore – we just want to leave the dashboard
     } finally {
       router.push("/login");
       router.refresh();
@@ -35,72 +35,69 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
 
   return (
     <div className="min-h-screen bg-slate-100">
-      {/* Top bar */}
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          {/* Logo + title */}
-          <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="relative w-40 h-10 sm:w-52 sm:h-12">
+          <div className="flex items-center gap-4">
+            {/* Logo */}
+            <div className="relative h-10 sm:h-12 md:h-14 w-auto">
               <Image
                 src="/ssdt-logo.png"
                 alt="Sugarshack Downtown"
-                fill
-                className="object-contain"
+                width={220}
+                height={64}
+                className="h-full w-auto object-contain"
                 priority
               />
             </div>
+
+            {/* Title / subtitle */}
             <div className="hidden sm:flex flex-col">
-              <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
+              <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">
                 Staff dashboard
               </span>
-              <span className="text-sm font-semibold text-slate-900">
+              <span className="text-sm font-semibold text-slate-900 leading-tight">
                 {title}
               </span>
               <span className="text-[11px] text-slate-500">
                 {subtitle}
               </span>
             </div>
-          </Link>
+          </div>
 
-          {/* Logout */}
           <button
             onClick={handleLogout}
-            className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-slate-900 text-white shadow-sm hover:bg-slate-800"
+            className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 shadow-sm hover:bg-slate-50"
           >
             Log out
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="border-t border-slate-200">
-          <div className="max-w-6xl mx-auto px-4 py-2">
-            <div className="inline-flex rounded-full bg-slate-100 p-1 border border-slate-200">
-              <Link
-                href="/dashboard"
-                className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                  isVipTab
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                VIP Dashboard
-              </Link>
-              <Link
-                href="/fan-wall"
-                className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                  isFanWallTab
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                Fan Wall
-              </Link>
-            </div>
-          </div>
+        <div className="max-w-6xl mx-auto px-4 pb-3">
+          <nav className="inline-flex rounded-full bg-slate-100 p-1 border border-slate-200 shadow-sm text-xs font-medium">
+            <Link
+              href="/dashboard"
+              className={`px-4 py-1.5 rounded-full transition-colors ${
+                isVipTab
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              VIP Dashboard
+            </Link>
+            <Link
+              href="/fan-wall"
+              className={`px-4 py-1.5 rounded-full transition-colors ${
+                isFanWallTab
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Fan Wall
+            </Link>
+          </nav>
         </div>
       </header>
 
-      {/* Main content */}
       <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
     </div>
   );
