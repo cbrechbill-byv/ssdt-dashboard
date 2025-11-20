@@ -1,8 +1,44 @@
 "use client";
 
+import { useState, FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (!res.ok) {
+        setError("Invalid username or password.");
+        return;
+      }
+
+      router.push("/dashboard");
+      router.refresh();
+    } catch (err) {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
@@ -29,11 +65,7 @@ export default function LoginPage() {
           </p>
 
           {/* Login form */}
-          <form
-            method="POST"
-            action="/api/login"
-            className="mt-8 space-y-4"
-          >
+          <form onSubmit={handleSubmit} className="mt-8 space-y-4">
             <div>
               <label
                 htmlFor="username"
@@ -47,6 +79,8 @@ export default function LoginPage() {
                 type="text"
                 autoComplete="username"
                 required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 shadow-inner focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
               />
             </div>
@@ -64,15 +98,24 @@ export default function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 shadow-inner focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
               />
             </div>
 
+            {error && (
+              <p className="text-xs text-red-500 mt-1">
+                {error}
+              </p>
+            )}
+
             <button
               type="submit"
-              className="mt-4 w-full rounded-xl bg-slate-900 text-white text-sm font-medium py-2.5 shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900"
+              disabled={loading}
+              className="mt-4 w-full rounded-xl bg-slate-900 text-white text-sm font-medium py-2.5 shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Sign in
+              {loading ? "Signing in..." : "Sign in"}
             </button>
           </form>
 
