@@ -22,7 +22,11 @@ function parseBasicAuth(header: string | null) {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (pathname.startsWith("/_next") || pathname === "/favicon.ico") {
+  // Allow Next internals and favicon through
+  if (
+    pathname.startsWith("/_next") ||
+    pathname === "/favicon.ico"
+  ) {
     return NextResponse.next();
   }
 
@@ -35,7 +39,8 @@ export function middleware(req: NextRequest) {
   return new NextResponse("Authentication required", {
     status: 401,
     headers: {
-      "WWW-Authenticate": 'Basic realm="Sugarshack Dashboard"',
+      // NOTE: changed realm to v2 so browsers drop cached creds
+      "WWW-Authenticate": 'Basic realm="Sugarshack Dashboard v2"',
     },
   });
 }
