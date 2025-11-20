@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 interface DashboardShellProps {
-  title: string;
+  title: string;`n  subtitle?: string;
   children: React.ReactNode;
 }
 
