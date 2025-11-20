@@ -6,14 +6,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 interface DashboardShellProps {
-  title: string;`n  subtitle?: string;
   children: React.ReactNode;
 }
 
-export const DashboardShell: React.FC<DashboardShellProps> = ({
-  title,
-  children,
-}) => {
+export const DashboardShell: React.FC<DashboardShellProps> = ({ children }) => {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -75,13 +71,13 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              VIP &amp; Rewards
+              VIP Dashboard
             </Link>
             <Link
               href="/fan-wall"
               className={`px-4 py-1.5 text-xs font-medium rounded-full ${
                 isFanWallTab
-                  ? "bg-amber-400 text-slate-900 shadow-sm"
+                  ? "bg-slate-900 text-white shadow-sm"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
@@ -92,10 +88,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       </header>
 
       {/* Main content */}
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        <h2 className="text-sm font-semibold text-slate-800 mb-4">{title}</h2>
-        {children}
-      </main>
+      <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
     </div>
   );
 };
