@@ -1,49 +1,47 @@
 "use client";
 
-import { useState, FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const router = useRouter();
-  const [password, setPassword] = useState("");
+  const [passcode, setPasscode] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    setIsLoading(true);
     setError(null);
-    setLoading(true);
 
     try {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ passcode }),
       });
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        setError(data?.error || "Invalid password.");
-        setLoading(false);
+        setError(data?.message || "Something went wrong. Try again.");
+        setIsLoading(false);
         return;
       }
 
-      // Cookie is set server-side → now go to dashboard
       router.push("/dashboard");
-      router.refresh();
     } catch (err) {
-      setError("Unexpected error. Try again.");
-      setLoading(false);
+      setError("Could not reach the server. Please try again.");
+      setIsLoading(false);
     }
   }
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/70 shadow-xl p-6 space-y-6">
-        {/* Logo */}
-        <div className="flex justify-center mb-4">
-          <div className="relative w-48 h-14">
+      <div className="w-full max-w-md bg-slate-900/80 border border-slate-800 rounded-3xl px-8 py-10 shadow-xl shadow-slate-950/60">
+        {/* Logo + heading */}
+        <div className="flex flex-col items-center gap-3 mb-8">
+          <div className="relative w-52 h-14">
             <Image
               src="/ssdt-logo.png"
               alt="Sugarshack Downtown"
@@ -52,37 +50,44 @@ export default function LoginPage() {
               priority
             />
           </div>
+          <p className="text-[11px] tracking-[0.25em] text-slate-400 uppercase">
+            Staff Dashboard
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <label className="block text-xs font-medium text-slate-200">
-            Admin passcode
-          </label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-400"
-            placeholder="Enter admin passcode"
-          />
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-slate-200 mb-2">
+              Admin passcode
+            </label>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={passcode}
+              onChange={(e) => setPasscode(e.target.value)}
+              className="w-full rounded-full bg-slate-950/70 border border-slate-700 px-4 py-2.5 text-sm text-slate-50 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              placeholder="Enter passcode"
+            />
+          </div>
 
           {error && (
-            <p className="text-xs text-rose-400 bg-rose-900/40 px-3 py-2 rounded-lg">
+            <p className="text-xs text-red-400 mt-1">
               {error}
             </p>
           )}
 
           <button
             type="submit"
-            disabled={loading || !password.trim()}
-            className="w-full rounded-xl bg-emerald-400 text-slate-950 font-semibold py-2.5 disabled:opacity-50"
+            disabled={isLoading || !passcode}
+            className="w-full rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-400 text-sm font-semibold text-slate-950 py-2.5 mt-2 transition-colors"
           >
-            {loading ? "Signing in..." : "Sign in"}
+            {isLoading ? "Signing in..." : "Sign in"}
           </button>
         </form>
 
-        <p className="text-[11px] text-center text-slate-500 pt-2">
-          Sugarshack Downtown staff only
+        <p className="mt-6 text-center text-[11px] text-slate-500">
+          Sugarshack Downtown staff only.
         </p>
       </div>
     </div>
