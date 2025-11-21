@@ -1,52 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
-const USERNAME = process.env.DASHBOARD_USERNAME || "admin";
-const PASSWORD = process.env.DASHBOARD_PASSWORD || "changeme";
+const ADMIN_PASSWORD = process.env.SSDT_ADMIN_PASSWORD || "ssdt-admin";
 
-function buildAuthResponse(
-  username: string,
-  password: string,
-  req: NextRequest
-) {
-  const isValid = username === USERNAME && password === PASSWORD;
-  const redirectPath = isValid ? "/dashboard" : "/login?error=1";
-  const res = NextResponse.redirect(new URL(redirectPath, req.url));
+export async function POST(request: NextRequest) {
+  const { password }: { password?: string } = await request
+    .json()
+    .catch(() => ({}));
 
-  if (isValid) {
-    res.cookies.set("ssdt_admin", "1", {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 7,
-    });
-  } else {
-    res.cookies.set("ssdt_admin", "", {
-      path: "/",
-      maxAge: 0,
-    });
+  if (!password || password !== ADMIN_PASSWORD) {
+    return NextResponse.json({ ok: false }, { status: 401 });
   }
 
-  return res;
-}
+  const cookieStore = cookies();
 
-export async function POST(req: NextRequest) {
-  const formData = await req.formData();
-  const username = (formData.get("username") ?? "").toString();
-  const password = (formData.get("password") ?? "").toString();
+  cookieStore.set("ssdt_admin", "1", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 8, // 8 hours
+  });
 
-  return buildAuthResponse(username, password, req);
-}
-
-export async function GET(req: NextRequest) {
-  const url = new URL(req.url);
-  const username = url.searchParams.get("username") ?? "";
-  const password = url.searchParams.get("password") ?? "";
-
-  // If someone hits /api/login directly, just send them back to /login
-  if (!username && !password) {
-    return NextResponse.redirect(new URL("/login", req.url));
-  }
-
-  return buildAuthResponse(username, password, req);
+  return NextResponse.json({ ok: true });
 }
