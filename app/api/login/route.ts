@@ -1,20 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 
+// IMPORTANT:
+// This is the only password to control login
 const ADMIN_PASSWORD = process.env.SSDT_ADMIN_PASSWORD || "ssdt-admin";
 
-export async function POST(request: NextRequest) {
-  const { password }: { password?: string } = await request
-    .json()
-    .catch(() => ({}));
+export async function POST(req: NextRequest) {
+  // Expect JSON: { password: "..." }
+  const { password } = await req.json().catch(() => ({}));
 
   if (!password || password !== ADMIN_PASSWORD) {
-    return NextResponse.json({ ok: false }, { status: 401 });
+    // On invalid login, just tell the frontend
+    return NextResponse.json(
+      { ok: false, error: "Invalid password" },
+      { status: 401 }
+    );
   }
 
-  const cookieStore = cookies();
+  // SUCCESS — set the cookie on the response object
+  const res = NextResponse.json({ ok: true });
 
-  cookieStore.set("ssdt_admin", "1", {
+  res.cookies.set({
+    name: "ssdt_admin",
+    value: "1",
     httpOnly: true,
     secure: true,
     sameSite: "lax",
@@ -22,5 +29,13 @@ export async function POST(request: NextRequest) {
     maxAge: 60 * 60 * 8, // 8 hours
   });
 
-  return NextResponse.json({ ok: true });
+  return res;
+}
+
+// If someone tries a GET on /api/login, we return a JSON instead of 405
+export function GET() {
+  return NextResponse.json(
+    { ok: false, error: "Use POST only" },
+    { status: 400 }
+  );
 }
