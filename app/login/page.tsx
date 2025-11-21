@@ -1,118 +1,75 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import React, { useState } from "react";
 import Image from "next/image";
 
 export default function LoginPage() {
   const [passcode, setPasscode] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setErrorMsg(null);
-    setIsLoading(true);
+    setLoading(true);
+    setError("");
 
-    try {
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ passcode }),
-      });
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ passcode }),
+    });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setErrorMsg(data?.error || "Invalid passcode.");
-        setIsLoading(false);
-        return;
-      }
-
-      const from = searchParams.get("from") || "/dashboard";
-      router.push(from);
-      router.refresh();
-    } catch (err) {
-      console.error(err);
-      setErrorMsg("Something went wrong. Please try again.");
-      setIsLoading(false);
+    if (res.ok) {
+      window.location.href = "/dashboard";
+    } else {
+      setLoading(false);
+      setError("Incorrect passcode.");
     }
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        {/* Card */}
-        <div className="bg-white rounded-3xl shadow-xl shadow-slate-200 border border-slate-100 px-8 py-9">
-          {/* Logo */}
-          <div className="flex justify-center mb-6">
-            <div className="relative w-56 h-14">
-              <Image
-                src="/ssdt-logo.png"
-                alt="Sugarshack Downtown"
-                fill
-                className="object-contain"
-                priority
-              />
-            </div>
-          </div>
-
-          {/* Heading */}
-          <div className="text-center mb-6">
-            <p className="text-xs font-medium tracking-[0.2em] text-slate-500">
-              STAFF DASHBOARD
-            </p>
-            <h1 className="mt-2 text-xl font-semibold text-slate-900">
-              Sign in to continue
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Enter tonight&apos;s admin passcode to access VIP &amp; rewards.
-            </p>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label
-                htmlFor="passcode"
-                className="block text-xs font-medium text-slate-600 mb-1.5"
-              >
-                Admin passcode
-              </label>
-              <input
-                id="passcode"
-                type="password"
-                value={passcode}
-                onChange={(e) => setPasscode(e.target.value)}
-                required
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow"
-                placeholder="••••••••"
-              />
-            </div>
-
-            {errorMsg && (
-              <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-                {errorMsg}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full mt-1 inline-flex items-center justify-center rounded-xl bg-emerald-500 text-sm font-semibold text-white py-2.5 shadow-sm hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-            >
-              {isLoading ? "Signing in..." : "Sign in"}
-            </button>
-          </form>
+    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+      <div className="bg-white shadow-xl rounded-2xl p-10 max-w-md w-full text-center border border-slate-200">
+        
+        {/* Logo */}
+        <div className="relative w-48 h-20 mx-auto mb-6">
+          <Image
+            src="/ssdt-logo.png"
+            alt="Sugarshack Downtown"
+            fill
+            className="object-contain"
+          />
         </div>
 
-        {/* Footnote */}
-        <p className="mt-4 text-center text-xs text-slate-400">
-          For Sugarshack Downtown staff use only.
+        <h2 className="text-xl font-semibold text-slate-800 mb-1">
+          Staff Dashboard
+        </h2>
+        <p className="text-slate-500 text-sm mb-6">
+          Internal view for staff use only.
+        </p>
+
+        <form onSubmit={handleLogin} className="space-y-4">
+          <input
+            type="password"
+            placeholder="Admin passcode"
+            value={passcode}
+            onChange={(e) => setPasscode(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm focus:ring-2 focus:ring-slate-400"
+          />
+
+          {error && <p className="text-red-600 text-sm">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-slate-900 text-white py-3 rounded-lg text-sm font-medium hover:bg-slate-800 transition disabled:opacity-50"
+          >
+            {loading ? "Signing in..." : "Sign in"}
+          </button>
+        </form>
+
+        <p className="text-slate-400 text-xs mt-6">
+          Sugarshack Downtown staff only.
         </p>
       </div>
     </div>
