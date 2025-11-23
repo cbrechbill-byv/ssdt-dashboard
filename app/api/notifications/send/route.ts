@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
 
     const title = json.title?.trim();
     const body = json.body?.trim();
-    const route = json.route ?? "/messages";
+    const route = json.route?.trim() || "/messages";
     const audience = (json.audience ?? "all") as Audience;
     const extraData = json.data ?? {};
 
@@ -28,17 +28,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1) Select devices based on audience
+    // ---- Select devices based on audience ----
     let query = supabaseServer
       .from("vip_devices")
       .select("expo_push_token, platform, phone")
       .not("expo_push_token", "is", null);
 
     if (audience === "vip") {
+      // Any device with a non-null phone is considered VIP
       query = query.not("phone", "is", null);
     } else if (audience === "test") {
+      const envPhone = process.env.TEST_DEVICE_PHONE;
       const testPhone =
-        process.env.TEST_DEVICE_PHONE ?? "+12394105626";
+        envPhone && envPhone.trim().length > 0
+          ? envPhone.trim()
+          : "+12394105626"; // 👈 your number as fallback
+
+      console.log("[Push API] Using test device phone:", testPhone);
       query = query.eq("phone", testPhone);
     }
 
@@ -59,7 +65,12 @@ export async function POST(req: NextRequest) {
       platform: d.platform,
     }));
 
-    // 2) ALWAYS log the attempt, even if sentCount = 0
+    console.log(
+      `[Push API] Audience=${audience} -> ${sentCount} device(s) found. Sample:`,
+      sampleDevices
+    );
+
+    // ---- Always log the attempt in notification_logs ----
     const { data: logRows, error: logError } = await supabaseServer
       .from("notification_logs")
       .insert({
@@ -79,7 +90,6 @@ export async function POST(req: NextRequest) {
 
     const logId = logRows?.[0]?.id as string | undefined;
 
-    // 3) If no devices, don't call Expo, but still report success (with message)
     if (sentCount === 0) {
       console.log(
         `[Push API] No devices to notify for audience=${audience}. Logged attempt only.`
@@ -95,7 +105,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4) Build Expo messages
+    // ---- Build Expo push messages ----
     const messages = safeDevices.map((d) => ({
       to: d.expo_push_token,
       sound: "default" as const,
