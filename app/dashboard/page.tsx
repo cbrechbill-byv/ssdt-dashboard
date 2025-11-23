@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
@@ -40,6 +41,7 @@ type DashboardPageProps = {
   searchParams?: {
     q?: string;
     sort?: string;
+    show?: string; // "all" to show full VIP list instead of top 5
   };
 };
 
@@ -51,6 +53,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const q = (searchParams?.q ?? "").trim();
   const sort = (searchParams?.sort ?? "last") as "last" | "points" | "visits";
+  const showAll = (searchParams?.show ?? "") === "all";
 
   // ---------------------------------------------------------------------------
   // 1) Today's stats: check-ins, unique VIPs, points
@@ -144,13 +147,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   // Apply search by phone or name (ILIKE)
   if (q) {
-    vipQuery = vipQuery.or(
-      `phone.ilike.%${q}%,full_name.ilike.%${q}%`
-    );
+    vipQuery = vipQuery.or(`phone.ilike.%${q}%,full_name.ilike.%${q}%`);
   }
 
-  // Apply sort
-  vipQuery = vipQuery.order(sortColumn, { ascending: sortColumn === "last_scan_at" ? false : false });
+  // Apply sort (always descending: latest / most points / most visits first)
+  vipQuery = vipQuery.order(sortColumn, { ascending: false });
 
   const {
     data: vipOverview,
@@ -162,7 +163,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   const vipRows = vipOverview ?? [];
-
   const vipBase = vipRows.length;
 
   // Active VIPs = VIPs with last_scan_at in the past 30 days
@@ -175,8 +175,33 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const activeVipPercent =
     vipBase > 0 ? Math.round((activeVipCount / vipBase) * 100) : 0;
 
+  // For the table: top 5 or full list depending on showAll
+  const displayedVipRows = showAll ? vipRows : vipRows.slice(0, 5);
+
   // ---------------------------------------------------------------------------
-  // 3) Render dashboard
+  // 3) Fan Wall preview (main dashboard card)
+  //    Shows up to 3 latest approved, not hidden posts.
+  // ---------------------------------------------------------------------------
+
+  const {
+    data: fanWallPosts,
+    error: fanWallError,
+  } = await supabase
+    .from("fan_wall_posts")
+    .select("id, image_path, caption, created_at, is_approved, is_hidden")
+    .eq("is_approved", true)
+    .eq("is_hidden", false)
+    .order("created_at", { ascending: false })
+    .limit(3);
+
+  if (fanWallError) {
+    console.error("[VIP Dashboard] Error loading fan_wall_posts:", fanWallError);
+  }
+
+  const fanPreview = fanWallPosts ?? [];
+
+  // ---------------------------------------------------------------------------
+  // 4) Render dashboard
   // ---------------------------------------------------------------------------
 
   return (
@@ -215,7 +240,96 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           />
         </section>
 
-        {/* VIP List Table */}
+        {/* Fan Wall moderation preview + Quick actions */}
+        <section className="grid gap-4 lg:grid-cols-3">
+          {/* Fan wall moderation (preview) */}
+          <div className="lg:col-span-2 bg-white rounded-2xl border border-dashed border-slate-300 shadow-sm">
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100">
+              <div>
+                <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
+                  Fan Wall moderation
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Preview of latest approved fan photos. Use the Fan Wall tab to
+                  manage everything.
+                </p>
+              </div>
+              <Link
+                href="/fan-wall"
+                className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
+              >
+                Open Fan Wall
+              </Link>
+            </div>
+
+            {fanPreview.length === 0 ? (
+              <div className="px-5 py-8 text-center text-xs text-slate-400">
+                No fan photos yet. Once guests start posting from the Photo
+                Booth, they&apos;ll appear here and in the Fan Wall tab.
+              </div>
+            ) : (
+              <div className="px-5 py-4 grid gap-3 md:grid-cols-3 text-xs">
+                {fanPreview.map((post: any) => (
+                  <div
+                    key={post.id}
+                    className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 flex flex-col gap-1"
+                  >
+                    <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                      Fan photo
+                    </div>
+                    <div className="text-slate-900 line-clamp-2">
+                      {post.caption || "No caption"}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      {new Date(post.created_at).toLocaleString()}
+                    </div>
+                    <div className="text-[11px] text-emerald-600 font-medium mt-1">
+                      Approved · Visible
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Quick actions (side card) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4 flex flex-col">
+            <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
+              Quick actions
+            </p>
+            <p className="mt-1 mb-3 text-xs text-slate-500">
+              Jump to common Sugarshack Downtown controls.
+            </p>
+
+            <div className="space-y-2 text-xs text-slate-700">
+              <button
+                type="button"
+                className="w-full text-left rounded-xl border border-slate-200 px-3 py-2 hover:bg-slate-50"
+              >
+                <span className="block font-medium text-slate-900">
+                  Tonight&apos;s show editor
+                </span>
+                <span className="block text-[11px] text-slate-500">
+                  Update artist, start time, and notes for tonight.
+                </span>
+              </button>
+
+              <Link
+                href="/fan-wall"
+                className="block w-full text-left rounded-xl border border-slate-200 px-3 py-2 hover:bg-slate-50"
+              >
+                <span className="block font-medium text-slate-900">
+                  Open full Fan Wall
+                </span>
+                <span className="block text-[11px] text-slate-500">
+                  See all pending Photo Booth shots in one place.
+                </span>
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* VIP List moved to bottom: top 5 with expand + search/sort + CSV */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-3">
             <div>
@@ -223,7 +337,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 VIP List
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Your active VIPs, their points, and last visit times.
+                Top VIPs by last visit, points, or visits. Expand to see the full list.
               </p>
             </div>
 
@@ -251,6 +365,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 >
                   Apply
                 </button>
+                {/* Preserve show=all when filtering */}
+                {showAll && (
+                  <input type="hidden" name="show" value="all" />
+                )}
               </form>
 
               <a
@@ -267,127 +385,100 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               No VIPs found yet. Once guests join VIP and check in, they&apos;ll appear here.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase tracking-wide">
-                    <th className="py-2 pr-3">VIP</th>
-                    <th className="py-2 pr-3">Phone</th>
-                    <th className="py-2 pr-3">Points</th>
-                    <th className="py-2 pr-3">Visits</th>
-                    <th className="py-2">Last Visit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vipRows.map((u: any) => {
-                    const name = u.full_name || "VIP Guest";
-                    const phone = u.phone || "-";
-                    const points = u.total_points ?? 0;
-                    const visits = u.total_visits ?? 0;
-                    const lastVisit = u.last_scan_at
-                      ? new Date(u.last_scan_at).toLocaleString()
-                      : "-";
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase tracking-wide">
+                      <th className="py-2 pr-3">VIP</th>
+                      <th className="py-2 pr-3">Phone</th>
+                      <th className="py-2 pr-3">Points</th>
+                      <th className="py-2 pr-3">Visits</th>
+                      <th className="py-2">Last Visit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedVipRows.map((u: any) => {
+                      const name = u.full_name || "VIP Guest";
+                      const phone = u.phone || "-";
+                      const points = u.total_points ?? 0;
+                      const visits = u.total_visits ?? 0;
+                      const lastVisit = u.last_scan_at
+                        ? new Date(u.last_scan_at).toLocaleString()
+                        : "-";
 
-                    return (
-                      <tr
-                        key={u.user_id ?? phone}
-                        className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60"
-                      >
-                        <td className="py-2 pr-3 text-slate-900 font-medium">
-                          <a
-                            href={`/dashboard/vips/${u.user_id}`}
-                            className="hover:underline"
-                          >
-                            {name}
-                          </a>
-                        </td>
-                        <td className="py-2 pr-3 text-slate-700">{phone}</td>
-                        <td className="py-2 pr-3">{points}</td>
-                        <td className="py-2 pr-3">{visits}</td>
-                        <td className="py-2 text-slate-500">{lastVisit}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        {/* Third row: fan wall + quick actions side by side */}
-        <section className="grid gap-4 lg:grid-cols-3">
-          {/* Fan wall moderation (main) */}
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-dashed border-slate-300 shadow-sm">
-            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100">
-              <div>
-                <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-                  Fan Wall moderation
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Review and approve fan photos before they show in the app.
-                </p>
+                      return (
+                        <tr
+                          key={u.user_id ?? phone}
+                          className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60"
+                        >
+                          <td className="py-2 pr-3 text-slate-900 font-medium">
+                            <Link
+                              href={`/dashboard/vips/${u.user_id}`}
+                              className="hover:underline"
+                            >
+                              {name}
+                            </Link>
+                          </td>
+                          <td className="py-2 pr-3 text-slate-700">{phone}</td>
+                          <td className="py-2 pr-3">{points}</td>
+                          <td className="py-2 pr-3">{visits}</td>
+                          <td className="py-2 text-slate-500">{lastVisit}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <button className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm">
-                Refresh
-              </button>
-            </div>
-            <div className="px-5 py-8 text-center text-xs text-slate-400">
-              No fan photos yet. Once guests start posting from the Photo Booth,
-              they&apos;ll appear here for approval.
-            </div>
-          </div>
 
-          {/* Quick actions (side card) */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4 flex flex-col">
-            <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-              Quick actions
-            </p>
-            <p className="mt-1 mb-3 text-xs text-slate-500">
-              Jump to common Sugarshack Downtown controls.
-            </p>
+              <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
+                <span>
+                  Showing{" "}
+                  <span className="font-semibold">
+                    {displayedVipRows.length}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-semibold">
+                    {vipRows.length}
+                  </span>{" "}
+                  VIPs
+                  {q && <> · filtered by &ldquo;{q}&rdquo;</>}
+                </span>
 
-            <div className="space-y-2 text-xs text-slate-700">
-              <button
-                type="button"
-                className="w-full text-left rounded-xl border border-slate-200 px-3 py-2 hover:bg-slate-50"
-              >
-                <span className="block font-medium text-slate-900">
-                  Tonight&apos;s show editor
-                </span>
-                <span className="block text-[11px] text-slate-500">
-                  Update artist, start time, and notes for tonight.
-                </span>
-              </button>
-
-              <button
-                type="button"
-                className="w-full text-left rounded-xl border border-slate-200 px-3 py-2 hover:bg-slate-50"
-              >
-                <span className="block font-medium text-slate-900">
-                  Open full Fan Wall
-                </span>
-                <span className="block text-[11px] text-slate-500">
-                  See all pending Photo Booth shots in one place.
-                </span>
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* Bottom: exports / reports */}
-        <section>
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-            <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-              VIP export &amp; reports
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Download VIP list and activity as CSV for campaigns.
-            </p>
-            <p className="mt-3 text-xs font-medium text-amber-500">
-              Use the &quot;Export CSV&quot; button above the VIP List to
-              download your current VIPs.
-            </p>
-          </div>
+                <div className="flex items-center gap-2">
+                  {!showAll && vipRows.length > displayedVipRows.length && (
+                    <Link
+                      href={{
+                        pathname: "/dashboard",
+                        query: {
+                          ...(q ? { q } : {}),
+                          sort,
+                          show: "all",
+                        },
+                      }}
+                      className="text-[11px] font-semibold text-slate-800 hover:underline"
+                    >
+                      View full VIP list →
+                    </Link>
+                  )}
+                  {showAll && (
+                    <Link
+                      href={{
+                        pathname: "/dashboard",
+                        query: {
+                          ...(q ? { q } : {}),
+                          sort,
+                        },
+                      }}
+                      className="text-[11px] font-semibold text-slate-800 hover:underline"
+                    >
+                      Show top 5 only
+                    </Link>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </section>
       </div>
     </DashboardShell>
