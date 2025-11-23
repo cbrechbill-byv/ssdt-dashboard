@@ -28,21 +28,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ---- Select devices based on audience ----
+    // ---- Base: all devices with push tokens ----
     let query = supabaseServer
       .from("vip_devices")
-      .select("expo_push_token, platform, phone")
+      .select("expo_push_token, platform, phone, last_seen_at")
       .not("expo_push_token", "is", null);
 
+    // ---- Audience filters ----
     if (audience === "vip") {
-      // Any device with a non-null phone is considered VIP
+      // VIP = devices that have a phone number saved (verified VIP users)
       query = query.not("phone", "is", null);
     } else if (audience === "test") {
+      // Test device = your phone number (from env or fallback)
       const envPhone = process.env.TEST_DEVICE_PHONE;
       const testPhone =
         envPhone && envPhone.trim().length > 0
           ? envPhone.trim()
-          : "+12394105626"; // 👈 your number as fallback
+          : "+12394105626"; // your phone in E.164
 
       console.log("[Push API] Using test device phone:", testPhone);
       query = query.eq("phone", testPhone);
