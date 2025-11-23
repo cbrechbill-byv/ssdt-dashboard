@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 
-// For logs coming from Supabase
+type Audience = "all" | "vip" | "test";
+
 type NotificationLog = {
   id: string;
   created_at: string;
@@ -12,9 +13,8 @@ type NotificationLog = {
   audience: string;
   route: string | null;
   sent_count: number | null;
+  sample_devices: any | null;
 };
-
-type Audience = "all" | "vip" | "test";
 
 export default function NotificationsPage() {
   const [title, setTitle] = useState("");
@@ -27,43 +27,41 @@ export default function NotificationsPage() {
     message: string;
   }>(null);
 
-  // Logging
   const [latestLog, setLatestLog] = useState<NotificationLog | null>(null);
   const [history, setHistory] = useState<NotificationLog[]>([]);
-
-  /* ------------------------------------------------------------------
-     LOAD LOGS FROM SUPABASE
-  ------------------------------------------------------------------ */
 
   async function loadLogs() {
     try {
       const res = await fetch("/api/notifications/logs");
       if (!res.ok) return;
-
       const data = await res.json();
-      const logs = data.logs as NotificationLog[];
+      const logs = (data.logs || []) as NotificationLog[];
 
       if (logs.length > 0) {
         setLatestLog(logs[0]);
         setHistory(logs.slice(1));
+      } else {
+        setLatestLog(null);
+        setHistory([]);
       }
-    } catch {}
+    } catch (err) {
+      console.error("Failed to load notification logs", err);
+    }
   }
 
   useEffect(() => {
     loadLogs();
   }, []);
 
-  /* ------------------------------------------------------------------
-     SEND NOTIFICATION
-  ------------------------------------------------------------------ */
-
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     setStatus(null);
 
     if (!title.trim() || !body.trim()) {
-      setStatus({ type: "error", message: "Title and message are required." });
+      setStatus({
+        type: "error",
+        message: "Title and message are required.",
+      });
       return;
     }
 
@@ -76,7 +74,7 @@ export default function NotificationsPage() {
         body: JSON.stringify({
           title: title.trim(),
           body: body.trim(),
-          route: route.trim(),
+          route: route.trim() || "/home",
           audience,
         }),
       });
@@ -95,9 +93,10 @@ export default function NotificationsPage() {
       // Reset form
       setTitle("");
       setBody("");
+      setRoute("/home");
       setAudience("all");
 
-      // Reload logs
+      // Refresh logs
       loadLogs();
     } catch (err: any) {
       setStatus({
@@ -109,18 +108,10 @@ export default function NotificationsPage() {
     }
   }
 
-  /* ------------------------------------------------------------------
-     PREVIEW
-  ------------------------------------------------------------------ */
-
   const previewTitle = title || "Sugarshack Downtown";
   const previewBody =
     body ||
     "Fresh music vibes and specials tonight at Sugarshack Downtown. Tap to see what’s on.";
-
-  /* ------------------------------------------------------------------
-     RENDER
-  ------------------------------------------------------------------ */
 
   return (
     <DashboardShell
@@ -128,50 +119,50 @@ export default function NotificationsPage() {
       subtitle="Send targeted updates to VIPs and Sugarshack app users."
     >
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,2fr)]">
-        {/* ------------------------------------------------------------- */}
-        {/* Left column: Form + Logs */}
-        {/* ------------------------------------------------------------- */}
+        {/* LEFT COLUMN */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-6">
-
-          {/* ---------------- LAST MESSAGE SENT ---------------- */}
+          {/* Last message sent */}
           {latestLog && (
             <div className="border border-slate-200 bg-slate-50 rounded-xl p-4">
               <p className="text-xs text-slate-500 mb-1">Last message sent</p>
-              <p className="text-sm font-semibold text-slate-900">
+              <p className="text-xs text-slate-400">
+                {new Date(latestLog.created_at).toLocaleString()} ·{" "}
+                {latestLog.audience.toUpperCase()}
+              </p>
+              <p className="text-sm font-semibold text-slate-900 mt-1">
                 {latestLog.title}
               </p>
-              <p className="text-xs text-slate-600 mt-1">
-                {latestLog.body}
-              </p>
+              <p className="text-xs text-slate-700 mt-1">{latestLog.body}</p>
               <p className="text-[11px] text-slate-500 mt-2">
-                Audience: {latestLog.audience.toUpperCase()} · 
-                Route: {latestLog.route ?? "/home"} · 
-                Sent to {latestLog.sent_count ?? 0} device(s)
+                Route: {latestLog.route ?? "/home"} · Sent to{" "}
+                {latestLog.sent_count ?? 0} device(s)
               </p>
             </div>
           )}
 
-          {/* ---------------- HISTORY (COLLAPSIBLE) ---------------- */}
+          {/* History */}
           {history.length > 0 && (
             <details className="border border-slate-200 bg-white rounded-xl p-4">
               <summary className="cursor-pointer text-xs text-slate-600 mb-2">
                 Show older history ({history.length})
               </summary>
-              <div className="space-y-3">
+              <div className="space-y-3 mt-2">
                 {history.map((log) => (
                   <div
                     key={log.id}
                     className="border border-slate-200 rounded-lg p-3 bg-slate-50"
                   >
                     <p className="text-xs text-slate-500">
-                      {new Date(log.created_at).toLocaleString()}
+                      {new Date(log.created_at).toLocaleString()} ·{" "}
+                      {log.audience.toUpperCase()}
                     </p>
                     <p className="text-sm font-medium text-slate-900">
                       {log.title}
                     </p>
                     <p className="text-xs text-slate-700">{log.body}</p>
                     <p className="text-[11px] text-slate-500 mt-1">
-                      Audience: {log.audience} · Route: {log.route}
+                      Route: {log.route ?? "/home"} · Sent to{" "}
+                      {log.sent_count ?? 0} device(s)
                     </p>
                   </div>
                 ))}
@@ -179,42 +170,61 @@ export default function NotificationsPage() {
             </details>
           )}
 
-          {/* ---------------- COMPOSE FORM ---------------- */}
+          {/* Compose notification form */}
           <div>
             <h2 className="text-sm font-semibold text-slate-900 mb-1">
               Compose notification
             </h2>
             <p className="text-xs text-slate-500 mb-4">
-              Short, punchy messages perform best.
+              Short, punchy messages perform best. Think “What’s happening
+              right now at Sugarshack?”
             </p>
 
             <form onSubmit={handleSend} className="space-y-4">
-
               {/* Audience */}
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-2">
                   Audience
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {["all", "vip", "test"].map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setAudience(val as Audience)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
-                        audience === val
-                          ? "bg-slate-900 text-white border-slate-900 shadow-sm"
-                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                      }`}
-                    >
-                      {val === "all"
-                        ? "All users"
-                        : val === "vip"
-                        ? "VIPs only"
-                        : "Test device"}
-                    </button>
-                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setAudience("all")}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                      audience === "all"
+                        ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    All users
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAudience("vip")}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                      audience === "vip"
+                        ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    VIPs only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAudience("test")}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                      audience === "test"
+                        ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    Test device
+                  </button>
                 </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  “Test device” is great to confirm the copy and timing on your
+                  own phone before blasting to everyone.
+                </p>
               </div>
 
               {/* Title */}
@@ -230,6 +240,10 @@ export default function NotificationsPage() {
                   placeholder="Tonight at Sugarshack Downtown"
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-slate-900/10"
                 />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Keep it under ~40 characters for best visibility on most
+                  phones.
+                </p>
               </div>
 
               {/* Message */}
@@ -245,9 +259,13 @@ export default function NotificationsPage() {
                   placeholder="Live set starting at 8PM, drink specials until 9. Tap for details."
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-slate-900/10 resize-none"
                 />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Aim for 1–2 short sentences. Users see this on their lock
+                  screen.
+                </p>
               </div>
 
-              {/* Route (deep link) */}
+              {/* Route */}
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
                   Deep link route when tapped
@@ -260,7 +278,8 @@ export default function NotificationsPage() {
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-slate-900/10"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Example: <code>/home</code>, <code>/calendar</code>, <code>/vip</code>
+                  Example: <code>/home</code>, <code>/calendar</code>,{" "}
+                  <code>/vip</code>
                 </p>
               </div>
 
@@ -287,19 +306,16 @@ export default function NotificationsPage() {
                   {isSending ? "Sending…" : "Send notification"}
                 </button>
                 <p className="text-[11px] text-slate-400">
-                  Sent via Expo push service.
+                  Sent via Expo push service. Delivery depends on device
+                  settings and connectivity.
                 </p>
               </div>
-
             </form>
           </div>
         </section>
 
-        {/* ------------------------------------------------------------- */}
-        {/* Right column: Existing preview + tips (unchanged) */}
-        {/* ------------------------------------------------------------- */}
+        {/* RIGHT COLUMN */}
         <section className="space-y-4">
-
           {/* Preview */}
           <div className="bg-slate-950 text-slate-50 rounded-2xl border border-slate-800 shadow-sm p-4">
             <p className="text-[11px] uppercase tracking-[0.15em] text-slate-400 mb-2">
@@ -314,7 +330,9 @@ export default function NotificationsPage() {
                 <p className="text-xs font-semibold text-white">
                   {previewTitle}
                 </p>
-                <p className="text-[11px] text-slate-200">{previewBody}</p>
+                <p className="text-[11px] text-slate-200 whitespace-pre-line">
+                  {previewBody}
+                </p>
               </div>
             </div>
           </div>

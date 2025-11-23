@@ -5,9 +5,9 @@ type Audience = "all" | "vip" | "test";
 
 type NotificationPayload = {
   title: string;
-  body: string;          // 👈 this matches your page.tsx
+  body: string;
   route?: string;
-  audience?: Audience;   // "all" | "vip" | "test"
+  audience?: Audience; // "all" | "vip" | "test"
   data?: Record<string, any>;
 };
 
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1) Pick devices based on audience
+    // 1) Select devices based on audience
     let query = supabaseServer
       .from("vip_devices")
       .select("expo_push_token, platform, phone")
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       platform: d.platform,
     }));
 
-    // 2) Create log entry first and get its ID
+    // 2) Log the notification in Supabase first and get its ID
     const { data: logRows, error: logError } = await supabaseServer
       .from("notification_logs")
       .insert({
@@ -85,12 +85,12 @@ export async function POST(req: NextRequest) {
 
     const logId = logRows?.[0]?.id as string | undefined;
 
-    // 3) Build messages for Expo
+    // 3) Build Expo push messages (this is what iOS shows)
     const messages = devices.map((d) => ({
       to: d.expo_push_token,
       sound: "default" as const,
       title,
-      body,           // 👈 THIS is your typed message
+      body,
       data: {
         route,
         platform: d.platform,
@@ -105,7 +105,6 @@ export async function POST(req: NextRequest) {
       `[Push API] Sending ${messages.length} notifications (audience=${audience})`
     );
 
-    // 4) Call Expo push API
     const expoResponse = await fetch(
       "https://exp.host/--/api/v2/push/send",
       {
