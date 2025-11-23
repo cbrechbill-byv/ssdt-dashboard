@@ -19,7 +19,7 @@ type NotificationLog = {
 export default function NotificationsPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [route, setRoute] = useState("/home");
+  const [route, setRoute] = useState("/messages"); // 👈 default to messages screen
   const [audience, setAudience] = useState<Audience>("all");
   const [isSending, setIsSending] = useState(false);
   const [status, setStatus] = useState<null | {
@@ -74,7 +74,7 @@ export default function NotificationsPage() {
         body: JSON.stringify({
           title: title.trim(),
           body: body.trim(),
-          route: route.trim() || "/home",
+          route: route.trim() || "/messages", // 👈 default deep link
           audience,
         }),
       });
@@ -90,10 +90,10 @@ export default function NotificationsPage() {
         message: "Notification queued and sent to Expo. 🎉",
       });
 
-      // Reset form
+      // Reset form – keep messages as the default target
       setTitle("");
       setBody("");
-      setRoute("/home");
+      setRoute("/messages");
       setAudience("all");
 
       // Refresh logs
@@ -111,7 +111,7 @@ export default function NotificationsPage() {
   const previewTitle = title || "Sugarshack Downtown";
   const previewBody =
     body ||
-    "Fresh music vibes and specials tonight at Sugarshack Downtown. Tap to see what’s on.";
+    "New message from Sugarshack Downtown. Tap to open your in-app messages.";
 
   return (
     <DashboardShell
@@ -119,38 +119,8 @@ export default function NotificationsPage() {
       subtitle="Send targeted updates to VIPs and Sugarshack app users."
     >
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,2fr)]">
-        {/* LEFT COLUMN: history + compose */}
+        {/* LEFT COLUMN: compose only */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-6">
-          {/* History */}
-          {history.length > 0 && (
-            <details className="border border-slate-200 bg-white rounded-xl p-4">
-              <summary className="cursor-pointer text-xs text-slate-600 mb-2">
-                Show older history ({history.length})
-              </summary>
-              <div className="space-y-3 mt-2">
-                {history.map((log) => (
-                  <div
-                    key={log.id}
-                    className="border border-slate-200 rounded-lg p-3 bg-slate-50"
-                  >
-                    <p className="text-xs text-slate-500">
-                      {new Date(log.created_at).toLocaleString()} ·{" "}
-                      {log.audience.toUpperCase()}
-                    </p>
-                    <p className="text-sm font-medium text-slate-900">
-                      {log.title}
-                    </p>
-                    <p className="text-xs text-slate-700">{log.body}</p>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Route: {log.route ?? "/home"} · Sent to{" "}
-                      {log.sent_count ?? 0} device(s)
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
-
           {/* Compose notification form */}
           <div>
             <h2 className="text-sm font-semibold text-slate-900 mb-1">
@@ -255,12 +225,12 @@ export default function NotificationsPage() {
                   type="text"
                   value={route}
                   onChange={(e) => setRoute(e.target.value)}
-                  placeholder="/home"
+                  placeholder="/messages"
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-slate-900/10"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Example: <code>/home</code>, <code>/calendar</code>,{" "}
-                  <code>/vip</code>
+                  Default is <code>/messages</code>. Example:{" "}
+                  <code>/home</code>, <code>/calendar</code>, <code>/vip</code>
                 </p>
               </div>
 
@@ -295,7 +265,7 @@ export default function NotificationsPage() {
           </div>
         </section>
 
-        {/* RIGHT COLUMN: preview + tips + last message */}
+        {/* RIGHT COLUMN: preview + tips + last message + history */}
         <section className="space-y-4">
           {/* Preview */}
           <div className="bg-slate-950 text-slate-50 rounded-2xl border border-slate-800 shadow-sm p-4">
@@ -331,22 +301,55 @@ export default function NotificationsPage() {
             </ul>
           </div>
 
-          {/* Last message sent (highlighted card) */}
+          {/* Last message + older history */}
           {latestLog && (
-            <div className="bg-slate-950 text-slate-50 rounded-2xl border border-slate-800 shadow-sm p-4">
-              <p className="text-[11px] uppercase tracking-[0.15em] text-slate-400 mb-1">
-                Last message sent
-              </p>
-              <p className="text-[11px] text-slate-400">
-                {new Date(latestLog.created_at).toLocaleString()} ·{" "}
-                {latestLog.audience.toUpperCase()}
-              </p>
-              <p className="text-sm font-semibold mt-2">{latestLog.title}</p>
-              <p className="text-xs text-slate-200 mt-1">{latestLog.body}</p>
-              <p className="text-[11px] text-slate-400 mt-2">
-                Route: {latestLog.route ?? "/home"} · Sent to{" "}
-                {latestLog.sent_count ?? 0} device(s)
-              </p>
+            <div className="space-y-3">
+              {/* Last message sent card */}
+              <div className="bg-slate-950 text-slate-50 rounded-2xl border border-slate-800 shadow-sm p-4">
+                <p className="text-[11px] uppercase tracking-[0.15em] text-slate-400 mb-1">
+                  Last message sent
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  {new Date(latestLog.created_at).toLocaleString()} ·{" "}
+                  {latestLog.audience.toUpperCase()}
+                </p>
+                <p className="text-sm font-semibold mt-2">{latestLog.title}</p>
+                <p className="text-xs text-slate-200 mt-1">{latestLog.body}</p>
+                <p className="text-[11px] text-slate-400 mt-2">
+                  Route: {latestLog.route ?? "/messages"} · Sent to{" "}
+                  {latestLog.sent_count ?? 0} device(s)
+                </p>
+              </div>
+
+              {/* Older history lives directly under Last message sent */}
+              {history.length > 0 && (
+                <details className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                  <summary className="cursor-pointer text-xs text-slate-600 mb-2">
+                    Show older history ({history.length})
+                  </summary>
+                  <div className="space-y-3 mt-2">
+                    {history.map((log) => (
+                      <div
+                        key={log.id}
+                        className="border border-slate-200 rounded-lg p-3 bg-slate-50"
+                      >
+                        <p className="text-xs text-slate-500">
+                          {new Date(log.created_at).toLocaleString()} ·{" "}
+                          {log.audience.toUpperCase()}
+                        </p>
+                        <p className="text-sm font-medium text-slate-900">
+                          {log.title}
+                        </p>
+                        <p className="text-xs text-slate-700">{log.body}</p>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Route: {log.route ?? "/messages"} · Sent to{" "}
+                          {log.sent_count ?? 0} device(s)
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
           )}
         </section>
