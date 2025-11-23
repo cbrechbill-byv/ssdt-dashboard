@@ -28,36 +28,74 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ---- Base: all devices with push tokens ----
-    let query = supabaseServer
-      .from("vip_devices")
-      .select("expo_push_token, platform, phone, last_seen_at")
-      .not("expo_push_token", "is", null);
+    // ---------- Choose devices based on audience ----------
+    let devices: { expo_push_token: string; platform: string; phone: string | null }[] =
+      [];
 
-    // ---- Audience filters ----
-    if (audience === "vip") {
-      // VIP = devices that have a phone number saved (verified VIP users)
-      query = query.not("phone", "is", null);
-    } else if (audience === "test") {
-      // Test device = your phone number (from env or fallback)
-      const envPhone = process.env.TEST_DEVICE_PHONE;
-      const testPhone =
-        envPhone && envPhone.trim().length > 0
-          ? envPhone.trim()
-          : "+12394105626"; // your phone in E.164
+    if (audience === "test") {
+      // 1) Get all test phones from the dedicated table
+      const { data: testRows, error: testError } = await supabaseServer
+        .from("notification_test_devices")
+        .select("phone");
 
-      console.log("[Push API] Using test device phone:", testPhone);
-      query = query.eq("phone", testPhone);
-    }
+      if (testError) {
+        console.error("[Push API] Error fetching test devices:", testError);
+        return NextResponse.json(
+          { error: "Failed to fetch test devices" },
+          { status: 500 }
+        );
+      }
 
-    const { data: devices, error: devicesError } = await query;
+      const testPhones = (testRows ?? [])
+        .map((r) => r.phone)
+        .filter((p): p is string => !!p);
 
-    if (devicesError) {
-      console.error("[Push API] Error fetching devices:", devicesError);
-      return NextResponse.json(
-        { error: "Failed to fetch devices" },
-        { status: 500 }
-      );
+      console.log("[Push API] Test phones:", testPhones);
+
+      if (testPhones.length === 0) {
+        // Still log the attempt below, but no devices to send to
+        devices = [];
+      } else {
+        // 2) Find vip_devices with those phones
+        const { data: testDevices, error: devicesError } = await supabaseServer
+          .from("vip_devices")
+          .select("expo_push_token, platform, phone")
+          .not("expo_push_token", "is", null)
+          .in("phone", testPhones);
+
+        if (devicesError) {
+          console.error("[Push API] Error fetching test vip_devices:", devicesError);
+          return NextResponse.json(
+            { error: "Failed to fetch test devices" },
+            { status: 500 }
+          );
+        }
+
+        devices = (testDevices ?? []) as any[];
+      }
+    } else {
+      // Base query for ALL and VIP
+      let query = supabaseServer
+        .from("vip_devices")
+        .select("expo_push_token, platform, phone")
+        .not("expo_push_token", "is", null);
+
+      if (audience === "vip") {
+        // VIP = has phone
+        query = query.not("phone", "is", null);
+      }
+
+      const { data: baseDevices, error: baseError } = await query;
+
+      if (baseError) {
+        console.error("[Push API] Error fetching devices:", baseError);
+        return NextResponse.json(
+          { error: "Failed to fetch devices" },
+          { status: 500 }
+        );
+      }
+
+      devices = (baseDevices ?? []) as any[];
     }
 
     const safeDevices = devices ?? [];
@@ -72,7 +110,7 @@ export async function POST(req: NextRequest) {
       sampleDevices
     );
 
-    // ---- Always log the attempt in notification_logs ----
+    // ---------- Log in notification_logs ----------
     const { data: logRows, error: logError } = await supabaseServer
       .from("notification_logs")
       .insert({
@@ -107,7 +145,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ---- Build Expo push messages ----
+    // ---------- Send via Expo ----------
     const messages = safeDevices.map((d) => ({
       to: d.expo_push_token,
       sound: "default" as const,
