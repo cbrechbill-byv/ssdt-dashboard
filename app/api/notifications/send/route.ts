@@ -1,94 +1,146 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseServer } from "@/lib/supabaseServer";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const EXPO_ACCESS_TOKEN = process.env.EXPO_ACCESS_TOKEN;
+type Audience = "all" | "vip" | "test";
 
-// Expo push endpoint
-const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+type NotificationPayload = {
+  title: string;
+  body: string;          // 👈 this matches your page.tsx
+  route?: string;
+  audience?: Audience;   // "all" | "vip" | "test"
+  data?: Record<string, any>;
+};
 
-export async function POST(req: Request) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-    console.error("Supabase env vars missing");
-    return NextResponse.json({ error: "Server not configured" }, { status: 500 });
-  }
-
-  const { title, message } = await req.json();
-
-  if (!message) {
-    return NextResponse.json({ error: "Missing message" }, { status: 400 });
-  }
-
+export async function POST(req: NextRequest) {
   try {
-    // 1) Load all registered push tokens from Supabase
-    const devicesRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/vip_devices?select=expo_push_token`,
-      {
-        headers: {
-          apikey: SUPABASE_SERVICE_KEY,
-          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-        },
-        cache: "no-store",
-      }
-    );
+    const json = (await req.json()) as NotificationPayload;
 
-    if (!devicesRes.ok) {
-      const text = await devicesRes.text();
-      console.error("Supabase fetch devices error", devicesRes.status, text);
+    const title = json.title?.trim();
+    const body = json.body?.trim();
+    const route = json.route ?? "/home";
+    const audience = (json.audience ?? "all") as Audience;
+    const extraData = json.data ?? {};
+
+    if (!title || !body) {
+      return NextResponse.json(
+        { error: "Missing title or body" },
+        { status: 400 }
+      );
+    }
+
+    // 1) Pick devices based on audience
+    let query = supabaseServer
+      .from("vip_devices")
+      .select("expo_push_token, platform, phone")
+      .not("expo_push_token", "is", null);
+
+    if (audience === "vip") {
+      query = query.not("phone", "is", null);
+    } else if (audience === "test") {
+      const testPhone =
+        process.env.TEST_DEVICE_PHONE ?? "+12394105626";
+      query = query.eq("phone", testPhone);
+    }
+
+    const { data: devices, error: devicesError } = await query;
+
+    if (devicesError) {
+      console.error("[Push API] Error fetching devices:", devicesError);
       return NextResponse.json(
         { error: "Failed to fetch devices" },
         { status: 500 }
       );
     }
 
-    const devices: { expo_push_token: string | null }[] = await devicesRes.json();
-    const tokens = devices
-      .map((d) => d.expo_push_token)
-      .filter((t): t is string => !!t);
-
-    if (tokens.length === 0) {
-      return NextResponse.json({ ok: true, sent: 0, note: "No devices registered" });
+    if (!devices || devices.length === 0) {
+      return NextResponse.json(
+        { message: "No devices to notify" },
+        { status: 200 }
+      );
     }
 
-    // 2) Build Expo push messages
-    const messages = tokens.map((token) => ({
-      to: token,
-      sound: "default" as const,
-      title: title || "Sugarshack Downtown",
-      body: message,
-      data: { source: "ssdt-dashboard" },
+    const sentCount = devices.length;
+    const sampleDevices = devices.slice(0, 5).map((d) => ({
+      phone: d.phone,
+      platform: d.platform,
     }));
 
-    // 3) Send to Expo
-    const expoRes = await fetch(EXPO_PUSH_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(EXPO_ACCESS_TOKEN
-          ? { Authorization: `Bearer ${EXPO_ACCESS_TOKEN}` }
-          : {}),
-      },
-      body: JSON.stringify(messages),
-    });
+    // 2) Create log entry first and get its ID
+    const { data: logRows, error: logError } = await supabaseServer
+      .from("notification_logs")
+      .insert({
+        title,
+        body,
+        audience,
+        route,
+        sent_count: sentCount,
+        sample_devices: sampleDevices,
+      })
+      .select("id")
+      .limit(1);
 
-    if (!expoRes.ok) {
-      const text = await expoRes.text();
-      console.error("Expo push error", expoRes.status, text);
+    if (logError) {
+      console.error("[Push API] Log insert error:", logError);
+    }
+
+    const logId = logRows?.[0]?.id as string | undefined;
+
+    // 3) Build messages for Expo
+    const messages = devices.map((d) => ({
+      to: d.expo_push_token,
+      sound: "default" as const,
+      title,
+      body,           // 👈 THIS is your typed message
+      data: {
+        route,
+        platform: d.platform,
+        phone: d.phone,
+        audience,
+        notification_log_id: logId ?? null,
+        ...extraData,
+      },
+    }));
+
+    console.log(
+      `[Push API] Sending ${messages.length} notifications (audience=${audience})`
+    );
+
+    // 4) Call Expo push API
+    const expoResponse = await fetch(
+      "https://exp.host/--/api/v2/push/send",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(messages),
+      }
+    );
+
+    const expoJson = await expoResponse.json();
+
+    if (!expoResponse.ok) {
+      console.error("[Push API] Expo push error:", expoJson);
       return NextResponse.json(
-        { error: "Failed to send push notifications" },
+        { error: "Expo push failed", expo: expoJson },
         { status: 502 }
       );
     }
 
-    const expoJson = await expoRes.json();
-
-    return NextResponse.json({
-      ok: true,
-      sent: tokens.length,
-      expoResponse: expoJson,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        count: messages.length,
+        expo: expoJson,
+      },
+      { status: 200 }
+    );
   } catch (err) {
-    console.error("Send notification error", err);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+    console.error("[Push API] Unexpected:", err);
+    return NextResponse.json(
+      { error: "Unexpected server error" },
+      { status: 500 }
+    );
   }
 }
