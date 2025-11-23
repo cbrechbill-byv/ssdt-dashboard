@@ -7,7 +7,7 @@ type NotificationPayload = {
   title: string;
   body: string;
   route?: string;
-  audience?: Audience; // "all" | "vip" | "test"
+  audience?: Audience;
   data?: Record<string, any>;
 };
 
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
 
     const title = json.title?.trim();
     const body = json.body?.trim();
-    const route = json.route ?? "/home";
+    const route = json.route ?? "/messages";
     const audience = (json.audience ?? "all") as Audience;
     const extraData = json.data ?? {};
 
@@ -52,20 +52,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!devices || devices.length === 0) {
-      return NextResponse.json(
-        { message: "No devices to notify" },
-        { status: 200 }
-      );
-    }
-
-    const sentCount = devices.length;
-    const sampleDevices = devices.slice(0, 5).map((d) => ({
+    const safeDevices = devices ?? [];
+    const sentCount = safeDevices.length;
+    const sampleDevices = safeDevices.slice(0, 5).map((d) => ({
       phone: d.phone,
       platform: d.platform,
     }));
 
-    // 2) Log the notification in Supabase first and get its ID
+    // 2) ALWAYS log the attempt, even if sentCount = 0
     const { data: logRows, error: logError } = await supabaseServer
       .from("notification_logs")
       .insert({
@@ -85,8 +79,24 @@ export async function POST(req: NextRequest) {
 
     const logId = logRows?.[0]?.id as string | undefined;
 
-    // 3) Build Expo push messages (this is what iOS shows)
-    const messages = devices.map((d) => ({
+    // 3) If no devices, don't call Expo, but still report success (with message)
+    if (sentCount === 0) {
+      console.log(
+        `[Push API] No devices to notify for audience=${audience}. Logged attempt only.`
+      );
+      return NextResponse.json(
+        {
+          ok: true,
+          count: 0,
+          logId,
+          message: "No devices to notify for this audience.",
+        },
+        { status: 200 }
+      );
+    }
+
+    // 4) Build Expo messages
+    const messages = safeDevices.map((d) => ({
       to: d.expo_push_token,
       sound: "default" as const,
       title,
@@ -131,6 +141,7 @@ export async function POST(req: NextRequest) {
       {
         ok: true,
         count: messages.length,
+        logId,
         expo: expoJson,
       },
       { status: 200 }
