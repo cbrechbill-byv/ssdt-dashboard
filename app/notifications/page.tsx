@@ -119,27 +119,8 @@ export default function NotificationsPage() {
       subtitle="Send targeted updates to VIPs and Sugarshack app users."
     >
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,2fr)]">
-        {/* LEFT COLUMN */}
+        {/* LEFT COLUMN: history + compose */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-6">
-          {/* Last message sent */}
-          {latestLog && (
-            <div className="border border-slate-200 bg-slate-50 rounded-xl p-4">
-              <p className="text-xs text-slate-500 mb-1">Last message sent</p>
-              <p className="text-xs text-slate-400">
-                {new Date(latestLog.created_at).toLocaleString()} ·{" "}
-                {latestLog.audience.toUpperCase()}
-              </p>
-              <p className="text-sm font-semibold text-slate-900 mt-1">
-                {latestLog.title}
-              </p>
-              <p className="text-xs text-slate-700 mt-1">{latestLog.body}</p>
-              <p className="text-[11px] text-slate-500 mt-2">
-                Route: {latestLog.route ?? "/home"} · Sent to{" "}
-                {latestLog.sent_count ?? 0} device(s)
-              </p>
-            </div>
-          )}
-
           {/* History */}
           {history.length > 0 && (
             <details className="border border-slate-200 bg-white rounded-xl p-4">
@@ -314,7 +295,7 @@ export default function NotificationsPage() {
           </div>
         </section>
 
-        {/* RIGHT COLUMN */}
+        {/* RIGHT COLUMN: preview + tips + last message */}
         <section className="space-y-4">
           {/* Preview */}
           <div className="bg-slate-950 text-slate-50 rounded-2xl border border-slate-800 shadow-sm p-4">
@@ -349,6 +330,25 @@ export default function NotificationsPage() {
               <li>• Follow up push with signage & QR codes.</li>
             </ul>
           </div>
+
+          {/* Last message sent (highlighted card) */}
+          {latestLog && (
+            <div className="bg-slate-950 text-slate-50 rounded-2xl border border-slate-800 shadow-sm p-4">
+              <p className="text-[11px] uppercase tracking-[0.15em] text-slate-400 mb-1">
+                Last message sent
+              </p>
+              <p className="text-[11px] text-slate-400">
+                {new Date(latestLog.created_at).toLocaleString()} ·{" "}
+                {latestLog.audience.toUpperCase()}
+              </p>
+              <p className="text-sm font-semibold mt-2">{latestLog.title}</p>
+              <p className="text-xs text-slate-200 mt-1">{latestLog.body}</p>
+              <p className="text-[11px] text-slate-400 mt-2">
+                Route: {latestLog.route ?? "/home"} · Sent to{" "}
+                {latestLog.sent_count ?? 0} device(s)
+              </p>
+            </div>
+          )}
         </section>
       </div>
     </DashboardShell>
