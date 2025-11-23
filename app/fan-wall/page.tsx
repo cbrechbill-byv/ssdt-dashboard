@@ -93,17 +93,13 @@ export default async function FanWallPage() {
               Approve Photo Booth shots before they show to guests.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (typeof window !== "undefined") {
-                window.location.reload();
-              }
-            }}
+          {/* use simple link instead of onClick button to avoid Server Component event handler */}
+          <a
+            href="/fan-wall"
             className="rounded-full border border-slate-300 px-4 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
           >
             Refresh
-          </button>
+          </a>
         </div>
 
         {/* Empty state */}
@@ -177,13 +173,15 @@ export default async function FanWallPage() {
                         )}
                       </div>
 
-                      {/* USER (we'll wire VIP vs guest later) */}
+                      {/* USER (identity wiring comes next step) */}
                       <div className="flex flex-col gap-1">
                         <p className="text-xs font-medium text-slate-900 truncate">
                           {post.caption || "Sugarshack Downtown Photo Booth"}
                         </p>
                         <p className="text-[11px] text-slate-500">
-                          {post.user_id ? "Known user (VIP / guest later)" : "Unknown user"}
+                          {post.user_id
+                            ? "Known user (VIP/guest mapping coming next)"
+                            : "Unknown user"}
                         </p>
                       </div>
 
