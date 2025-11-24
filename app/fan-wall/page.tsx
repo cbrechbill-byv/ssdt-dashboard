@@ -13,14 +13,23 @@ type FanWallPost = {
   is_hidden: boolean;
 };
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const FAN_WALL_BUCKET =
   process.env.NEXT_PUBLIC_FAN_WALL_BUCKET ?? "fan-wall-photos";
 
+/** Build a public URL using Supabase storage helper so bucket/path are always correct */
 function getPublicFanWallUrl(imagePath: string | null): string | null {
-  if (!SUPABASE_URL || !imagePath) return null;
-  const trimmed = imagePath.replace(/^\/+/, "");
-  return `${SUPABASE_URL}/storage/v1/object/public/${FAN_WALL_BUCKET}/${trimmed}`;
+  if (!imagePath) return null;
+
+  try {
+    const { data } = supabaseServer.storage
+      .from(FAN_WALL_BUCKET)
+      .getPublicUrl(imagePath);
+
+    return data?.publicUrl ?? null;
+  } catch (err) {
+    console.error("[FanWall] getPublicUrl error:", err);
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -93,7 +102,6 @@ export default async function FanWallPage() {
               Approve Photo Booth shots before they show to guests.
             </p>
           </div>
-          {/* use simple link instead of onClick button to avoid Server Component event handler */}
           <a
             href="/fan-wall"
             className="rounded-full border border-slate-300 px-4 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
@@ -110,7 +118,7 @@ export default async function FanWallPage() {
           </div>
         )}
 
-        {/* Table */}
+        {/* Table / list */}
         {posts.length > 0 && (
           <div className="overflow-x-auto">
             <div className="min-w-[880px]">
@@ -142,17 +150,17 @@ export default async function FanWallPage() {
                   return (
                     <div
                       key={post.id}
-                      className="grid grid-cols-[150px,1.5fr,130px,160px,160px] gap-4 px-6 py-3 items-center text-xs"
+                      className="grid grid-cols-[150px,1.5fr,130px,160px,160px] gap-4 px-6 py-2 items-center text-xs"
                     >
                       {/* PHOTO */}
                       <div className="flex items-center gap-3">
-                        <div className="relative h-20 w-16 overflow-hidden rounded-xl border border-slate-200 bg-slate-900">
+                        <div className="relative h-16 w-14 overflow-hidden rounded-xl border border-slate-200 bg-slate-900">
                           {imageUrl ? (
                             <Image
                               src={imageUrl}
                               alt={post.caption ?? "Fan Wall photo"}
                               fill
-                              sizes="80px"
+                              sizes="70px"
                               className="object-cover"
                             />
                           ) : (
@@ -173,14 +181,14 @@ export default async function FanWallPage() {
                         )}
                       </div>
 
-                      {/* USER (identity wiring comes next step) */}
+                      {/* USER (we’ll wire VIP/guest identity later) */}
                       <div className="flex flex-col gap-1">
                         <p className="text-xs font-medium text-slate-900 truncate">
                           {post.caption || "Sugarshack Downtown Photo Booth"}
                         </p>
                         <p className="text-[11px] text-slate-500">
                           {post.user_id
-                            ? "Known user (VIP/guest mapping coming next)"
+                            ? "Known user (VIP/guest mapping coming later)"
                             : "Unknown user"}
                         </p>
                       </div>
