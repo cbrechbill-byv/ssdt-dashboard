@@ -93,9 +93,8 @@ async function hidePost(formData: FormData) {
 /* ------------------------------------------------------------------ */
 
 export default async function FanWallPage() {
-  const supabase = supabaseServer;
-
-  const { data, error } = await supabase
+  // Load fan wall posts
+  const { data, error } = await supabaseServer
     .from("fan_wall_posts")
     .select(
       "id, user_id, image_path, caption, created_at, is_approved, is_hidden"
@@ -110,20 +109,16 @@ export default async function FanWallPage() {
     (p) => !p.is_hidden
   );
 
-  // Attach public URLs via Supabase storage helper
+  // Attach public URLs from Supabase storage
   const postsWithUrls = posts.map((post) => {
     const path = post.image_path ?? "";
     if (!path) {
       return { ...post, imageUrl: null as string | null };
     }
 
-    const { data: publicData, error: urlError } = supabase.storage
+    const { data: publicData } = supabaseServer.storage
       .from(FAN_WALL_BUCKET)
       .getPublicUrl(path);
-
-    if (urlError) {
-      console.error("[FanWall] getPublicUrl error:", urlError);
-    }
 
     return {
       ...post,
