@@ -13,7 +13,8 @@ type EventRow = {
   genre_override: string | null;
   title: string | null;
   notes: string | null;
-  artist: { name: string; genre: string | null } | null;
+  // Supabase join returns an ARRAY of artists, even though there's only one
+  artist: { name: string; genre: string | null }[] | null;
 };
 
 function formatDate(dateStr: string) {
@@ -159,9 +160,12 @@ export default async function EventsPage() {
                     evt.start_time,
                     evt.end_time
                   );
-                  const artistName = evt.artist?.name || "Unknown artist";
+
+                  // Supabase returns artist as an array; use the first
+                  const artistInfo = evt.artist?.[0];
+                  const artistName = artistInfo?.name || "Unknown artist";
                   const genre =
-                    evt.genre_override || evt.artist?.genre || "—";
+                    evt.genre_override || artistInfo?.genre || "—";
 
                   return (
                     <tr
