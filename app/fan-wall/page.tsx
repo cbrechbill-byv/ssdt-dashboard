@@ -141,13 +141,11 @@ export default async function FanWallPage() {
                   {/* Thumbnail */}
                   <div className="flex-shrink-0">
                     {imageUrl ? (
-                      <button
-                        type="button"
-                        className="relative w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
-                        onClick={() => {
-                          // open full image in new tab
-                          window.open(imageUrl, "_blank");
-                        }}
+                      <a
+                        href={imageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="relative block w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
                       >
                         <Image
                           src={imageUrl}
@@ -155,7 +153,7 @@ export default async function FanWallPage() {
                           fill
                           className="object-cover"
                         />
-                      </button>
+                      </a>
                     ) : (
                       <div className="w-32 h-32 rounded-xl border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-[11px] text-slate-400">
                         No image
