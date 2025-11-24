@@ -3,6 +3,9 @@ import Link from "next/link";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
+/* Force dynamic so we always see fresh stats */
+export const dynamic = "force-dynamic";
+
 /* ------------------------------------------------------------------ */
 /*  TYPES                                                             */
 /* ------------------------------------------------------------------ */
@@ -125,15 +128,11 @@ function formatDateTimeLabel(iso: string | null): string {
 /* ------------------------------------------------------------------ */
 
 export default async function DashboardPage() {
-  const supabase = supabaseServer;
+  const supabase = supabaseServer();
 
   const today = getTodayDateString();
 
-  // ---------------------------------------------------------------------------
   // 1) Today's stats: check-ins, unique VIPs, points
-  //    Prefer rewards_daily_summary; fall back to rewards_scans if needed.
-  // ---------------------------------------------------------------------------
-
   let checkinsToday = 0;
   let uniqueVipsToday = 0;
   let pointsToday = 0;
@@ -187,10 +186,7 @@ export default async function DashboardPage() {
     }
   }
 
-  // ---------------------------------------------------------------------------
   // 2) VIP overview from rewards_user_overview
-  // ---------------------------------------------------------------------------
-
   const {
     data: vipOverviewRows,
     error: vipOverviewError,
@@ -225,11 +221,7 @@ export default async function DashboardPage() {
   const activePercentage =
     vipBaseCount > 0 ? (activeVipsCount / vipBaseCount) * 100 : 0;
 
-  // ---------------------------------------------------------------------------
-  // 3) Fan wall stats (for the "Fan Wall moderation" dashboard card)
-  //    Use count-only queries so counts always match the table.
-  // ---------------------------------------------------------------------------
-
+  // 3) Fan wall stats (count-only queries)
   const [
     { count: pendingCount, error: pendingError },
     { count: liveCount, error: liveError },
@@ -269,10 +261,7 @@ export default async function DashboardPage() {
   const fanHidden = hiddenCount ?? 0;
   const fanTotal = totalCount ?? 0;
 
-  // ---------------------------------------------------------------------------
-  // 4) VIP list (Top 5 — list view, will get long over time)
-  // ---------------------------------------------------------------------------
-
+  // 4) VIP list (Top 5)
   const topVipRows = [...vipUsers]
     .sort((a, b) => {
       const aTime = a.last_scan_at ? new Date(a.last_scan_at).getTime() : 0;
@@ -295,10 +284,7 @@ export default async function DashboardPage() {
 
   const totalVipCount = vipUsers.length;
 
-  // ---------------------------------------------------------------------------
   // 5) Render
-  // ---------------------------------------------------------------------------
-
   return (
     <DashboardShell
       title="Sugarshack Downtown VIP Dashboard"

@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { revalidatePath } from "next/cache";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
@@ -35,7 +34,7 @@ function formatDateEST(iso: string): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  SERVER ACTIONS (MUST ACCEPT FormData)                             */
+/*  SERVER ACTIONS                                                    */
 /* ------------------------------------------------------------------ */
 
 async function approvePost(formData: FormData) {
@@ -47,7 +46,9 @@ async function approvePost(formData: FormData) {
     return;
   }
 
-  const { error } = await supabaseServer
+  const supabase = supabaseServer();
+
+  const { error } = await supabase
     .from("fan_wall_posts")
     .update({
       is_approved: true,
@@ -72,7 +73,9 @@ async function hidePost(formData: FormData) {
     return;
   }
 
-  const { error } = await supabaseServer
+  const supabase = supabaseServer();
+
+  const { error } = await supabase
     .from("fan_wall_posts")
     .update({
       is_hidden: true,
@@ -93,8 +96,9 @@ async function hidePost(formData: FormData) {
 /* ------------------------------------------------------------------ */
 
 export default async function FanWallPage() {
-  // Load fan wall posts
-  const { data, error } = await supabaseServer
+  const supabase = supabaseServer();
+
+  const { data, error } = await supabase
     .from("fan_wall_posts")
     .select(
       "id, user_id, image_path, caption, created_at, is_approved, is_hidden"
@@ -109,14 +113,14 @@ export default async function FanWallPage() {
     (p) => !p.is_hidden
   );
 
-  // Attach public URLs from Supabase storage
+  // Attach public URLs using Supabase storage helper
   const postsWithUrls = posts.map((post) => {
     const path = post.image_path ?? "";
     if (!path) {
       return { ...post, imageUrl: null as string | null };
     }
 
-    const { data: publicData } = supabaseServer.storage
+    const { data: publicData } = supabase.storage
       .from(FAN_WALL_BUCKET)
       .getPublicUrl(path);
 
@@ -166,11 +170,10 @@ export default async function FanWallPage() {
                       rel="noreferrer"
                       className="relative block w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
                     >
-                      <Image
+                      <img
                         src={post.imageUrl}
                         alt={post.caption ?? "Fan photo"}
-                        fill
-                        className="object-cover"
+                        className="h-full w-full object-cover"
                       />
                     </a>
                   ) : (
