@@ -4,6 +4,11 @@ import { supabaseServer } from "@/lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
 
+type ArtistInfo = {
+  name: string;
+  genre: string | null;
+};
+
 type EventRow = {
   id: string;
   event_date: string;
@@ -13,8 +18,8 @@ type EventRow = {
   genre_override: string | null;
   title: string | null;
   notes: string | null;
-  // Supabase join returns an ARRAY of artists, even though there's only one
-  artist: { name: string; genre: string | null }[] | null;
+  // Supabase might return a single object OR an array for the relation
+  artist: ArtistInfo | ArtistInfo[] | null;
 };
 
 function formatDate(dateStr: string) {
@@ -56,7 +61,6 @@ function formatTimeRange(start: string | null, end: string | null) {
     });
   }
 
-  // Both present: format as "7:00–10:00 PM" if same period, otherwise "11:00 AM–1:00 PM"
   const startLabel = startDate!.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
@@ -79,6 +83,15 @@ function formatTimeRange(start: string | null, end: string | null) {
   return `${startCore} ${startPeriod}–${endCore} ${endPeriod}`;
 }
 
+// Normalize artist relation into a single ArtistInfo | null
+function getArtistInfo(artist: EventRow["artist"]): ArtistInfo | null {
+  if (!artist) return null;
+  if (Array.isArray(artist)) {
+    return artist[0] ?? null;
+  }
+  return artist;
+}
+
 export default async function EventsPage() {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -94,12 +107,14 @@ export default async function EventsPage() {
       genre_override,
       title,
       notes,
-      artist:artists!artist_events_artist_id_fkey (
+      artist:artists (
         name,
         genre
       )
     `
     )
+    // Only show events that have a start time
+    .not("start_time", "is", null)
     .gte("event_date", today)
     .order("event_date", { ascending: true })
     .order("start_time", { ascending: true });
@@ -135,8 +150,8 @@ export default async function EventsPage() {
 
         {events.length === 0 ? (
           <p className="text-xs text-slate-400">
-            No upcoming events. Click &ldquo;Add event&rdquo; to schedule your
-            first show.
+            No upcoming events with times set. Click &ldquo;Add event&rdquo; to
+            schedule your first show.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -161,11 +176,10 @@ export default async function EventsPage() {
                     evt.end_time
                   );
 
-                  // Supabase returns artist as an array; use the first
-                  const artistInfo = evt.artist?.[0];
-                  const artistName = artistInfo?.name || "Unknown artist";
+                  const info = getArtistInfo(evt.artist);
+                  const artistName = info?.name || "Unknown artist";
                   const genre =
-                    evt.genre_override || artistInfo?.genre || "—";
+                    evt.genre_override || info?.genre || "—";
 
                   return (
                     <tr
