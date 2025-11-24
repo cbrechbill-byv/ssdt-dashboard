@@ -46,7 +46,7 @@ async function approvePost(formData: FormData) {
     return;
   }
 
-  const supabase = supabaseServer();
+  const supabase = supabaseServer;
 
   const { error } = await supabase
     .from("fan_wall_posts")
@@ -73,7 +73,7 @@ async function hidePost(formData: FormData) {
     return;
   }
 
-  const supabase = supabaseServer();
+  const supabase = supabaseServer;
 
   const { error } = await supabase
     .from("fan_wall_posts")
@@ -96,7 +96,7 @@ async function hidePost(formData: FormData) {
 /* ------------------------------------------------------------------ */
 
 export default async function FanWallPage() {
-  const supabase = supabaseServer();
+  const supabase = supabaseServer;
 
   const { data, error } = await supabase
     .from("fan_wall_posts")
@@ -234,3 +234,4 @@ export default async function FanWallPage() {
     </DashboardShell>
   );
 }
+

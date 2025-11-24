@@ -128,7 +128,7 @@ function formatDateTimeLabel(iso: string | null): string {
 /* ------------------------------------------------------------------ */
 
 export default async function DashboardPage() {
-  const supabase = supabaseServer();
+  const supabase = supabaseServer;
 
   const today = getTodayDateString();
 
@@ -519,3 +519,4 @@ export default async function DashboardPage() {
     </DashboardShell>
   );
 }
+
