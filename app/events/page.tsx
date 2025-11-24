@@ -8,12 +8,12 @@ type EventRow = {
   id: string;
   event_date: string;
   start_time: string | null;
+  end_time: string | null;
   is_cancelled: boolean;
   genre_override: string | null;
   title: string | null;
   notes: string | null;
-  // Supabase join alias `artist:artists(...)` comes back as an array
-  artist: { name: string; genre: string | null }[] | null;
+  artist: { name: string; genre: string | null } | null;
 };
 
 function formatDate(dateStr: string) {
@@ -26,16 +26,56 @@ function formatDate(dateStr: string) {
   });
 }
 
-function formatTime(timeStr: string | null) {
-  if (!timeStr) return "";
-  // assume "HH:MM:SS" from Postgres
-  const [hour, minute] = timeStr.split(":");
+function parseTime(timeStr: string | null) {
+  if (!timeStr) return null;
+  const [hourStr, minuteStr] = timeStr.split(":");
+  const hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
   const d = new Date();
-  d.setHours(parseInt(hour, 10), parseInt(minute, 10), 0, 0);
-  return d.toLocaleTimeString("en-US", {
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
+
+function formatTimeRange(start: string | null, end: string | null) {
+  const startDate = parseTime(start);
+  const endDate = parseTime(end);
+
+  if (!startDate && !endDate) return "—";
+  if (startDate && !endDate) {
+    return startDate.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+  if (!startDate && endDate) {
+    return endDate.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  // Both present: format as "7:00–10:00 PM" if same period, otherwise "11:00 AM–1:00 PM"
+  const startLabel = startDate!.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
   });
+  const endLabel = endDate!.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  const startPeriod = startLabel.includes("AM") ? "AM" : "PM";
+  const endPeriod = endLabel.includes("AM") ? "AM" : "PM";
+
+  const startCore = startLabel.replace(/\s?(AM|PM)/, "");
+  const endCore = endLabel.replace(/\s?(AM|PM)/, "");
+
+  if (startPeriod === endPeriod) {
+    return `${startCore}–${endCore} ${startPeriod}`;
+  }
+
+  return `${startCore} ${startPeriod}–${endCore} ${endPeriod}`;
 }
 
 export default async function EventsPage() {
@@ -44,7 +84,20 @@ export default async function EventsPage() {
   const { data, error } = await supabaseServer
     .from("artist_events")
     .select(
-      "id, event_date, start_time, is_cancelled, genre_override, title, notes, artist:artists(name, genre)"
+      `
+      id,
+      event_date,
+      start_time,
+      end_time,
+      is_cancelled,
+      genre_override,
+      title,
+      notes,
+      artist:artists!artist_events_artist_id_fkey (
+        name,
+        genre
+      )
+    `
     )
     .gte("event_date", today)
     .order("event_date", { ascending: true })
@@ -102,12 +155,13 @@ export default async function EventsPage() {
               <tbody>
                 {events.map((evt) => {
                   const dateLabel = formatDate(evt.event_date);
-                  const timeLabel = formatTime(evt.start_time);
-
-                  // Take the first joined artist (Supabase returns an array)
-                  const artistInfo = evt.artist?.[0];
+                  const timeLabel = formatTimeRange(
+                    evt.start_time,
+                    evt.end_time
+                  );
+                  const artistName = evt.artist?.name || "Unknown artist";
                   const genre =
-                    evt.genre_override || artistInfo?.genre || "—";
+                    evt.genre_override || evt.artist?.genre || "—";
 
                   return (
                     <tr
@@ -118,10 +172,10 @@ export default async function EventsPage() {
                         {dateLabel}
                       </td>
                       <td className="py-2 pr-3 text-[13px] text-slate-700">
-                        {timeLabel || "—"}
+                        {timeLabel}
                       </td>
                       <td className="py-2 pr-3 text-[13px] text-slate-900">
-                        {artistInfo?.name || "Unknown artist"}
+                        {artistName}
                       </td>
                       <td className="py-2 pr-3 text-[13px] text-slate-700">
                         {genre}
