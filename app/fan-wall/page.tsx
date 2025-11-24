@@ -102,143 +102,100 @@ export default async function FanWallPage() {
               Approve Photo Booth shots before they show to guests.
             </p>
           </div>
-          <a
-            href="/fan-wall"
-            className="rounded-full border border-slate-300 px-4 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-          >
-            Refresh
-          </a>
         </div>
 
-        {/* Empty state */}
-        {posts.length === 0 && (
-          <div className="px-6 py-10 text-center text-xs text-slate-400">
-            No fan photos yet. Once guests start posting from the Photo Booth,
-            they&apos;ll appear here for approval.
-          </div>
-        )}
+        {/* List view */}
+        <div className="divide-y divide-slate-100">
+          {posts.length === 0 ? (
+            <div className="px-6 py-10 text-center text-xs text-slate-400">
+              No fan photos yet. Once guests start posting from the Photo Booth,
+              they&apos;ll appear here for approval.
+            </div>
+          ) : (
+            posts.map((post) => {
+              const imageUrl = getPublicFanWallUrl(post.image_path);
 
-        {/* Table / list */}
-        {posts.length > 0 && (
-          <div className="overflow-x-auto">
-            <div className="min-w-[880px]">
-              {/* Column headers */}
-              <div className="grid grid-cols-[150px,1.5fr,130px,160px,160px] gap-4 px-6 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.12em] bg-slate-50 border-b border-slate-100">
-                <div>Photo</div>
-                <div>User</div>
-                <div>Status</div>
-                <div>Created</div>
-                <div className="text-right">Actions</div>
-              </div>
-
-              {/* Rows */}
-              <div className="divide-y divide-slate-100">
-                {posts.map((post) => {
-                  const imageUrl = getPublicFanWallUrl(post.image_path);
-                  const isPending = !post.is_approved;
-
-                  const createdLabel = new Date(
-                    post.created_at
-                  ).toLocaleString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  });
-
-                  return (
-                    <div
-                      key={post.id}
-                      className="grid grid-cols-[150px,1.5fr,130px,160px,160px] gap-4 px-6 py-2 items-center text-xs"
-                    >
-                      {/* PHOTO */}
-                      <div className="flex items-center gap-3">
-                        <div className="relative h-16 w-14 overflow-hidden rounded-xl border border-slate-200 bg-slate-900">
-                          {imageUrl ? (
-                            <Image
-                              src={imageUrl}
-                              alt={post.caption ?? "Fan Wall photo"}
-                              fill
-                              sizes="70px"
-                              className="object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-500">
-                              No image
-                            </div>
-                          )}
-                        </div>
-                        {imageUrl && (
-                          <a
-                            href={imageUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[11px] font-medium text-sky-600 hover:text-sky-500"
-                          >
-                            View full
-                          </a>
-                        )}
+              return (
+                <div
+                  key={post.id}
+                  className="px-6 py-4 flex flex-col sm:flex-row gap-4 sm:items-center"
+                >
+                  {/* Thumbnail */}
+                  <div className="flex-shrink-0">
+                    {imageUrl ? (
+                      <button
+                        type="button"
+                        className="relative w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
+                        onClick={() => {
+                          window.open(imageUrl, "_blank");
+                        }}
+                      >
+                        <Image
+                          src={imageUrl}
+                          alt={post.caption ?? "Fan photo"}
+                          fill
+                          className="object-cover"
+                        />
+                      </button>
+                    ) : (
+                      <div className="w-32 h-32 rounded-xl border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-[11px] text-slate-400">
+                        No image
                       </div>
+                    )}
+                  </div>
 
-                      {/* USER (we’ll wire VIP/guest identity later) */}
-                      <div className="flex flex-col gap-1">
-                        <p className="text-xs font-medium text-slate-900 truncate">
-                          {post.caption || "Sugarshack Downtown Photo Booth"}
+                  {/* Details */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-slate-900 truncate">
+                          {post.caption || "Untitled Fan Wall post"}
                         </p>
-                        <p className="text-[11px] text-slate-500">
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Created{" "}
+                          {new Date(post.created_at).toLocaleString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-slate-400">
                           {post.user_id
-                            ? "Known user (VIP/guest mapping coming later)"
-                            : "Unknown user"}
+                            ? `Linked to rewards user: ${post.user_id}`
+                            : "Guest submission"}
                         </p>
                       </div>
 
-                      {/* STATUS */}
-                      <div>
-                        <span
-                          className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-[11px] font-medium ${
-                            isPending
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-emerald-100 text-emerald-800"
-                          }`}
-                        >
-                          {isPending ? "Pending" : "Approved"}
-                        </span>
-                      </div>
-
-                      {/* CREATED */}
-                      <div className="text-[11px] text-slate-600">
-                        {createdLabel}
-                      </div>
-
-                      {/* ACTIONS */}
-                      <div className="flex items-center justify-end gap-2">
-                        {isPending && (
-                          <form action={approvePost.bind(null, post.id)}>
+                      <div className="flex gap-2 sm:ml-4">
+                        {!post.is_approved && (
+                          <form action={approvePost}>
+                            <input type="hidden" name="id" value={post.id} />
                             <button
                               type="submit"
-                              className="rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700"
+                              className="inline-flex items-center rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-semibold px-3 py-1.5 shadow-sm"
                             >
                               Approve
                             </button>
                           </form>
                         )}
-                        <form action={hidePost.bind(null, post.id)}>
+                        <form action={hidePost}>
+                          <input type="hidden" name="id" value={post.id} />
                           <button
                             type="submit"
-                            className="rounded-full border border-rose-300 px-3 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50"
+                            className="inline-flex items-center rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-[11px] font-semibold text-slate-700 px-3 py-1.5"
                           >
                             Hide
                           </button>
                         </form>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </section>
     </DashboardShell>
   );
