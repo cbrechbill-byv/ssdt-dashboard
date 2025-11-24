@@ -12,10 +12,8 @@ type EventRow = {
   genre_override: string | null;
   title: string | null;
   notes: string | null;
-  artist: {
-    name: string;
-    genre: string | null;
-  } | null;
+  // Supabase join alias `artist:artists(...)` comes back as an array
+  artist: { name: string; genre: string | null }[] | null;
 };
 
 function formatDate(dateStr: string) {
@@ -105,8 +103,11 @@ export default async function EventsPage() {
                 {events.map((evt) => {
                   const dateLabel = formatDate(evt.event_date);
                   const timeLabel = formatTime(evt.start_time);
+
+                  // Take the first joined artist (Supabase returns an array)
+                  const artistInfo = evt.artist?.[0];
                   const genre =
-                    evt.genre_override || evt.artist?.genre || "—";
+                    evt.genre_override || artistInfo?.genre || "—";
 
                   return (
                     <tr
@@ -120,7 +121,7 @@ export default async function EventsPage() {
                         {timeLabel || "—"}
                       </td>
                       <td className="py-2 pr-3 text-[13px] text-slate-900">
-                        {evt.artist?.name || "Unknown artist"}
+                        {artistInfo?.name || "Unknown artist"}
                       </td>
                       <td className="py-2 pr-3 text-[13px] text-slate-700">
                         {genre}
