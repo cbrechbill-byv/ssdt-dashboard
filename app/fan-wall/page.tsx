@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { DashboardShell } from "@/components/layout/DashboardShell";
+import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 export const revalidate = 0; // always fetch fresh data for fan wall

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { DashboardShell } from "@/components/layout/DashboardShell";
+import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
