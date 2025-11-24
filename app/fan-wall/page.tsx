@@ -18,16 +18,20 @@ type FanWallPost = {
 const FAN_WALL_BUCKET =
   process.env.NEXT_PUBLIC_FAN_WALL_BUCKET || "fan-wall-photos";
 
-function buildPublicUrl(imagePath: string | null): string | null {
-  if (!imagePath) return null;
-  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!baseUrl) {
-    console.warn(
-      "[FanWall] Missing NEXT_PUBLIC_SUPABASE_URL env var — cannot build public URL."
-    );
-    return null;
-  }
-  return `${baseUrl}/storage/v1/object/public/${FAN_WALL_BUCKET}/${imagePath}`;
+/* ------------------------------------------------------------------ */
+/*  HELPERS                                                           */
+/* ------------------------------------------------------------------ */
+
+function formatDateEST(iso: string): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -89,7 +93,9 @@ async function hidePost(formData: FormData) {
 /* ------------------------------------------------------------------ */
 
 export default async function FanWallPage() {
-  const { data, error } = await supabaseServer
+  const supabase = supabaseServer;
+
+  const { data, error } = await supabase
     .from("fan_wall_posts")
     .select(
       "id, user_id, image_path, caption, created_at, is_approved, is_hidden"
@@ -103,6 +109,27 @@ export default async function FanWallPage() {
   const posts = ((data ?? []) as FanWallPost[]).filter(
     (p) => !p.is_hidden
   );
+
+  // Attach public URLs via Supabase storage helper
+  const postsWithUrls = posts.map((post) => {
+    const path = post.image_path ?? "";
+    if (!path) {
+      return { ...post, imageUrl: null as string | null };
+    }
+
+    const { data: publicData, error: urlError } = supabase.storage
+      .from(FAN_WALL_BUCKET)
+      .getPublicUrl(path);
+
+    if (urlError) {
+      console.error("[FanWall] getPublicUrl error:", urlError);
+    }
+
+    return {
+      ...post,
+      imageUrl: publicData?.publicUrl ?? null,
+    };
+  });
 
   return (
     <DashboardShell
@@ -124,96 +151,85 @@ export default async function FanWallPage() {
 
         {/* List view */}
         <div className="divide-y divide-slate-100">
-          {posts.length === 0 ? (
+          {postsWithUrls.length === 0 ? (
             <div className="px-6 py-10 text-center text-xs text-slate-400">
               No fan photos yet. Once guests start posting from the Photo Booth,
               they&apos;ll appear here for approval.
             </div>
           ) : (
-            posts.map((post) => {
-              const imageUrl = buildPublicUrl(post.image_path);
+            postsWithUrls.map((post) => (
+              <div
+                key={post.id}
+                className="px-6 py-4 flex flex-col sm:flex-row gap-4 sm:items-center"
+              >
+                {/* Thumbnail */}
+                <div className="flex-shrink-0">
+                  {post.imageUrl ? (
+                    <a
+                      href={post.imageUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="relative block w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
+                    >
+                      <Image
+                        src={post.imageUrl}
+                        alt={post.caption ?? "Fan photo"}
+                        fill
+                        className="object-cover"
+                      />
+                    </a>
+                  ) : (
+                    <div className="w-32 h-32 rounded-xl border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-[11px] text-slate-400">
+                      No image
+                    </div>
+                  )}
+                </div>
 
-              return (
-                <div
-                  key={post.id}
-                  className="px-6 py-4 flex flex-col sm:flex-row gap-4 sm:items-center"
-                >
-                  {/* Thumbnail */}
-                  <div className="flex-shrink-0">
-                    {imageUrl ? (
-                      <a
-                        href={imageUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="relative block w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
-                      >
-                        <Image
-                          src={imageUrl}
-                          alt={post.caption ?? "Fan photo"}
-                          fill
-                          className="object-cover"
-                        />
-                      </a>
-                    ) : (
-                      <div className="w-32 h-32 rounded-xl border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-[11px] text-slate-400">
-                        No image
-                      </div>
-                    )}
-                  </div>
+                {/* Details */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-slate-900 truncate">
+                        {post.caption || "Untitled Fan Wall post"}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Created {formatDateEST(post.created_at)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        {post.user_id
+                          ? `Linked to rewards user: ${post.user_id}`
+                          : "Guest submission"}
+                      </p>
+                    </div>
 
-                  {/* Details */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[13px] font-semibold text-slate-900 truncate">
-                          {post.caption || "Untitled Fan Wall post"}
-                        </p>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          Created{" "}
-                          {new Date(post.created_at).toLocaleString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-400">
-                          {post.user_id
-                            ? `Linked to rewards user: ${post.user_id}`
-                            : "Guest submission"}
-                        </p>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex gap-2 sm:ml-4">
-                        {!post.is_approved && (
-                          <form action={approvePost}>
-                            <input type="hidden" name="id" value={post.id} />
-                            <button
-                              type="submit"
-                              className="inline-flex items-center rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-semibold px-3 py-1.5 shadow-sm"
-                            >
-                              Approve
-                            </button>
-                          </form>
-                        )}
-
-                        <form action={hidePost}>
+                    {/* Actions */}
+                    <div className="flex gap-2 sm:ml-4">
+                      {!post.is_approved && (
+                        <form action={approvePost}>
                           <input type="hidden" name="id" value={post.id} />
                           <button
                             type="submit"
-                            className="inline-flex items-center rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-[11px] font-semibold text-slate-700 px-3 py-1.5"
+                            className="inline-flex items-center rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-semibold px-3 py-1.5 shadow-sm"
                           >
-                            Hide
+                            Approve
                           </button>
                         </form>
-                      </div>
+                      )}
+
+                      <form action={hidePost}>
+                        <input type="hidden" name="id" value={post.id} />
+                        <button
+                          type="submit"
+                          className="inline-flex items-center rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-[11px] font-semibold text-slate-700 px-3 py-1.5"
+                        >
+                          Hide
+                        </button>
+                      </form>
                     </div>
                   </div>
                 </div>
-              );
-            })
+              </div>
+            ))
           )}
         </div>
       </section>

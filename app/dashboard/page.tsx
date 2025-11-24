@@ -24,12 +24,6 @@ type RewardsUserOverview = {
   last_scan_at: string | null;
 };
 
-type FanWallPost = {
-  id: string;
-  is_approved: boolean;
-  is_hidden: boolean;
-};
-
 type VipListRow = {
   phoneLabel: string;
   nameLabel: string;
@@ -233,25 +227,47 @@ export default async function DashboardPage() {
 
   // ---------------------------------------------------------------------------
   // 3) Fan wall stats (for the "Fan Wall moderation" dashboard card)
+  //    Use count-only queries so counts always match the table.
   // ---------------------------------------------------------------------------
 
-  const { data: fanWallRows, error: fanWallError } = await supabase
-    .from("fan_wall_posts")
-    .select("id, is_approved, is_hidden");
+  const [
+    { count: pendingCount, error: pendingError },
+    { count: liveCount, error: liveError },
+    { count: hiddenCount, error: hiddenError },
+    { count: totalCount, error: totalError },
+  ] = await Promise.all([
+    supabase
+      .from("fan_wall_posts")
+      .select("id", { count: "exact", head: true })
+      .eq("is_approved", false)
+      .eq("is_hidden", false),
+    supabase
+      .from("fan_wall_posts")
+      .select("id", { count: "exact", head: true })
+      .eq("is_approved", true)
+      .eq("is_hidden", false),
+    supabase
+      .from("fan_wall_posts")
+      .select("id", { count: "exact", head: true })
+      .eq("is_hidden", true),
+    supabase
+      .from("fan_wall_posts")
+      .select("id", { count: "exact", head: true }),
+  ]);
 
-  if (fanWallError) {
-    console.error("[Dashboard] fan wall stats error:", fanWallError);
+  if (pendingError || liveError || hiddenError || totalError) {
+    console.error("[Dashboard] Fan wall stats error:", {
+      pendingError,
+      liveError,
+      hiddenError,
+      totalError,
+    });
   }
 
-  const fanPosts = (fanWallRows ?? []) as FanWallPost[];
-  const fanTotal = fanPosts.length;
-  const fanPending = fanPosts.filter(
-    (p) => !p.is_hidden && !p.is_approved
-  ).length;
-  const fanLive = fanPosts.filter(
-    (p) => !p.is_hidden && p.is_approved
-  ).length;
-  const fanHidden = fanPosts.filter((p) => p.is_hidden).length;
+  const fanPending = pendingCount ?? 0;
+  const fanLive = liveCount ?? 0;
+  const fanHidden = hiddenCount ?? 0;
+  const fanTotal = totalCount ?? 0;
 
   // ---------------------------------------------------------------------------
   // 4) VIP list (Top 5 — list view, will get long over time)
