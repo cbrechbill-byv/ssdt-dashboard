@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { DashboardShell } from "@/components/layout/DashboardShell";
+import DashboardShell from "@/components/layout/DashboardShell";
 
 type Audience = "all" | "vip" | "test";
 
