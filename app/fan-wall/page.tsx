@@ -3,6 +3,8 @@ import { revalidatePath } from "next/cache";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
+export const revalidate = 0; // always fetch fresh data for fan wall
+
 type FanWallPost = {
   id: string;
   user_id: string | null;
@@ -14,32 +16,34 @@ type FanWallPost = {
 };
 
 const FAN_WALL_BUCKET =
-  process.env.NEXT_PUBLIC_FAN_WALL_BUCKET ?? "fan-wall-photos";
+  process.env.NEXT_PUBLIC_FAN_WALL_BUCKET || "fan-wall-photos";
 
-/** Build a public URL using Supabase storage helper so bucket/path are always correct */
-function getPublicFanWallUrl(imagePath: string | null): string | null {
+function buildPublicUrl(imagePath: string | null): string | null {
   if (!imagePath) return null;
-
-  try {
-    const { data } = supabaseServer.storage
-      .from(FAN_WALL_BUCKET)
-      .getPublicUrl(imagePath);
-
-    return data?.publicUrl ?? null;
-  } catch (err) {
-    console.error("[FanWall] getPublicUrl error:", err);
+  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!baseUrl) {
+    console.warn(
+      "[FanWall] Missing NEXT_PUBLIC_SUPABASE_URL env var — cannot build public URL."
+    );
     return null;
   }
+  return `${baseUrl}/storage/v1/object/public/${FAN_WALL_BUCKET}/${imagePath}`;
 }
 
 /* ------------------------------------------------------------------ */
-/*  SERVER ACTIONS                                                     */
+/*  SERVER ACTIONS (MUST ACCEPT FormData)                             */
 /* ------------------------------------------------------------------ */
 
-async function approvePost(id: string) {
+async function approvePost(formData: FormData) {
   "use server";
 
-  await supabaseServer
+  const id = formData.get("id");
+  if (!id || typeof id !== "string") {
+    console.error("[FanWall] approvePost: missing or invalid id");
+    return;
+  }
+
+  const { error } = await supabaseServer
     .from("fan_wall_posts")
     .update({
       is_approved: true,
@@ -47,14 +51,24 @@ async function approvePost(id: string) {
     })
     .eq("id", id);
 
+  if (error) {
+    console.error("[FanWall] approvePost error:", error);
+  }
+
   revalidatePath("/fan-wall");
   revalidatePath("/dashboard");
 }
 
-async function hidePost(id: string) {
+async function hidePost(formData: FormData) {
   "use server";
 
-  await supabaseServer
+  const id = formData.get("id");
+  if (!id || typeof id !== "string") {
+    console.error("[FanWall] hidePost: missing or invalid id");
+    return;
+  }
+
+  const { error } = await supabaseServer
     .from("fan_wall_posts")
     .update({
       is_hidden: true,
@@ -62,12 +76,16 @@ async function hidePost(id: string) {
     })
     .eq("id", id);
 
+  if (error) {
+    console.error("[FanWall] hidePost error:", error);
+  }
+
   revalidatePath("/fan-wall");
   revalidatePath("/dashboard");
 }
 
 /* ------------------------------------------------------------------ */
-/*  PAGE                                                               */
+/*  PAGE                                                              */
 /* ------------------------------------------------------------------ */
 
 export default async function FanWallPage() {
@@ -113,7 +131,7 @@ export default async function FanWallPage() {
             </div>
           ) : (
             posts.map((post) => {
-              const imageUrl = getPublicFanWallUrl(post.image_path);
+              const imageUrl = buildPublicUrl(post.image_path);
 
               return (
                 <div
@@ -127,6 +145,7 @@ export default async function FanWallPage() {
                         type="button"
                         className="relative w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
                         onClick={() => {
+                          // open full image in new tab
                           window.open(imageUrl, "_blank");
                         }}
                       >
@@ -156,6 +175,7 @@ export default async function FanWallPage() {
                           {new Date(post.created_at).toLocaleString("en-US", {
                             month: "short",
                             day: "numeric",
+                            year: "numeric",
                             hour: "numeric",
                             minute: "2-digit",
                           })}
@@ -167,6 +187,7 @@ export default async function FanWallPage() {
                         </p>
                       </div>
 
+                      {/* Actions */}
                       <div className="flex gap-2 sm:ml-4">
                         {!post.is_approved && (
                           <form action={approvePost}>
@@ -179,6 +200,7 @@ export default async function FanWallPage() {
                             </button>
                           </form>
                         )}
+
                         <form action={hidePost}>
                           <input type="hidden" name="id" value={post.id} />
                           <button
