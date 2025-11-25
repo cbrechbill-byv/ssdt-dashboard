@@ -7,7 +7,6 @@ type EventArtist = {
   genre: string | null;
 };
 
-// Supabase may return a single object or an array depending on the relationship
 type EventRow = {
   id: string;
   event_date: string;
@@ -33,7 +32,6 @@ function formatDate(isoDate: string | null): string {
 
 function formatTime(isoTime: string | null): string {
   if (!isoTime) return "—";
-  // Expecting "HH:MM:SS" or "HH:MM" from Postgres
   const [h, m] = isoTime.split(":");
   if (!h || !m) return isoTime;
   const d = new Date();
@@ -63,7 +61,6 @@ function getArtistNames(artist: EventRow["artist"]): string {
     return names.join(", ");
   }
 
-  // Single object case
   if (artist.name && artist.name.trim().length > 0) {
     return artist.name;
   }
@@ -83,11 +80,9 @@ function getArtistGenre(evt: EventRow): string {
       .map((a) => a?.genre?.trim())
       .filter((g): g is string => !!g);
     if (genres.length === 0) return "—";
-    // If multiple, join with commas
     return genres.join(", ");
   }
 
-  // Single object case
   return artist.genre || "—";
 }
 
@@ -112,7 +107,6 @@ export default async function EventsPage() {
       )
     `
     )
-    // Only show events that have a start time
     .not("start_time", "is", null)
     .gte("event_date", today)
     .order("event_date", { ascending: true })
@@ -124,14 +118,17 @@ export default async function EventsPage() {
 
   const events = (data ?? []) as EventRow[];
 
+  const firstArtistRaw =
+    events.length > 0 ? JSON.stringify(events[0]?.artist, null, 2) : null;
+
   return (
     <DashboardShell
       title="Events"
       subtitle="Manage the Sugarshack Downtown live music calendar."
       activeTab="events"
     >
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-        <div className="flex items-center justify-between mb-3">
+      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4 space-y-3">
+        <div className="flex items-center justify-between">
           <div>
             <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
               Upcoming shows
@@ -149,10 +146,22 @@ export default async function EventsPage() {
         </div>
 
         {error && (
-          <p className="mb-3 text-xs text-rose-600">
+          <p className="text-xs text-rose-600">
             There was a problem loading events:{" "}
             <span className="font-mono">{error.message}</span>
           </p>
+        )}
+
+        {/* Tiny debug helper to see raw artist payload from Supabase */}
+        {firstArtistRaw && (
+          <details className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+            <summary className="cursor-pointer select-none">
+              Developer debug: first event&apos;s raw artist data
+            </summary>
+            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[10px]">
+              {firstArtistRaw}
+            </pre>
+          </details>
         )}
 
         {events.length === 0 && !error ? (
@@ -186,10 +195,8 @@ export default async function EventsPage() {
                     evt.start_time,
                     evt.end_time
                   );
-
                   const artistName = getArtistNames(evt.artist);
                   const genre = getArtistGenre(evt);
-
                   const statusLabel = evt.is_cancelled
                     ? "Cancelled"
                     : "Scheduled";

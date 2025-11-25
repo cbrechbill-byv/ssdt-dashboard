@@ -1,7 +1,7 @@
-import { notFound, redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 type Artist = {
   id: string;
@@ -18,7 +18,10 @@ type Artist = {
   is_active: boolean;
 };
 
-async function loadArtist(id: string): Promise<Artist> {
+async function fetchArtist(id: string): Promise<{
+  artist: Artist | null;
+  errorMessage: string | null;
+}> {
   const { data, error } = await supabaseServer
     .from("artists")
     .select(
@@ -42,13 +45,23 @@ async function loadArtist(id: string): Promise<Artist> {
 
   if (error) {
     console.error("[Artist edit] load error:", error);
+    return {
+      artist: null,
+      errorMessage: error.message,
+    };
   }
 
   if (!data) {
-    notFound();
+    return {
+      artist: null,
+      errorMessage: "No artist found for this id.",
+    };
   }
 
-  return data as Artist;
+  return {
+    artist: data as Artist,
+    errorMessage: null,
+  };
 }
 
 export default async function ArtistEditPage({
@@ -56,7 +69,7 @@ export default async function ArtistEditPage({
 }: {
   params: { id: string };
 }) {
-  const artist = await loadArtist(params.id);
+  const { artist, errorMessage } = await fetchArtist(params.id);
 
   async function updateArtist(formData: FormData) {
     "use server";
@@ -112,6 +125,41 @@ export default async function ArtistEditPage({
     redirect("/artists");
   }
 
+  // If we couldn’t load the artist, show a clear error instead of a 404
+  if (!artist) {
+    return (
+      <DashboardShell
+        title="Edit artist"
+        subtitle="Unable to load artist"
+        activeTab="artists"
+      >
+        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">
+          <p className="font-semibold mb-1">Could not load artist</p>
+          <p className="mb-1">
+            ID: <code className="font-mono text-xs">{params.id}</code>
+          </p>
+          {errorMessage && (
+            <p className="text-xs">
+              Supabase error:{" "}
+              <span className="font-mono">{errorMessage}</span>
+            </p>
+          )}
+          {!errorMessage && (
+            <p className="text-xs">
+              No artist was found for this id. Double-check the record exists.
+            </p>
+          )}
+          <a
+            href="/artists"
+            className="mt-3 inline-flex items-center rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100"
+          >
+            Back to artists
+          </a>
+        </section>
+      </DashboardShell>
+    );
+  }
+
   return (
     <DashboardShell
       title="Edit artist"
@@ -123,15 +171,13 @@ export default async function ArtistEditPage({
 
         {/* Core details */}
         <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Artist details
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Update how this artist appears in the app.
-              </p>
-            </div>
+          <div className="mb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Artist details
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Update how this artist appears in the app.
+            </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -165,9 +211,6 @@ export default async function ArtistEditPage({
                 placeholder="e.g. the-movement"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
-              <p className="text-[11px] text-slate-400">
-                Used for pretty URLs or deep links. You can leave this blank.
-              </p>
             </div>
 
             <div className="space-y-1.5">
@@ -200,9 +243,6 @@ export default async function ArtistEditPage({
                 placeholder="e.g. artists/the-movement.jpg"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
-              <p className="text-[11px] text-slate-400">
-                Relative path in your storage bucket or CDN.
-              </p>
             </div>
 
             <div className="md:col-span-2 space-y-1.5">
