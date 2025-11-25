@@ -1,150 +1,206 @@
-import React from "react";
 import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-type EventRecord = {
+type ArtistRef = {
+  name: string | null;
+  genre: string | null;
+} | null;
+
+type EventRow = {
   id: string;
-  event_date?: string | null;
-  start_time?: string | null;
-  end_time?: string | null;
-  title?: string | null;
-  genre_label?: string | null;
-  notes?: string | null;
-  status?: string | null;
-  artist_name?: string | null;
+  event_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  is_cancelled: boolean;
+  genre_override: string | null;
+  title: string | null;
+  notes: string | null;
+  artist: ArtistRef;
 };
 
-export const dynamic = "force-dynamic";
+function formatDate(isoDate: string | null): string {
+  if (!isoDate) return "—";
+  const d = new Date(isoDate);
+  if (Number.isNaN(d.getTime())) return isoDate;
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTime(isoTime: string | null): string {
+  if (!isoTime) return "—";
+  // Expecting "HH:MM:SS" or "HH:MM" from Postgres
+  const [h, m] = isoTime.split(":");
+  if (!h || !m) return isoTime;
+  const d = new Date();
+  d.setHours(Number(h), Number(m), 0, 0);
+  return d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatTimeRange(
+  start: string | null,
+  end: string | null
+): string {
+  const startLabel = formatTime(start);
+  const endLabel = formatTime(end);
+  if (start && end) return `${startLabel}–${endLabel}`;
+  if (start) return startLabel;
+  return "TBD";
+}
+
+function getArtistInfo(artist: ArtistRef): ArtistRef {
+  if (!artist) return null;
+  return artist;
+}
 
 export default async function EventsPage() {
-  // Very simple: grab all rows from `events`, no filters
+  const today = new Date().toISOString().slice(0, 10);
+
   const { data, error } = await supabaseServer
-    .from("events")
-    .select("*")
+    .from("artist_events")
+    .select(
+      `
+      id,
+      event_date,
+      start_time,
+      end_time,
+      is_cancelled,
+      genre_override,
+      title,
+      notes,
+      artist:artists (
+        name,
+        genre
+      )
+    `
+    )
+    // Only show events that have a start time
+    .not("start_time", "is", null)
+    .gte("event_date", today)
     .order("event_date", { ascending: true })
     .order("start_time", { ascending: true });
 
   if (error) {
-    console.error("Error loading events:", error);
+    console.error("[Events] load error:", error);
   }
 
-  const events: EventRecord[] = (data ?? []) as EventRecord[];
+  const events = (data ?? []) as EventRow[];
 
   return (
     <DashboardShell
       title="Events"
-      subtitle="Manage shows that appear on the Tonight screen and Calendar."
+      subtitle="Manage the Sugarshack Downtown live music calendar."
       activeTab="events"
     >
-      <section className="space-y-6">
-        <div className="flex items-center justify-between">
+      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
+        <div className="flex items-center justify-between mb-3">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
               Upcoming shows
-            </h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Edit dates, times, and details for Sugarshack Downtown events.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              These dates drive the Tonight screen and Calendar in the app.
             </p>
           </div>
-
           <Link
             href="/events/new"
-            className="inline-flex items-center rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm hover:bg-amber-300"
+            className="inline-flex items-center rounded-full bg-amber-400 hover:bg-amber-500 text-slate-900 text-xs font-semibold px-3 py-1.5 shadow-sm"
           >
             + Add event
           </Link>
         </div>
 
-        <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/60">
-          <table className="min-w-full divide-y divide-slate-800 text-sm">
-            <thead className="bg-slate-950/80">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Time
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Artist
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Title
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-900/60 bg-slate-950/40">
-              {events.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-6 py-10 text-center text-sm text-slate-400"
-                  >
-                    No events found yet. Use{" "}
-                    <span className="font-semibold">“Add event”</span> to create
-                    your first show.
-                  </td>
+        {events.length === 0 ? (
+          <p className="text-xs text-slate-400">
+            No upcoming events with times set. Click &ldquo;Add event&rdquo; to
+            schedule your first show.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-[0.12em] text-slate-500 border-b border-slate-100">
+                  <th className="py-2 pr-3 text-left font-semibold">Date</th>
+                  <th className="py-2 pr-3 text-left font-semibold">Time</th>
+                  <th className="py-2 pr-3 text-left font-semibold">Artist</th>
+                  <th className="py-2 pr-3 text-left font-semibold">Genre</th>
+                  <th className="py-2 pr-3 text-left font-semibold">Title</th>
+                  <th className="py-2 pr-3 text-left font-semibold">Notes</th>
+                  <th className="py-2 text-right font-semibold">Status</th>
+                  <th className="py-2 text-right font-semibold">Actions</th>
                 </tr>
-              ) : (
-                events.map((event) => {
-                  const dateLabel =
-                    event.event_date &&
-                    new Date(event.event_date).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    });
+              </thead>
+              <tbody>
+                {events.map((evt) => {
+                  const dateLabel = formatDate(evt.event_date);
+                  const timeLabel = formatTimeRange(
+                    evt.start_time,
+                    evt.end_time
+                  );
 
-                  const timeLabel = [
-                    event.start_time,
-                    event.end_time ? `– ${event.end_time}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" ");
+                  const info = getArtistInfo(evt.artist);
+                  const artistName = info?.name || "Unknown artist";
+                  const genre =
+                    evt.genre_override || info?.genre || "—";
 
-                  const statusLabel = event.status ?? "Scheduled";
+                  const statusLabel = evt.is_cancelled
+                    ? "Cancelled"
+                    : "Scheduled";
+                  const statusClass = evt.is_cancelled
+                    ? "bg-rose-100 text-rose-700"
+                    : "bg-emerald-100 text-emerald-700";
 
                   return (
-                    <tr key={event.id}>
-                      <td className="px-6 py-3 align-middle text-sm text-slate-50">
-                        {dateLabel || "—"}
+                    <tr
+                      key={evt.id}
+                      className="border-b border-slate-100 last:border-0"
+                    >
+                      <td className="py-2 pr-3 align-top whitespace-nowrap">
+                        {dateLabel}
                       </td>
-                      <td className="px-6 py-3 align-middle text-sm text-slate-50">
-                        {timeLabel || "—"}
+                      <td className="py-2 pr-3 align-top whitespace-nowrap">
+                        {timeLabel}
                       </td>
-                      <td className="px-6 py-3 align-middle text-sm text-slate-50">
-                        {event.artist_name || "Unknown artist"}
+                      <td className="py-2 pr-3 align-top whitespace-nowrap">
+                        {artistName}
                       </td>
-                      <td className="px-6 py-3 align-middle text-sm text-slate-50">
-                        {event.title || "—"}
+                      <td className="py-2 pr-3 align-top whitespace-nowrap">
+                        {genre}
                       </td>
-                      <td className="px-6 py-3 align-middle">
-                        <span className="inline-flex rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-emerald-500/40">
+                      <td className="py-2 pr-3 align-top">
+                        {evt.title || "—"}
+                      </td>
+                      <td className="py-2 pr-3 align-top">
+                        {evt.notes || "—"}
+                      </td>
+                      <td className="py-2 pr-3 align-top text-right whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}
+                        >
                           {statusLabel}
                         </span>
                       </td>
-                      <td className="px-6 py-3 align-middle text-right">
-                        <Link
-                          href={`/events/${event.id}`}
-                          className="text-xs font-semibold text-amber-300 hover:text-amber-200"
+                      <td className="py-2 pl-3 align-top text-right whitespace-nowrap">
+                        <a
+                          href={`/events/${evt.id}`}
+                          className="text-xs font-semibold text-slate-700 hover:text-slate-900 hover:underline"
                         >
                           Edit
-                        </Link>
+                        </a>
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </DashboardShell>
   );
