@@ -1,9 +1,12 @@
-import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
+export const dynamic = "force-dynamic";
+
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import ArtistImageUploader from "@/components/artists/ArtistImageUploader";
 
-export default function ArtistNewPage() {
+export default function NewArtistPage() {
   async function createArtist(formData: FormData) {
     "use server";
 
@@ -24,26 +27,25 @@ export default function ArtistNewPage() {
     const image_path =
       formData.get("image_path")?.toString().trim() || null;
 
-    const is_active_value = formData.get("is_active");
-    const is_active = is_active_value === "on";
-
     if (!name) {
       throw new Error("Artist name is required.");
     }
 
-    const { error } = await supabaseServer.from("artists").insert({
-      name,
-      slug,
-      genre,
-      bio,
-      website_url,
-      instagram_url,
-      facebook_url,
-      tiktok_url,
-      spotify_url,
-      image_path,
-      is_active,
-    });
+    const { error } = await supabaseServer.from("artists").insert([
+      {
+        name,
+        slug,
+        genre,
+        bio,
+        website_url,
+        instagram_url,
+        facebook_url,
+        tiktok_url,
+        spotify_url,
+        image_path,
+        is_active: true,
+      },
+    ]);
 
     if (error) {
       console.error("[Artist new] insert error:", error);
@@ -57,21 +59,19 @@ export default function ArtistNewPage() {
   return (
     <DashboardShell
       title="Add artist"
-      subtitle="Create a new artist profile for Sugarshack Downtown."
+      subtitle="Create a new artist profile for the app."
       activeTab="artists"
     >
       <form action={createArtist} className="space-y-4">
         {/* Core details */}
-        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Artist details
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Start with the basics. You can always edit later.
-              </p>
-            </div>
+        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm space-y-4">
+          <div className="mb-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Artist details
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Name, genre, bio, and image are shown in the app.
+            </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -104,9 +104,6 @@ export default function ArtistNewPage() {
                 placeholder="e.g. the-movement"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
-              <p className="text-[11px] text-slate-400">
-                Used for pretty URLs or deep links. You can leave this blank.
-              </p>
             </div>
 
             <div className="space-y-1.5">
@@ -124,23 +121,13 @@ export default function ArtistNewPage() {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label
-                htmlFor="image_path"
-                className="text-xs font-medium text-slate-800"
-              >
-                Image path
-              </label>
-              <input
-                id="image_path"
-                name="image_path"
-                placeholder="e.g. artists/the-movement.jpg"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
-              />
-              <p className="text-[11px] text-slate-400">
-                Relative path in your storage bucket or CDN.
-              </p>
-            </div>
+            {/* For new artist, we pass a generic label; image filename uses slugified version internally */}
+            <ArtistImageUploader
+              artistName="New artist"
+              slug={null}
+              initialPath={null}
+              fieldName="image_path"
+            />
 
             <div className="md:col-span-2 space-y-1.5">
               <label
@@ -153,7 +140,7 @@ export default function ArtistNewPage() {
                 id="bio"
                 name="bio"
                 rows={4}
-                placeholder="Short description that appears on the Artist screen."
+                placeholder="Short description shown in artist profile."
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
             </div>
@@ -243,33 +230,6 @@ export default function ArtistNewPage() {
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
             </div>
-          </div>
-        </section>
-
-        {/* Status + actions */}
-        <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-slate-800">
-              Visibility & status
-            </p>
-            <p className="text-[11px] text-slate-500">
-              New artists are active by default.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              id="is_active"
-              name="is_active"
-              type="checkbox"
-              defaultChecked
-              className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-400"
-            />
-            <label
-              htmlFor="is_active"
-              className="text-xs font-medium text-slate-800"
-            >
-              Artist is active and should appear in the app
-            </label>
           </div>
         </section>
 

@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 type DashboardTab =
   | "dashboard"
@@ -34,35 +34,56 @@ export default function DashboardShell({
   children,
 }: DashboardShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    try {
+      await fetch("/api/logout", { method: "POST" });
+    } catch (e) {
+      console.error("[DashboardShell] Logout error:", e);
+    } finally {
+      router.push("/login");
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
-          {/* Logo + title */}
-          <div className="flex items-center gap-3 sm:gap-4">
-            <Link
-              href="/dashboard"
-              className="flex items-center rounded-full bg-black px-3 py-1.5 shadow-sm hover:bg-slate-900"
-            >
-              <Image
-                src="/ssdt-logo.png"
-                alt="Sugarshack Downtown"
-                width={200}
-                height={64}
-                priority
-                className="h-10 w-auto sm:h-12 md:h-14"
-              />
-            </Link>
-            <div className="flex flex-col">
-              <h1 className="text-sm font-semibold text-slate-900 sm:text-base">
-                Sugarshack Downtown VIP Dashboard
-              </h1>
-              <p className="text-[11px] text-slate-500 sm:text-xs">
-                {title}
-                {subtitle ? ` · ${subtitle}` : null}
-              </p>
+          {/* Top row: logo, title, logout */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <Link
+                href="/dashboard"
+                className="flex items-center rounded-full bg-black px-3 py-1.5 shadow-sm hover:bg-slate-900"
+              >
+                <Image
+                  src="/ssdt-logo.png"
+                  alt="Sugarshack Downtown"
+                  width={200}
+                  height={64}
+                  priority
+                  className="h-10 w-auto sm:h-12 md:h-14"
+                />
+              </Link>
+              <div className="flex flex-col">
+                <h1 className="text-sm font-semibold text-slate-900 sm:text-base">
+                  Sugarshack Downtown VIP Dashboard
+                </h1>
+                <p className="text-[11px] text-slate-500 sm:text-xs">
+                  {title}
+                  {subtitle ? ` · ${subtitle}` : null}
+                </p>
+              </div>
             </div>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-amber-300 hover:bg-amber-50"
+            >
+              Log out
+            </button>
           </div>
 
           {/* Navigation pills */}
