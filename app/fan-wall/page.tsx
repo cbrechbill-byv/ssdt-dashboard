@@ -133,7 +133,7 @@ export default async function FanWallPage() {
   return (
     <DashboardShell
       title="Fan Wall"
-      subtitle="Review and approve Photo Booth shots before they appear in the app."
+      subtitle="Review and approve Photo Booth shots before they appear in the app." activeTab="fan-wall"
     >
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm">
         {/* Header */}
