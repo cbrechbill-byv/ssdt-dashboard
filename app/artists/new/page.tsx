@@ -1,3 +1,6 @@
+"use client";
+
+
 import { redirect } from "next/navigation";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
