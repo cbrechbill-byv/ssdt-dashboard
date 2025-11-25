@@ -13,7 +13,8 @@ export const dynamic = "force-dynamic";
 
 export default async function VipDetailPage({ params }: VipDetailPageProps) {
   const { userId } = params;
-  const supabase = supabaseServer();
+  // NOTE: supabaseServer is already a client instance, no ()
+  const supabase = supabaseServer;
 
   // Basic VIP info from rewards_users
   const { data: vip, error } = await supabase
