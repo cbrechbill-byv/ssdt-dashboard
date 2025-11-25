@@ -71,7 +71,6 @@ export default async function NewEventPage() {
       title="Add event"
       subtitle="Schedule a new show for Sugarshack Downtown."
       activeTab="events"
-      primaryAction={undefined}
     >
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4 max-w-xl">
         <form action={createEvent} className="space-y-4">
