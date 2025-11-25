@@ -55,11 +55,11 @@ export default async function ArtistsPage() {
   return (
     <DashboardShell
       title="Artists"
-      subtitle="These artists drive the Tonight, Calendar, and Artist pages in the app."
+      subtitle="These artists drive Tonight, Calendar, and the Artist pages in the app."
       activeTab="artists"
     >
       <section className="space-y-4">
-        {/* Top header card */}
+        {/* Top summary + Add button */}
         <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1.5">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -71,24 +71,22 @@ export default async function ArtistsPage() {
             </p>
             {totalCount > 0 && (
               <p className="text-[11px] text-slate-400">
-                {activeCount} active of {totalCount} total artists
+                {activeCount} active · {totalCount} total
               </p>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/artists/new"
-              className="inline-flex items-center rounded-full bg-amber-400 px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-sm hover:bg-amber-300"
-            >
-              + Add artist
-            </Link>
-          </div>
+          <Link
+            href="/artists/new"
+            className="inline-flex items-center rounded-full bg-amber-400 px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-sm hover:bg-amber-300"
+          >
+            + Add artist
+          </Link>
         </div>
 
         {/* Main table card */}
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-2.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
               All artists
             </p>
           </div>
@@ -146,18 +144,11 @@ export default async function ArtistsPage() {
                             <span className="text-sm font-medium text-slate-900">
                               {artist.name || "Untitled artist"}
                             </span>
-                            <div className="mt-0.5 flex flex-wrap gap-1">
-                              {artist.slug && (
-                                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-[2px] text-[10px] font-medium text-slate-600">
-                                  {artist.slug}
-                                </span>
-                              )}
-                              {!artist.is_active && (
-                                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-[2px] text-[10px] font-medium text-slate-500">
-                                  Inactive
-                                </span>
-                              )}
-                            </div>
+                            {!artist.is_active && (
+                              <span className="mt-0.5 text-[11px] text-slate-400">
+                                Inactive
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="px-3 py-2 align-top whitespace-nowrap text-xs text-slate-700">

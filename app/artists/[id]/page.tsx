@@ -18,7 +18,7 @@ type Artist = {
   is_active: boolean;
 };
 
-async function getArtist(id: string): Promise<Artist> {
+async function loadArtist(id: string): Promise<Artist> {
   const { data, error } = await supabaseServer
     .from("artists")
     .select(
@@ -56,7 +56,7 @@ export default async function ArtistEditPage({
 }: {
   params: { id: string };
 }) {
-  const artist = await getArtist(params.id);
+  const artist = await loadArtist(params.id);
 
   async function updateArtist(formData: FormData) {
     "use server";
@@ -83,7 +83,6 @@ export default async function ArtistEditPage({
     const is_active = is_active_value === "on";
 
     if (!id || !name) {
-      // Basic guard; in a real app you'd handle validation more elegantly
       throw new Error("Artist name is required.");
     }
 
@@ -115,13 +114,14 @@ export default async function ArtistEditPage({
 
   return (
     <DashboardShell
-      title={`Edit artist`}
+      title="Edit artist"
       subtitle={artist.name}
       activeTab="artists"
     >
       <form action={updateArtist} className="space-y-4">
         <input type="hidden" name="id" defaultValue={artist.id} />
 
+        {/* Core details */}
         <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -129,8 +129,7 @@ export default async function ArtistEditPage({
                 Artist details
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Update how this artist appears in the app. Changes go live as
-                soon as you save.
+                Update how this artist appears in the app.
               </p>
             </div>
           </div>
@@ -167,8 +166,7 @@ export default async function ArtistEditPage({
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
               <p className="text-[11px] text-slate-400">
-                Used for pretty URLs or deep links. Leave blank to generate
-                automatically.
+                Used for pretty URLs or deep links. You can leave this blank.
               </p>
             </div>
 
@@ -203,7 +201,7 @@ export default async function ArtistEditPage({
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
               <p className="text-[11px] text-slate-400">
-                Relative path in your Supabase storage bucket or CDN.
+                Relative path in your storage bucket or CDN.
               </p>
             </div>
 
@@ -221,20 +219,15 @@ export default async function ArtistEditPage({
                 rows={4}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
-              <p className="text-[11px] text-slate-400">
-                Short description that visitors see on the Artist screen.
-              </p>
             </div>
           </div>
         </section>
 
+        {/* Links & socials */}
         <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
           <div className="mb-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
               Links & social
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Add links that help fans follow and find the artist.
             </p>
           </div>
 
@@ -321,14 +314,14 @@ export default async function ArtistEditPage({
           </div>
         </section>
 
+        {/* Status + actions */}
         <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
           <div className="space-y-1">
             <p className="text-xs font-medium text-slate-800">
               Visibility & status
             </p>
             <p className="text-[11px] text-slate-500">
-              Use this toggle to temporarily hide an artist from the app
-              without deleting them.
+              Use this toggle to hide or show the artist in the app.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -349,18 +342,12 @@ export default async function ArtistEditPage({
         </section>
 
         <div className="flex flex-wrap justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              // simple client-side back; fine as a progressive enhancement
-              if (typeof window !== "undefined") {
-                window.history.back();
-              }
-            }}
+          <a
+            href="/artists"
             className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
           >
             Cancel
-          </button>
+          </a>
           <button
             type="submit"
             className="inline-flex items-center rounded-full bg-amber-500 px-4 py-1.5 text-xs font-semibold text-slate-900 shadow-sm hover:bg-amber-400"
