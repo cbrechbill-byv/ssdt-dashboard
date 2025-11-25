@@ -2,10 +2,10 @@ import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-type ArtistRef = {
+type EventArtist = {
   name: string | null;
   genre: string | null;
-} | null;
+};
 
 type EventRow = {
   id: string;
@@ -16,7 +16,7 @@ type EventRow = {
   genre_override: string | null;
   title: string | null;
   notes: string | null;
-  artist: ArtistRef;
+  artist: EventArtist[] | null; // Supabase returns an array here
 };
 
 function formatDate(isoDate: string | null): string {
@@ -43,20 +43,12 @@ function formatTime(isoTime: string | null): string {
   });
 }
 
-function formatTimeRange(
-  start: string | null,
-  end: string | null
-): string {
+function formatTimeRange(start: string | null, end: string | null): string {
   const startLabel = formatTime(start);
   const endLabel = formatTime(end);
   if (start && end) return `${startLabel}–${endLabel}`;
   if (start) return startLabel;
   return "TBD";
-}
-
-function getArtistInfo(artist: ArtistRef): ArtistRef {
-  if (!artist) return null;
-  return artist;
 }
 
 export default async function EventsPage() {
@@ -132,7 +124,9 @@ export default async function EventsPage() {
                   <th className="py-2 pr-3 text-left font-semibold">Genre</th>
                   <th className="py-2 pr-3 text-left font-semibold">Title</th>
                   <th className="py-2 pr-3 text-left font-semibold">Notes</th>
-                  <th className="py-2 text-right font-semibold">Status</th>
+                  <th className="py-2 pr-3 text-right font-semibold">
+                    Status
+                  </th>
                   <th className="py-2 text-right font-semibold">Actions</th>
                 </tr>
               </thead>
@@ -144,10 +138,15 @@ export default async function EventsPage() {
                     evt.end_time
                   );
 
-                  const info = getArtistInfo(evt.artist);
-                  const artistName = info?.name || "Unknown artist";
+                  const primaryArtist =
+                    evt.artist && evt.artist.length > 0
+                      ? evt.artist[0]
+                      : null;
+
+                  const artistName =
+                    primaryArtist?.name || "Unknown artist";
                   const genre =
-                    evt.genre_override || info?.genre || "—";
+                    evt.genre_override || primaryArtist?.genre || "—";
 
                   const statusLabel = evt.is_cancelled
                     ? "Cancelled"
