@@ -44,7 +44,6 @@ export async function POST(request: Request) {
     const arrayBuffer = await file.arrayBuffer();
     let buffer = Buffer.from(arrayBuffer);
 
-    // Inspect size and reject images that are too small
     const img = sharp(buffer);
     const metadata = await img.metadata();
 
@@ -64,20 +63,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // Resize to 800x800 and convert to JPEG
+    // Resize to 800x800 JPEG
     const resized = await img
-      .resize(800, 800, {
-        fit: "cover",
-      })
+      .resize(800, 800, { fit: "cover" })
       .jpeg({ quality: 80 })
       .toBuffer();
 
     const baseSlug = providedSlug || slugify(artistName);
     const fileName = `${baseSlug}-${Date.now()}.jpg`;
-    const path = `artists/${fileName}`;
+
+    // This is the *object key* inside the bucket "artist-photos"
+    const path = `artist-photos/${fileName}`;
 
     const { error: uploadError } = await supabaseServer.storage
-      .from("artists")
+      .from("artist-photos") // <- use your existing bucket
       .upload(path, resized, {
         contentType: "image/jpeg",
         upsert: true,
@@ -94,6 +93,7 @@ export async function POST(request: Request) {
       );
     }
 
+    // Path is what we save into artists.image_path
     return NextResponse.json({ success: true, path });
   } catch (error) {
     console.error("[Artist upload-image] Unexpected error:", error);
