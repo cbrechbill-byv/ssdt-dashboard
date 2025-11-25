@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { DashboardShell } from "@/components/layout/DashboardShell";
+import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 type VipDetailPageProps = {
