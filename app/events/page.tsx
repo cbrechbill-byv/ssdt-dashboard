@@ -190,7 +190,7 @@ export default async function EventsPage() {
                   return (
                     <tr
                       key={evt.id}
-                      className="border-b border-slate-100 last:border-0"
+                      className="border-b border-slate-100 last:border-0 transition-colors hover:bg-amber-50/60"
                     >
                       <td className="py-2 pr-3 align-top whitespace-nowrap">
                         {dateLabel}

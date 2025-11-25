@@ -71,10 +71,10 @@ export default async function ArtistsPage() {
             </p>
             {totalCount > 0 && (
               <div className="flex flex-wrap gap-3 text-[11px] text-slate-500">
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium">
+                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 font-medium text-slate-900">
                   {activeCount} active
                 </span>
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium">
+                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 font-medium text-slate-900">
                   {totalCount} total
                 </span>
               </div>
@@ -147,32 +147,27 @@ export default async function ArtistsPage() {
                     return (
                       <tr
                         key={artist.id}
-                        className={`${rowBg} border-b border-slate-100 last:border-b-0 transition-colors hover:bg-slate-50`}
+                        className={`${rowBg} border-b border-slate-100 last:border-b-0 transition-colors hover:bg-amber-50/60`}
                       >
-                        {/* Artist name + status */}
-                        <td className="px-4 py-3 align-top">
+                        {/* Artist name + status (one line name) */}
+                        <td className="px-4 py-3 align-top whitespace-nowrap">
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-sm font-semibold text-slate-900">
+                            <span className="max-w-xs overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-slate-900">
                               {artist.name || "Untitled artist"}
                             </span>
-                            <div className="flex flex-wrap gap-1">
-                              {artist.genre && (
-                                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
-                                  {artist.genre}
-                                </span>
-                              )}
-                              {!artist.is_active && (
-                                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                                  Inactive
-                                </span>
-                              )}
-                            </div>
+                            {!artist.is_active && (
+                              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                                Inactive
+                              </span>
+                            )}
                           </div>
                         </td>
 
-                        {/* Genre column (fallback if no chip) */}
+                        {/* Genre column */}
                         <td className="px-3 py-3 align-top whitespace-nowrap text-xs text-slate-700">
-                          {artist.genre || (
+                          {artist.genre ? (
+                            artist.genre
+                          ) : (
                             <span className="text-slate-400">Missing</span>
                           )}
                         </td>
@@ -233,7 +228,7 @@ export default async function ArtistsPage() {
                         <td className="px-4 py-3 align-top text-right">
                           <Link
                             href={`/artists/edit?id=${artist.id}`}
-                            className="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                            className="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
                           >
                             Edit
                           </Link>

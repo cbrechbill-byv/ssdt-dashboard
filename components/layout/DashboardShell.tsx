@@ -5,7 +5,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 
-type DashboardTab = "dashboard" | "artists" | "events" | "fan-wall" | "notifications";
+type DashboardTab =
+  | "dashboard"
+  | "artists"
+  | "events"
+  | "fan-wall"
+  | "notifications";
 
 interface DashboardShellProps {
   title: string;
@@ -38,7 +43,7 @@ export default function DashboardShell({
           <div className="flex items-center gap-3 sm:gap-4">
             <Link
               href="/dashboard"
-              className="flex items-center rounded-xl bg-slate-50/80 px-2 py-1.5 shadow-sm hover:bg-slate-100"
+              className="flex items-center rounded-full bg-black px-3 py-1.5 shadow-sm hover:bg-slate-900"
             >
               <Image
                 src="/ssdt-logo.png"
@@ -60,22 +65,28 @@ export default function DashboardShell({
             </div>
           </div>
 
-          {/* Navigation */}
+          {/* Navigation pills */}
           <nav className="flex flex-wrap gap-1.5 text-xs">
             {tabs.map((tab) => {
               const isActive =
                 activeTab === tab.key || pathname?.startsWith(tab.href);
 
+              const baseClasses =
+                "inline-flex items-center rounded-full border px-3 py-1 transition-colors";
+
+              const activeClasses =
+                "border-amber-400 bg-amber-400 text-slate-900 shadow-sm";
+
+              const inactiveClasses =
+                "border-slate-200 bg-white text-slate-600 hover:bg-amber-50 hover:border-amber-200";
+
               return (
                 <Link
                   key={tab.key}
                   href={tab.href}
-                  className={[
-                    "inline-flex items-center rounded-full border px-3 py-1 transition-colors",
-                    isActive
-                      ? "border-amber-400 bg-amber-50 text-slate-900 shadow-sm"
-                      : "border-transparent bg-slate-50 text-slate-600 hover:bg-slate-100",
-                  ].join(" ")}
+                  className={`${baseClasses} ${
+                    isActive ? activeClasses : inactiveClasses
+                  }`}
                 >
                   {tab.label}
                 </Link>
