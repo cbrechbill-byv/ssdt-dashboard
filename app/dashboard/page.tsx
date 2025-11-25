@@ -288,7 +288,7 @@ export default async function DashboardPage() {
   return (
     <DashboardShell
       title="Sugarshack Downtown VIP Dashboard"
-      subtitle="Check-ins, VIP activity, and fan content at a glance."
+      subtitle="Check-ins, VIP activity, and fan content at a glance." activeTab="dashboard"
     >
       <div className="space-y-6">
         {/* Top stats row */}
