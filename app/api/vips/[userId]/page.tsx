@@ -9,178 +9,110 @@ type VipDetailPageProps = {
   };
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function VipDetailPage({ params }: VipDetailPageProps) {
-  const supabase = supabaseServer;
   const { userId } = params;
+  const supabase = supabaseServer();
 
-  // Load VIP overview row
-  const { data: overviewRows, error: overviewError } = await supabase
-    .from("rewards_user_overview")
-    .select(
-      "user_id, phone, full_name, email, zip, is_vip, total_points, total_visits, first_scan_at, last_scan_at"
-    )
+  // Basic VIP info from rewards_users
+  const { data: vip, error } = await supabase
+    .from("rewards_users")
+    .select("user_id, phone, display_name, is_vip, total_points")
     .eq("user_id", userId)
-    .limit(1);
+    .maybeSingle();
 
-  if (overviewError) {
-    console.error("[VIP Detail] Error loading overview:", overviewError);
+  if (error) {
+    console.error("[VIP Detail] load error:", error);
   }
 
-  const vip = overviewRows?.[0];
-
-  // Load visit history
-  const { data: scans, error: scansError } = await supabase
-    .from("rewards_scans")
-    .select("id, qr_code, points, scanned_at, source, note, metadata")
-    .eq("user_id", userId)
-    .order("scanned_at", { ascending: false })
-    .limit(200);
-
-  if (scansError) {
-    console.error("[VIP Detail] Error loading scans:", scansError);
+  if (!vip) {
+    return (
+      <DashboardShell
+        title="VIP Details"
+        subtitle="Individual VIP profile and activity"
+        activeTab="dashboard"
+      >
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-6 text-sm text-slate-300">
+          <p className="mb-4">VIP not found.</p>
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center rounded-full bg-[#ffc800] px-4 py-2 text-xs font-semibold text-black shadow hover:bg-[#e6b400]"
+          >
+            Back to dashboard
+          </Link>
+        </div>
+      </DashboardShell>
+    );
   }
 
   return (
-    <DashboardShell title="VIP Details" subtitle="Individual VIP profile and activity">
+    <DashboardShell
+      title="VIP Details"
+      subtitle="Individual VIP profile and activity"
+      activeTab="dashboard"
+    >
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-              VIP detail
-            </p>
-            <h1 className="text-xl font-semibold text-slate-900 mt-1">
-              {vip?.full_name || "VIP Guest"}
-            </h1>
-            {vip?.phone && (
-              <p className="text-xs text-slate-500 mt-0.5">{vip.phone}</p>
-            )}
+        {/* Top VIP card */}
+        <section className="rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                VIP Profile
+              </div>
+              <div className="mt-1 text-xl font-semibold text-slate-50">
+                {vip.display_name || "Unnamed VIP"}
+              </div>
+              <div className="mt-1 text-sm text-slate-300">
+                Phone:{" "}
+                <span className="font-mono">
+                  {vip.phone || "Not captured"}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col items-start gap-2 md:items-end">
+              <span
+                className={[
+                  "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold",
+                  vip.is_vip
+                    ? "bg-emerald-500/15 text-emerald-300"
+                    : "bg-slate-600/30 text-slate-200",
+                ].join(" ")}
+              >
+                {vip.is_vip ? "VIP Member" : "Guest"}
+              </span>
+              <div className="text-sm text-slate-300">
+                Total points:{" "}
+                <span className="font-semibold">
+                  {vip.total_points ?? 0}
+                </span>
+              </div>
+            </div>
           </div>
+        </section>
+
+        {/* Placeholder for future activity */}
+        <section className="rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-50">
+              Activity (coming soon)
+            </h2>
+          </div>
+          <p className="text-xs text-slate-400">
+            In a future phase, this page will show check-ins, rewards history,
+            and fan wall posts for this VIP.
+          </p>
+        </section>
+
+        {/* Back link */}
+        <div>
           <Link
             href="/dashboard"
-            className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
+            className="inline-flex items-center rounded-full border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900"
           >
-            ← Back to dashboard
+            ← Back to VIP dashboard
           </Link>
         </div>
-
-        {/* VIP summary card */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-          {vip ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
-              <div>
-                <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-                  VIP info
-                </p>
-                <p className="mt-1 text-slate-900 font-medium">
-                  {vip.full_name || "VIP Guest"}
-                </p>
-                <p className="text-xs text-slate-500">
-                  {vip.phone || "No phone on file"}
-                </p>
-                <p className="text-xs text-slate-500">
-                  {vip.email || "No email on file"}
-                  {vip.zip ? ` · ${vip.zip}` : ""}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-                  Points & visits
-                </p>
-                <p className="mt-1 text-slate-900 font-semibold">
-                  {vip.total_points ?? 0} points
-                </p>
-                <p className="text-xs text-slate-500">
-                  {vip.total_visits ?? 0} total visits
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-                  First visit
-                </p>
-                <p className="mt-1 text-slate-900 text-sm">
-                  {vip.first_scan_at
-                    ? new Date(vip.first_scan_at).toLocaleString()
-                    : "-"}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-                  Last visit
-                </p>
-                <p className="mt-1 text-slate-900 text-sm">
-                  {vip.last_scan_at
-                    ? new Date(vip.last_scan_at).toLocaleString()
-                    : "-"}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-500">
-              VIP not found. They may have been deleted or never checked in.
-            </p>
-          )}
-        </section>
-
-        {/* Visit history */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-                Visit history
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Most recent check-ins for this VIP (up to 200 visits).
-              </p>
-            </div>
-          </div>
-
-          {!scans || scans.length === 0 ? (
-            <div className="py-6 text-xs text-slate-400 text-center">
-              No visits recorded yet for this VIP.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase tracking-wide">
-                    <th className="py-2 pr-3">When</th>
-                    <th className="py-2 pr-3">Points</th>
-                    <th className="py-2 pr-3">Source</th>
-                    <th className="py-2 pr-3">QR Code</th>
-                    <th className="py-2">Note</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scans.map((scan: any) => (
-                    <tr
-                      key={scan.id}
-                      className="border-b border-slate-100 last:border-0"
-                    >
-                      <td className="py-2 pr-3 text-slate-900">
-                        {new Date(scan.scanned_at).toLocaleString()}
-                      </td>
-                      <td className="py-2 pr-3">
-                        {scan.points ?? 0}
-                      </td>
-                      <td className="py-2 pr-3 text-xs text-slate-600">
-                        {scan.source || "app"}
-                      </td>
-                      <td className="py-2 pr-3 text-xs text-slate-600">
-                        {scan.qr_code || "-"}
-                      </td>
-                      <td className="py-2 text-xs text-slate-600">
-                        {scan.note || "-"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
       </div>
     </DashboardShell>
   );
