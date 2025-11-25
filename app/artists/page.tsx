@@ -19,17 +19,14 @@ function truncate(value: string | null | undefined, length: number): string {
 }
 
 export default async function ArtistsPage() {
-  const supabase = supabaseServer;
-
-  const { data, error } = await supabase
+  // Use the same pattern as Events: call supabaseServer directly as the client
+  const { data, error } = await supabaseServer
     .from("artists")
-    .select(
-      "id, name, genre, bio, website_url, instagram_url, image_url"
-    )
+    .select("id, name, genre, bio, website_url, instagram_url, image_url")
     .order("name", { ascending: true });
 
   if (error) {
-    console.error("Error loading artists:", error);
+    console.error("[Artists] load error:", error);
   }
 
   const artists = (data ?? []) as ArtistRow[];
@@ -58,13 +55,23 @@ export default async function ArtistsPage() {
           </Link>
         </div>
 
-        {artists.length === 0 ? (
+        {/* Surface Supabase error so RLS / policy issues are visible */}
+        {error && (
+          <p className="mb-3 text-xs text-rose-600">
+            There was a problem loading artists:{" "}
+            <span className="font-mono">{error.message}</span>
+          </p>
+        )}
+
+        {artists.length === 0 && !error ? (
           <p className="text-sm text-slate-500">
             No artists found yet. Use{" "}
             <span className="font-medium">Add artist</span> to create your
             first profile.
           </p>
-        ) : (
+        ) : null}
+
+        {artists.length > 0 && (
           <div className="-mx-3 overflow-x-auto">
             <table className="min-w-full border-separate border-spacing-y-1 px-3">
               <thead>
@@ -75,9 +82,7 @@ export default async function ArtistsPage() {
                   <th className="px-3 py-2 text-left font-medium">Website</th>
                   <th className="px-3 py-2 text-left font-medium">Instagram</th>
                   <th className="px-3 py-2 text-left font-medium">Image</th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    Actions
-                  </th>
+                  <th className="px-3 py-2 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -110,9 +115,7 @@ export default async function ArtistsPage() {
                             {truncate(artist.bio, 60)}
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-400">
-                            Missing
-                          </span>
+                          <span className="text-xs text-slate-400">Missing</span>
                         )}
                       </td>
                       <td className="px-3 py-2 align-top">
@@ -121,9 +124,7 @@ export default async function ArtistsPage() {
                             {truncate(artist.website_url, 40)}
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-400">
-                            Missing
-                          </span>
+                          <span className="text-xs text-slate-400">Missing</span>
                         )}
                       </td>
                       <td className="px-3 py-2 align-top">
@@ -132,9 +133,7 @@ export default async function ArtistsPage() {
                             {truncate(artist.instagram_url, 40)}
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-400">
-                            Missing
-                          </span>
+                          <span className="text-xs text-slate-400">Missing</span>
                         )}
                       </td>
                       <td className="px-3 py-2 align-top">

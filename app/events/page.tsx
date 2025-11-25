@@ -7,6 +7,7 @@ type EventArtist = {
   genre: string | null;
 };
 
+// Supabase may return a single object or an array depending on the relationship
 type EventRow = {
   id: string;
   event_date: string;
@@ -16,7 +17,7 @@ type EventRow = {
   genre_override: string | null;
   title: string | null;
   notes: string | null;
-  artist: EventArtist[] | null; // Supabase returns an array here
+  artist: EventArtist | EventArtist[] | null;
 };
 
 function formatDate(isoDate: string | null): string {
@@ -49,6 +50,45 @@ function formatTimeRange(start: string | null, end: string | null): string {
   if (start && end) return `${startLabel}–${endLabel}`;
   if (start) return startLabel;
   return "TBD";
+}
+
+function getArtistNames(artist: EventRow["artist"]): string {
+  if (!artist) return "Unknown artist";
+
+  if (Array.isArray(artist)) {
+    const names = artist
+      .map((a) => a?.name?.trim())
+      .filter((name): name is string => !!name);
+    if (names.length === 0) return "Unknown artist";
+    return names.join(", ");
+  }
+
+  // Single object case
+  if (artist.name && artist.name.trim().length > 0) {
+    return artist.name;
+  }
+
+  return "Unknown artist";
+}
+
+function getArtistGenre(evt: EventRow): string {
+  if (evt.genre_override) return evt.genre_override;
+
+  const { artist } = evt;
+
+  if (!artist) return "—";
+
+  if (Array.isArray(artist)) {
+    const genres = artist
+      .map((a) => a?.genre?.trim())
+      .filter((g): g is string => !!g);
+    if (genres.length === 0) return "—";
+    // If multiple, join with commas
+    return genres.join(", ");
+  }
+
+  // Single object case
+  return artist.genre || "—";
 }
 
 export default async function EventsPage() {
@@ -108,12 +148,21 @@ export default async function EventsPage() {
           </Link>
         </div>
 
-        {events.length === 0 ? (
+        {error && (
+          <p className="mb-3 text-xs text-rose-600">
+            There was a problem loading events:{" "}
+            <span className="font-mono">{error.message}</span>
+          </p>
+        )}
+
+        {events.length === 0 && !error ? (
           <p className="text-xs text-slate-400">
             No upcoming events with times set. Click &ldquo;Add event&rdquo; to
             schedule your first show.
           </p>
-        ) : (
+        ) : null}
+
+        {events.length > 0 && (
           <div className="overflow-x-auto">
             <table className="min-w-full text-xs">
               <thead>
@@ -138,15 +187,8 @@ export default async function EventsPage() {
                     evt.end_time
                   );
 
-                  const primaryArtist =
-                    evt.artist && evt.artist.length > 0
-                      ? evt.artist[0]
-                      : null;
-
-                  const artistName =
-                    primaryArtist?.name || "Unknown artist";
-                  const genre =
-                    evt.genre_override || primaryArtist?.genre || "—";
+                  const artistName = getArtistNames(evt.artist);
+                  const genre = getArtistGenre(evt);
 
                   const statusLabel = evt.is_cancelled
                     ? "Cancelled"
