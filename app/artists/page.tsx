@@ -4,12 +4,17 @@ import { supabaseServer } from "@/lib/supabaseServer";
 
 type ArtistRow = {
   id: string;
-  name: string | null;
+  name: string;
+  slug: string | null;
   genre: string | null;
   bio: string | null;
   website_url: string | null;
   instagram_url: string | null;
-  image_url: string | null;
+  facebook_url: string | null;
+  tiktok_url: string | null;
+  spotify_url: string | null;
+  image_path: string | null;
+  is_active: boolean;
 };
 
 function truncate(value: string | null | undefined, length: number): string {
@@ -19,10 +24,24 @@ function truncate(value: string | null | undefined, length: number): string {
 }
 
 export default async function ArtistsPage() {
-  // Use the same pattern as Events: call supabaseServer directly as the client
   const { data, error } = await supabaseServer
     .from("artists")
-    .select("id, name, genre, bio, website_url, instagram_url, image_url")
+    .select(
+      `
+      id,
+      name,
+      slug,
+      genre,
+      bio,
+      website_url,
+      instagram_url,
+      facebook_url,
+      tiktok_url,
+      spotify_url,
+      image_path,
+      is_active
+    `
+    )
     .order("name", { ascending: true });
 
   if (error) {
@@ -55,7 +74,7 @@ export default async function ArtistsPage() {
           </Link>
         </div>
 
-        {/* Surface Supabase error so RLS / policy issues are visible */}
+        {/* Show any Supabase errors (e.g. RLS issues) instead of a silent empty state */}
         {error && (
           <p className="mb-3 text-xs text-rose-600">
             There was a problem loading artists:{" "}
@@ -90,7 +109,7 @@ export default async function ArtistsPage() {
                   const hasBio = !!artist.bio;
                   const hasWebsite = !!artist.website_url;
                   const hasInstagram = !!artist.instagram_url;
-                  const hasImage = !!artist.image_url;
+                  const hasImage = !!artist.image_path;
 
                   return (
                     <tr
@@ -102,6 +121,11 @@ export default async function ArtistsPage() {
                           <span className="font-medium">
                             {artist.name || "Untitled artist"}
                           </span>
+                          {!artist.is_active && (
+                            <span className="mt-0.5 text-[11px] text-slate-400">
+                              Inactive
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-3 py-2 align-top">
