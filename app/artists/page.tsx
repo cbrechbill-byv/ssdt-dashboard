@@ -66,8 +66,8 @@ export default async function ArtistsPage() {
               Artist directory
             </p>
             <p className="text-xs text-slate-500">
-              Keep this list in sync with who actually plays Sugarshack Downtown.
-              Edits are live in the app.
+              Keep this list in sync with who actually plays Sugarshack
+              Downtown. Edits are live in the app.
             </p>
             {totalCount > 0 && (
               <p className="text-[11px] text-slate-400">

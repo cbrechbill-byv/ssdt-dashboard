@@ -28,7 +28,10 @@ async function fetchEvent(id: string): Promise<{
   errorMessage: string | null;
 }> {
   if (!id) {
-    return { event: null, errorMessage: "No event id provided in query (?id=…)." };
+    return {
+      event: null,
+      errorMessage: "No event id provided in query (?id=…).",
+    };
   }
 
   const { data, error } = await supabaseServer

@@ -32,7 +32,10 @@ async function fetchArtist(id: string): Promise<{
   errorMessage: string | null;
 }> {
   if (!id) {
-    return { artist: null, errorMessage: "No artist id provided in query (?id=…)." };
+    return {
+      artist: null,
+      errorMessage: "No artist id provided in query (?id=…).",
+    };
   }
 
   const { data, error } = await supabaseServer
@@ -141,7 +144,9 @@ export default async function ArtistEditPage({
           <p className="font-semibold">Could not load artist</p>
           <p>
             Query id:&nbsp;
-            <code className="font-mono text-xs">{id || "(missing or undefined)"}</code>
+            <code className="font-mono text-xs">
+              {id || "(missing or undefined)"}
+            </code>
           </p>
           <p className="text-xs">
             searchParams:&nbsp;
@@ -151,7 +156,8 @@ export default async function ArtistEditPage({
           </p>
           {errorMessage && (
             <p className="text-xs">
-              Supabase error: <span className="font-mono">{errorMessage}</span>
+              Supabase error:{" "}
+              <span className="font-mono">{errorMessage}</span>
             </p>
           )}
           <a

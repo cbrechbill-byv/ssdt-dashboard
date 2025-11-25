@@ -118,9 +118,6 @@ export default async function EventsPage() {
 
   const events = (data ?? []) as EventRow[];
 
-  const firstArtistRaw =
-    events.length > 0 ? JSON.stringify(events[0]?.artist, null, 2) : null;
-
   return (
     <DashboardShell
       title="Events"
@@ -150,17 +147,6 @@ export default async function EventsPage() {
             There was a problem loading events:{" "}
             <span className="font-mono">{error.message}</span>
           </p>
-        )}
-
-        {firstArtistRaw && (
-          <details className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-            <summary className="cursor-pointer select-none">
-              Developer debug: first event&apos;s raw artist data
-            </summary>
-            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[10px]">
-              {firstArtistRaw}
-            </pre>
-          </details>
         )}
 
         {events.length === 0 && !error ? (
@@ -232,12 +218,12 @@ export default async function EventsPage() {
                         </span>
                       </td>
                       <td className="py-2 pl-3 align-top text-right whitespace-nowrap">
-                        <a
+                        <Link
                           href={`/events/edit?id=${evt.id}`}
                           className="text-xs font-semibold text-slate-700 hover:text-slate-900 hover:underline"
                         >
                           Edit
-                        </a>
+                        </Link>
                       </td>
                     </tr>
                   );
