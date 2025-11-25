@@ -18,8 +18,12 @@ async function fetchEvent(id: string): Promise<{
   event: EventRow | null;
   errorMessage: string | null;
 }> {
+  if (!id) {
+    return { event: null, errorMessage: "No event id provided in route." };
+  }
+
   const { data, error } = await supabaseServer
-    .from("events")
+    .from("artist_events") // ✅ use the actual table/view you’re using
     .select(
       `
       id,
@@ -58,22 +62,32 @@ async function fetchEvent(id: string): Promise<{
 
 function isoDateToInput(value: string | null): string {
   if (!value) return "";
-  // Expecting "YYYY-MM-DD" or full ISO; keep first 10 chars
   return value.slice(0, 10);
 }
 
 function timeToInput(value: string | null): string {
   if (!value) return "";
-  // Expecting "HH:MM:SS" – keep "HH:MM"
   return value.slice(0, 5);
 }
 
 export default async function EventEditPage({
   params,
 }: {
-  params: { id: string };
+  params: Record<string, string | string[]>;
 }) {
-  const { event, errorMessage } = await fetchEvent(params.id);
+  // Handle possible param names: [id], [eventId], [event_id]
+  const rawParam =
+    params.id ??
+    (params as any).eventId ??
+    (params as any).event_id ??
+    "";
+
+  const id =
+    Array.isArray(rawParam) && rawParam.length > 0
+      ? rawParam[0]
+      : (rawParam as string);
+
+  const { event, errorMessage } = await fetchEvent(id);
 
   async function updateEvent(formData: FormData) {
     "use server";
@@ -100,7 +114,7 @@ export default async function EventEditPage({
     }
 
     const { error } = await supabaseServer
-      .from("events")
+      .from("artist_events") // ✅ updating same table
       .update({
         event_date,
         start_time,
@@ -131,7 +145,10 @@ export default async function EventEditPage({
         <section className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">
           <p className="font-semibold mb-1">Could not load event</p>
           <p className="mb-1">
-            ID: <code className="font-mono text-xs">{params.id}</code>
+            Route id:&nbsp;
+            <code className="font-mono text-xs">
+              {id || "(missing or undefined)"}
+            </code>
           </p>
           {errorMessage && (
             <p className="text-xs">

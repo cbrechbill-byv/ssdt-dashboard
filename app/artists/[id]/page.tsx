@@ -22,6 +22,10 @@ async function fetchArtist(id: string): Promise<{
   artist: Artist | null;
   errorMessage: string | null;
 }> {
+  if (!id) {
+    return { artist: null, errorMessage: "No artist id provided in route." };
+  }
+
   const { data, error } = await supabaseServer
     .from("artists")
     .select(
@@ -67,9 +71,21 @@ async function fetchArtist(id: string): Promise<{
 export default async function ArtistEditPage({
   params,
 }: {
-  params: { id: string };
+  params: Record<string, string | string[]>;
 }) {
-  const { artist, errorMessage } = await fetchArtist(params.id);
+  // Handle different possible param names: [id], [artistId], [artist_id]
+  const rawParam =
+    params.id ??
+    (params as any).artistId ??
+    (params as any).artist_id ??
+    "";
+
+  const id =
+    Array.isArray(rawParam) && rawParam.length > 0
+      ? rawParam[0]
+      : (rawParam as string);
+
+  const { artist, errorMessage } = await fetchArtist(id);
 
   async function updateArtist(formData: FormData) {
     "use server";
@@ -125,7 +141,7 @@ export default async function ArtistEditPage({
     redirect("/artists");
   }
 
-  // If we couldn’t load the artist, show a clear error instead of a 404
+  // If we couldn’t load the artist, show a clear error instead of 404
   if (!artist) {
     return (
       <DashboardShell
@@ -136,7 +152,10 @@ export default async function ArtistEditPage({
         <section className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">
           <p className="font-semibold mb-1">Could not load artist</p>
           <p className="mb-1">
-            ID: <code className="font-mono text-xs">{params.id}</code>
+            Route id:&nbsp;
+            <code className="font-mono text-xs">
+              {id || "(missing or undefined)"}
+            </code>
           </p>
           {errorMessage && (
             <p className="text-xs">
