@@ -403,39 +403,42 @@ export default async function DashboardPage() {
             </p>
 
             <div className="space-y-2 text-xs">
-              <button className="w-full rounded-xl border border-slate-200 px-3 py-2 text-left hover:bg-slate-50">
-                <span className="font-medium text-slate-900">
-                  Tonight’s show editor
-                </span>
-                <span className="block text-[11px] text-slate-500">
-                  (Coming soon) Update who’s on stage tonight.
-                </span>
-              </button>
+  <Link
+    href="/events"
+    className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-left hover:bg-slate-50"
+  >
+    <span className="font-medium text-slate-900">
+      Tonight’s show editor
+    </span>
+    <span className="block text-[11px] text-slate-500">
+      Open today’s show in Events to edit who’s on stage and the set time.
+    </span>
+  </Link>
 
-              <Link
-                href="/fan-wall"
-                className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-left hover:bg-slate-50"
-              >
-                <span className="font-medium text-slate-900">
-                  Open full Fan Wall
-                </span>
-                <span className="block text-[11px] text-slate-500">
-                  Moderate and approve Photo Booth shots.
-                </span>
-              </Link>
+  <Link
+    href="/fan-wall"
+    className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-left hover:bg-slate-50"
+  >
+    <span className="font-medium text-slate-900">
+      Open full Fan Wall
+    </span>
+    <span className="block text-[11px] text-slate-500">
+      Moderate and approve Photo Booth shots.
+    </span>
+  </Link>
 
-              <Link
-                href="/notifications"
-                className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-left hover:bg-slate-50"
-              >
-                <span className="font-medium text-slate-900">
-                  Send push notification
-                </span>
-                <span className="block text-[11px] text-slate-500">
-                  Reach VIPs and guests with a new message.
-                </span>
-              </Link>
-            </div>
+  <Link
+    href="/notifications"
+    className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-left hover:bg-slate-50"
+  >
+    <span className="font-medium text-slate-900">
+      Send push notification
+    </span>
+    <span className="block text-[11px] text-slate-500">
+      Reach VIPs and guests with a new message.
+    </span>
+  </Link>
+</div>
           </section>
         </div>
 
@@ -519,4 +522,5 @@ export default async function DashboardPage() {
     </DashboardShell>
   );
 }
+
 
