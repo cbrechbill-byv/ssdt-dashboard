@@ -116,7 +116,7 @@ export default function NotificationsPage() {
   return (
     <DashboardShell
       title="Push notifications"
-      subtitle="Send targeted updates to VIPs and Sugarshack app users."
+      subtitle="Send targeted updates to VIPs and Sugarshack app users." activeTab="notifications"
     >
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,2fr)]">
         {/* LEFT COLUMN: compose only */}
