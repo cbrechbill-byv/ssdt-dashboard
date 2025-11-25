@@ -1,91 +1,95 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
 
-type NavItem = {
-  href: string;
+type PrimaryAction = {
   label: string;
+  href: string;
 };
-
-const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/fan-wall", label: "Fan Wall" },
-  { href: "/notifications", label: "Notifications" },
-  { href: "/artists", label: "Artists" },
-  { href: "/events", label: "Events" },
-];
 
 type DashboardShellProps = {
-  title: string;
+  title?: string;
   subtitle?: string;
-  children: ReactNode;
+  activeTab?: "dashboard" | "fan-wall" | "notifications" | "artists" | "events";
+  primaryAction?: PrimaryAction;
+  children: React.ReactNode;
 };
+
+const navItems: {
+  key: DashboardShellProps["activeTab"];
+  label: string;
+  href: string;
+}[] = [
+  { key: "dashboard", label: "Dashboard", href: "/dashboard" },
+  { key: "fan-wall", label: "Fan Wall", href: "/fan-wall" },
+  { key: "notifications", label: "Notifications", href: "/notifications" },
+  { key: "artists", label: "Artists", href: "/artists" },
+  { key: "events", label: "Events", href: "/events" },
+];
 
 export default function DashboardShell({
   title,
   subtitle,
+  activeTab,
+  primaryAction,
   children,
 }: DashboardShellProps) {
   const pathname = usePathname();
 
+  const resolvedActive =
+    activeTab ||
+    (navItems.find((item) =>
+      pathname?.startsWith(item.href.replace("/dashboard", "/"))
+    )?.key ?? "dashboard");
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
-      {/* Top bar with logo, title, and nav */}
-      <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
+      {/* Header */}
+      <header className="border-b border-slate-800 bg-slate-950/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           {/* Logo + title */}
-          <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900">
+          <div className="flex items-center gap-3">
+            <div className="relative h-10 w-10 shrink-0">
+              {/* Bigger logo, no extra green title text */}
               <Image
                 src="/ssdt-logo.png"
                 alt="Sugarshack Downtown"
-                width={40}
-                height={40}
-                className="h-8 w-8 object-contain"
+                fill
+                className="rounded-lg object-contain"
                 priority
               />
             </div>
-            <div className="flex flex-col">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-400">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">
                 Sugarshack Downtown
-              </span>
-              <span className="text-sm font-semibold text-slate-50">
-                {title}
-              </span>
-              {subtitle && (
-                <span className="mt-0.5 text-[11px] text-slate-400">
-                  {subtitle}
-                </span>
-              )}
+              </div>
+              <div className="text-sm font-semibold text-slate-50">
+                VIP Dashboard
+              </div>
+              <div className="text-[11px] text-slate-400">
+                Check-ins, VIP activity, and fan content at a glance.
+              </div>
             </div>
-          </Link>
+          </div>
 
-          {/* Top nav */}
-          <nav className="flex items-center gap-1 text-xs">
+          {/* Nav */}
+          <nav className="flex gap-2">
             {navItems.map((item) => {
-              const isActive =
-                pathname === item.href ||
-                pathname.startsWith(item.href + "/");
-
-              const baseClasses =
-                "rounded-full px-3 py-1.5 border transition shadow-sm";
-              const activeClasses =
-                "bg-amber-400 text-slate-950 border-amber-300";
-              const inactiveClasses =
-                "border-slate-700 text-slate-200 hover:bg-slate-800/60";
-
+              const isActive = item.key === resolvedActive;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={
-                    baseClasses +
-                    " " +
-                    (isActive ? activeClasses : inactiveClasses)
-                  }
+                  className={[
+                    "rounded-full px-4 py-1.5 text-xs font-semibold",
+                    "border transition-colors",
+                    isActive
+                      ? "bg-amber-400 text-slate-950 border-amber-300 shadow-sm"
+                      : "bg-slate-900 text-slate-100 border-slate-700 hover:bg-slate-800",
+                  ].join(" ")}
                 >
                   {item.label}
                 </Link>
@@ -95,8 +99,34 @@ export default function DashboardShell({
         </div>
       </header>
 
-      {/* Page content */}
-      <main className="mx-auto max-w-6xl px-4 py-4">{children}</main>
+      {/* Page header */}
+      <main className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
+        {(title || subtitle || primaryAction) && (
+          <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:items-center">
+            <div>
+              {title && (
+                <h1 className="text-lg font-semibold text-slate-50">
+                  {title}
+                </h1>
+              )}
+              {subtitle && (
+                <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
+              )}
+            </div>
+            {primaryAction && (
+              <Link
+                href={primaryAction.href}
+                className="inline-flex items-center rounded-full bg-amber-400 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:bg-amber-500"
+              >
+                {primaryAction.label}
+              </Link>
+            )}
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="pb-8">{children}</div>
+      </main>
     </div>
   );
 }
