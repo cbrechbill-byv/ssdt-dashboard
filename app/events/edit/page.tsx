@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 import { revalidatePath } from "next/cache";
