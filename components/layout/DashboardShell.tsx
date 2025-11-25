@@ -1,28 +1,27 @@
-"use client";
-
-import React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import React from "react";
+
+type NavKey = "dashboard" | "fan-wall" | "notifications" | "artists" | "events";
 
 type PrimaryAction = {
   label: string;
   href: string;
 };
 
-type DashboardShellProps = {
-  title?: string;
+export type DashboardShellProps = {
+  /** Big page title, e.g. "VIP Dashboard", "Artists", "Events" */
+  title: string;
+  /** Smaller subtitle under the title */
   subtitle?: string;
-  activeTab?: "dashboard" | "fan-wall" | "notifications" | "artists" | "events";
+  /** Which nav pill should be highlighted */
+  activeTab: NavKey;
+  /** Optional button in the top-right of the page header */
   primaryAction?: PrimaryAction;
   children: React.ReactNode;
 };
 
-const navItems: {
-  key: DashboardShellProps["activeTab"];
-  label: string;
-  href: string;
-}[] = [
+const navItems: { key: NavKey; label: string; href: string }[] = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
   { key: "fan-wall", label: "Fan Wall", href: "/fan-wall" },
   { key: "notifications", label: "Notifications", href: "/notifications" },
@@ -37,58 +36,45 @@ export default function DashboardShell({
   primaryAction,
   children,
 }: DashboardShellProps) {
-  const pathname = usePathname();
-
-  const resolvedActive =
-    activeTab ||
-    (navItems.find((item) =>
-      pathname?.startsWith(item.href.replace("/dashboard", "/"))
-    )?.key ?? "dashboard");
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-950/95 backdrop-blur">
+    <div className="min-h-screen bg-[#050816] text-slate-50">
+      {/* Top header bar */}
+      <header className="border-b border-slate-800 bg-[#050816]">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           {/* Logo + title */}
           <div className="flex items-center gap-3">
-            <div className="relative h-10 w-10 shrink-0">
-              {/* Bigger logo, no extra green title text */}
+            <div className="flex items-center gap-3">
               <Image
                 src="/ssdt-logo.png"
                 alt="Sugarshack Downtown"
-                fill
-                className="rounded-lg object-contain"
-                priority
+                width={48}
+                height={48}
+                className="h-12 w-12 rounded-full shadow-lg"
               />
-            </div>
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">
-                Sugarshack Downtown
-              </div>
-              <div className="text-sm font-semibold text-slate-50">
-                VIP Dashboard
-              </div>
-              <div className="text-[11px] text-slate-400">
-                Check-ins, VIP activity, and fan content at a glance.
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-slate-300">
+                  Sugarshack Downtown
+                </span>
+                <span className="text-xs text-slate-400">
+                  Check-ins, VIP activity, and fan content at a glance.
+                </span>
               </div>
             </div>
           </div>
 
-          {/* Nav */}
-          <nav className="flex gap-2">
+          {/* Nav pills */}
+          <nav className="flex items-center gap-2">
             {navItems.map((item) => {
-              const isActive = item.key === resolvedActive;
+              const isActive = item.key === activeTab;
               return (
                 <Link
-                  key={item.href}
+                  key={item.key}
                   href={item.href}
                   className={[
-                    "rounded-full px-4 py-1.5 text-xs font-semibold",
-                    "border transition-colors",
+                    "rounded-full px-4 py-1.5 text-sm font-medium transition-colors border",
                     isActive
-                      ? "bg-amber-400 text-slate-950 border-amber-300 shadow-sm"
-                      : "bg-slate-900 text-slate-100 border-slate-700 hover:bg-slate-800",
+                      ? "bg-[#ffc800] text-black border-[#ffc800]"
+                      : "bg-transparent text-slate-200 border-slate-700 hover:bg-slate-800",
                   ].join(" ")}
                 >
                   {item.label}
@@ -99,33 +85,29 @@ export default function DashboardShell({
         </div>
       </header>
 
-      {/* Page header */}
-      <main className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
-        {(title || subtitle || primaryAction) && (
-          <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:items-center">
-            <div>
-              {title && (
-                <h1 className="text-lg font-semibold text-slate-50">
-                  {title}
-                </h1>
-              )}
-              {subtitle && (
-                <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
-              )}
-            </div>
-            {primaryAction && (
-              <Link
-                href={primaryAction.href}
-                className="inline-flex items-center rounded-full bg-amber-400 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:bg-amber-500"
-              >
-                {primaryAction.label}
-              </Link>
+      {/* Page content */}
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+              {title}
+            </h1>
+            {subtitle && (
+              <p className="mt-1 text-sm text-slate-400">{subtitle}</p>
             )}
           </div>
-        )}
 
-        {/* Content */}
-        <div className="pb-8">{children}</div>
+          {primaryAction && (
+            <Link
+              href={primaryAction.href}
+              className="rounded-full bg-[#ffc800] px-4 py-2 text-sm font-semibold text-black shadow-md hover:bg-[#e6b400] transition-colors"
+            >
+              {primaryAction.label}
+            </Link>
+          )}
+        </div>
+
+        {children}
       </main>
     </div>
   );
