@@ -75,12 +75,14 @@ function timeToInput(value: string | null): string {
   return value.slice(0, 5);
 }
 
+// NOTE: searchParams is a *Promise* in Next 15+ / 16
 export default async function EventEditPage({
   searchParams,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const id = getIdFromSearchParams(searchParams);
+  const resolvedSearchParams = await searchParams;
+  const id = getIdFromSearchParams(resolvedSearchParams);
   const { event, errorMessage } = await fetchEvent(id);
 
   async function updateEvent(formData: FormData) {
@@ -147,7 +149,7 @@ export default async function EventEditPage({
           <p className="text-xs">
             searchParams:&nbsp;
             <code className="font-mono text-[10px]">
-              {JSON.stringify(searchParams)}
+              {JSON.stringify(resolvedSearchParams)}
             </code>
           </p>
           {errorMessage && (
