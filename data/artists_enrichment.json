@@ -1,0 +1,83 @@
+[
+  {
+    "name": "A'finnity Band",
+    "website_url": null,
+    "instagram_url": null,
+    "facebook_url": "https://www.facebook.com/Afinnity.band",
+    "tiktok_url": null,
+    "spotify_url": null,
+    "image_path": "artists/afinnity-band.jpg"
+  },
+  {
+    "name": "Algorhythm",
+    "website_url": "https://www.wearealgorhythm.com",
+    "instagram_url": "https://www.instagram.com/wearealgorhythm",
+    "facebook_url": null,
+    "tiktok_url": null,
+    "spotify_url": null,
+    "image_path": "artists/algorhythm.jpg"
+  },
+  {
+    "name": "Bryce Allyn Band",
+    "website_url": "https://bryceallynband.com",
+    "instagram_url": "https://www.instagram.com/bryceallynband",
+    "facebook_url": "https://www.facebook.com/bryceallynmusic/",
+    "tiktok_url": null,
+    "spotify_url": "https://open.spotify.com/artist/532DRbM0SHoJw30Ev17lWN",
+    "image_path": "artists/bryce-allyn-band.jpg"
+  },
+  {
+    "name": "Dalton & the Sheriffs",
+    "website_url": "https://www.daltonandthesheriffs.com",
+    "instagram_url": null,
+    "facebook_url": null,
+    "tiktok_url": null,
+    "spotify_url": null,
+    "image_path": "artists/dalton-and-the-sheriffs.jpg"
+  },
+  {
+    "name": "Of Good Nature",
+    "website_url": "https://ofgoodnature.com",
+    "instagram_url": null,
+    "facebook_url": null,
+    "tiktok_url": null,
+    "spotify_url": null,
+    "image_path": "artists/of-good-nature.jpg"
+  },
+  {
+    "name": "Chasing Denver",
+    "website_url": "https://www.chasingdenver.com",
+    "instagram_url": null,
+    "facebook_url": null,
+    "tiktok_url": null,
+    "spotify_url": null,
+    "image_path": "artists/chasing-denver.jpg"
+  },
+  {
+    "name": "Grass is Dead",
+    "website_url": "https://www.grassisdead.com",
+    "instagram_url": null,
+    "facebook_url": "https://www.facebook.com/1528953290710292/",
+    "tiktok_url": null,
+    "spotify_url": "https://open.spotify.com/artist/2FnpSXiTyRFGgexYnmGOs5",
+    "image_path": "artists/grass-is-dead.jpg"
+  },
+  {
+    "name": "Grateful Dub / Roots of Creation",
+    "website_url": "https://gratefuldub.com",
+    "instagram_url": null,
+    "facebook_url": null,
+    "tiktok_url": null,
+    "spotify_url": null,
+    "image_path": "artists/grateful-dub-roots-of-creation.jpg"
+  },
+  {
+    "name": "The Young Fables",
+    "website_url": "https://www.theyoungfables.com",
+    "instagram_url": null,
+    "facebook_url": null,
+    "tiktok_url": null,
+    "spotify_url": null,
+    "image_path": "artists/the-young-fables.jpg"
+  }
+]
