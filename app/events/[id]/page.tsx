@@ -14,6 +14,18 @@ type EventRow = {
   notes: string | null;
 };
 
+function extractIdFromParams(
+  params: Record<string, string | string[]>
+): string {
+  const entries = Object.entries(params);
+  if (entries.length === 0) return "";
+  const [, raw] = entries[0];
+  if (Array.isArray(raw)) {
+    return raw[0] ?? "";
+  }
+  return raw ?? "";
+}
+
 async function fetchEvent(id: string): Promise<{
   event: EventRow | null;
   errorMessage: string | null;
@@ -23,7 +35,7 @@ async function fetchEvent(id: string): Promise<{
   }
 
   const { data, error } = await supabaseServer
-    .from("artist_events") // ✅ use the actual table/view you’re using
+    .from("artist_events")
     .select(
       `
       id,
@@ -75,18 +87,7 @@ export default async function EventEditPage({
 }: {
   params: Record<string, string | string[]>;
 }) {
-  // Handle possible param names: [id], [eventId], [event_id]
-  const rawParam =
-    params.id ??
-    (params as any).eventId ??
-    (params as any).event_id ??
-    "";
-
-  const id =
-    Array.isArray(rawParam) && rawParam.length > 0
-      ? rawParam[0]
-      : (rawParam as string);
-
+  const id = extractIdFromParams(params);
   const { event, errorMessage } = await fetchEvent(id);
 
   async function updateEvent(formData: FormData) {
@@ -114,7 +115,7 @@ export default async function EventEditPage({
     }
 
     const { error } = await supabaseServer
-      .from("artist_events") // ✅ updating same table
+      .from("artist_events")
       .update({
         event_date,
         start_time,
@@ -142,12 +143,18 @@ export default async function EventEditPage({
         subtitle="Unable to load event"
         activeTab="events"
       >
-        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">
-          <p className="font-semibold mb-1">Could not load event</p>
-          <p className="mb-1">
+        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800 space-y-2">
+          <p className="font-semibold">Could not load event</p>
+          <p>
             Route id:&nbsp;
             <code className="font-mono text-xs">
               {id || "(missing or undefined)"}
+            </code>
+          </p>
+          <p className="text-xs">
+            Route params:&nbsp;
+            <code className="font-mono text-[10px]">
+              {JSON.stringify(params)}
             </code>
           </p>
           {errorMessage && (
@@ -156,14 +163,9 @@ export default async function EventEditPage({
               <span className="font-mono">{errorMessage}</span>
             </p>
           )}
-          {!errorMessage && (
-            <p className="text-xs">
-              No event was found for this id. Double-check the record exists.
-            </p>
-          )}
           <a
             href="/events"
-            className="mt-3 inline-flex items-center rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100"
+            className="mt-2 inline-flex items-center rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100"
           >
             Back to events
           </a>

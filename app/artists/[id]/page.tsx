@@ -18,6 +18,18 @@ type Artist = {
   is_active: boolean;
 };
 
+function extractIdFromParams(
+  params: Record<string, string | string[]>
+): string {
+  const entries = Object.entries(params);
+  if (entries.length === 0) return "";
+  const [, raw] = entries[0];
+  if (Array.isArray(raw)) {
+    return raw[0] ?? "";
+  }
+  return raw ?? "";
+}
+
 async function fetchArtist(id: string): Promise<{
   artist: Artist | null;
   errorMessage: string | null;
@@ -73,18 +85,7 @@ export default async function ArtistEditPage({
 }: {
   params: Record<string, string | string[]>;
 }) {
-  // Handle different possible param names: [id], [artistId], [artist_id]
-  const rawParam =
-    params.id ??
-    (params as any).artistId ??
-    (params as any).artist_id ??
-    "";
-
-  const id =
-    Array.isArray(rawParam) && rawParam.length > 0
-      ? rawParam[0]
-      : (rawParam as string);
-
+  const id = extractIdFromParams(params);
   const { artist, errorMessage } = await fetchArtist(id);
 
   async function updateArtist(formData: FormData) {
@@ -141,7 +142,6 @@ export default async function ArtistEditPage({
     redirect("/artists");
   }
 
-  // If we couldn’t load the artist, show a clear error instead of 404
   if (!artist) {
     return (
       <DashboardShell
@@ -149,12 +149,18 @@ export default async function ArtistEditPage({
         subtitle="Unable to load artist"
         activeTab="artists"
       >
-        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">
-          <p className="font-semibold mb-1">Could not load artist</p>
-          <p className="mb-1">
+        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800 space-y-2">
+          <p className="font-semibold">Could not load artist</p>
+          <p>
             Route id:&nbsp;
             <code className="font-mono text-xs">
               {id || "(missing or undefined)"}
+            </code>
+          </p>
+          <p className="text-xs">
+            Route params:&nbsp;
+            <code className="font-mono text-[10px]">
+              {JSON.stringify(params)}
             </code>
           </p>
           {errorMessage && (
@@ -163,14 +169,9 @@ export default async function ArtistEditPage({
               <span className="font-mono">{errorMessage}</span>
             </p>
           )}
-          {!errorMessage && (
-            <p className="text-xs">
-              No artist was found for this id. Double-check the record exists.
-            </p>
-          )}
           <a
             href="/artists"
-            className="mt-3 inline-flex items-center rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100"
+            className="mt-2 inline-flex items-center rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100"
           >
             Back to artists
           </a>
