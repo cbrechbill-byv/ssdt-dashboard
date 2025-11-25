@@ -1,61 +1,35 @@
+import React from "react";
 import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-type EventRow = {
+type EventRecord = {
   id: string;
-  event_date: string; // YYYY-MM-DD
-  start_time: string | null; // HH:MM:SS
-  end_time: string | null;   // HH:MM:SS
-  title: string | null;
-  is_cancelled: boolean | null;
+  event_date?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  title?: string | null;
+  genre_label?: string | null;
+  notes?: string | null;
+  status?: string | null;
+  artist_name?: string | null;
 };
 
 export const dynamic = "force-dynamic";
 
-function formatTime(hhmmss: string | null): string | null {
-  if (!hhmmss) return null;
-  const [hourStr, minuteStr] = hhmmss.split(":");
-  const hour = Number(hourStr);
-  const minute = Number(minuteStr);
-
-  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
-
-  const date = new Date();
-  date.setHours(hour, minute, 0, 0);
-  return date.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function formatTimeRange(start: string | null, end: string | null): string {
-  const startFormatted = formatTime(start);
-  const endFormatted = formatTime(end);
-
-  if (startFormatted && endFormatted) {
-    return `${startFormatted} – ${endFormatted}`;
-  }
-  if (startFormatted) return startFormatted;
-  if (endFormatted) return endFormatted;
-  return "Time TBD";
-}
-
 export default async function EventsPage() {
-  // supabaseServer is already a client instance – do NOT call it
-  const supabase = supabaseServer;
-
-  const { data, error } = await supabase
+  // Very simple: grab all rows from `events`, no filters
+  const { data, error } = await supabaseServer
     .from("events")
-    .select("id, event_date, start_time, end_time, title, is_cancelled")
+    .select("*")
     .order("event_date", { ascending: true })
     .order("start_time", { ascending: true });
 
   if (error) {
-    console.error("[Events] load error:", error);
+    console.error("Error loading events:", error);
   }
 
-  const events: EventRow[] = (data ?? []) as EventRow[];
+  const events: EventRecord[] = (data ?? []) as EventRecord[];
 
   return (
     <DashboardShell
@@ -63,94 +37,103 @@ export default async function EventsPage() {
       subtitle="Manage shows that appear on the Tonight screen and Calendar."
       activeTab="events"
     >
-      <div className="space-y-6">
-        {/* Header with Add button */}
+      <section className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-slate-50">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
               Upcoming shows
             </h2>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-sm text-slate-400">
               Edit dates, times, and details for Sugarshack Downtown events.
             </p>
           </div>
+
           <Link
             href="/events/new"
-            className="inline-flex items-center rounded-full bg-[#ffc800] px-4 py-2 text-xs font-semibold text-black shadow hover:bg-[#e6b400]"
+            className="inline-flex items-center rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm hover:bg-amber-300"
           >
             + Add event
           </Link>
         </div>
 
-        {/* Table */}
-        <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-800 bg-slate-950/80 text-xs uppercase tracking-[0.14em] text-slate-400">
-                <th className="px-4 py-3 text-left">Date</th>
-                <th className="px-4 py-3 text-left">Time</th>
-                <th className="px-4 py-3 text-left">Title</th>
-                <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+        <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/60">
+          <table className="min-w-full divide-y divide-slate-800 text-sm">
+            <thead className="bg-slate-950/80">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Time
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Artist
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Title
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-900/60 bg-slate-950/40">
               {events.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
-                    className="px-4 py-6 text-center text-xs text-slate-400"
+                    colSpan={6}
+                    className="px-6 py-10 text-center text-sm text-slate-400"
                   >
-                    No events found yet. Use &ldquo;Add event&rdquo; to create
+                    No events found yet. Use{" "}
+                    <span className="font-semibold">“Add event”</span> to create
                     your first show.
                   </td>
                 </tr>
               ) : (
-                events.map((evt) => {
-                  const dateLabel = new Date(
-                    evt.event_date + "T00:00:00"
-                  ).toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  });
+                events.map((event) => {
+                  const dateLabel =
+                    event.event_date &&
+                    new Date(event.event_date).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    });
 
-                  const timeLabel = formatTimeRange(
-                    evt.start_time,
-                    evt.end_time
-                  );
+                  const timeLabel = [
+                    event.start_time,
+                    event.end_time ? `– ${event.end_time}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+
+                  const statusLabel = event.status ?? "Scheduled";
 
                   return (
-                    <tr
-                      key={evt.id}
-                      className="border-t border-slate-800/80 hover:bg-slate-900/40"
-                    >
-                      <td className="px-4 py-3 text-slate-50">{dateLabel}</td>
-                      <td className="px-4 py-3 text-slate-200">{timeLabel}</td>
-                      <td className="px-4 py-3 text-slate-50">
-                        {evt.title || (
-                          <span className="text-slate-500 italic">
-                            Untitled show
-                          </span>
-                        )}
+                    <tr key={event.id}>
+                      <td className="px-6 py-3 align-middle text-sm text-slate-50">
+                        {dateLabel || "—"}
                       </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={[
-                            "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold",
-                            evt.is_cancelled
-                              ? "bg-red-500/15 text-red-300"
-                              : "bg-emerald-500/15 text-emerald-300",
-                          ].join(" ")}
-                        >
-                          {evt.is_cancelled ? "Cancelled" : "Scheduled"}
+                      <td className="px-6 py-3 align-middle text-sm text-slate-50">
+                        {timeLabel || "—"}
+                      </td>
+                      <td className="px-6 py-3 align-middle text-sm text-slate-50">
+                        {event.artist_name || "Unknown artist"}
+                      </td>
+                      <td className="px-6 py-3 align-middle text-sm text-slate-50">
+                        {event.title || "—"}
+                      </td>
+                      <td className="px-6 py-3 align-middle">
+                        <span className="inline-flex rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-emerald-500/40">
+                          {statusLabel}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-6 py-3 align-middle text-right">
                         <Link
-                          href={`/events/${evt.id}`}
-                          className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-100 hover:bg-slate-900"
+                          href={`/events/${event.id}`}
+                          className="text-xs font-semibold text-amber-300 hover:text-amber-200"
                         >
                           Edit
                         </Link>
@@ -162,7 +145,7 @@ export default async function EventsPage() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </DashboardShell>
   );
 }

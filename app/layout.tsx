@@ -2,8 +2,8 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Sugarshack Downtown Dashboard",
-  description: "Internal VIP & Fan Wall dashboard for Sugarshack Downtown",
+  title: " Dashboard",
+  description: "Internal VIP & Fan Wall dashboard for ",
 };
 
 export default function RootLayout({
@@ -19,3 +19,4 @@ export default function RootLayout({
     </html>
   );
 }
+
