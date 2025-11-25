@@ -3,125 +3,179 @@ import { revalidatePath } from "next/cache";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-type ArtistRecord = {
+type Artist = {
   id: string;
-  name: string | null;
+  name: string;
+  slug: string | null;
   genre: string | null;
   bio: string | null;
-  website: string | null;
-  instagram: string | null;
-  hero_image_url: string | null;
-  is_active: boolean | null;
+  website_url: string | null;
+  instagram_url: string | null;
+  facebook_url: string | null;
+  tiktok_url: string | null;
+  spotify_url: string | null;
+  image_path: string | null;
+  is_active: boolean;
 };
 
-/**
- * Server action: update an existing artist
- */
-async function updateArtist(formData: FormData) {
-  "use server";
-
-  const supabase = supabaseServer;
-
-  const id = formData.get("id")?.toString();
-  if (!id) {
-    throw new Error("Missing artist id");
-  }
-
-  const name = formData.get("name")?.toString().trim();
-  const genre = formData.get("genre")?.toString().trim() || null;
-  const bio = formData.get("bio")?.toString().trim() || null;
-  const website = formData.get("website")?.toString().trim() || null;
-  const instagram = formData.get("instagram")?.toString().trim() || null;
-  const heroImageUrl =
-    formData.get("hero_image_url")?.toString().trim() || null;
-  const is_active = formData.get("is_active") === "on";
-
-  if (!name) {
-    throw new Error("Artist name is required");
-  }
-
-  const { error } = await supabase
-    .from("artists")
-    .update({
-      name,
-      genre,
-      bio,
-      website,
-      instagram,
-      hero_image_url: heroImageUrl,
-      is_active,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id);
-
-  if (error) {
-    console.error("[Artists] update error:", error);
-    throw error;
-  }
-
-  revalidatePath("/artists");
-  redirect("/artists");
-}
-
-type ArtistPageProps = {
-  params: { id: string };
-};
-
-export default async function ArtistEditPage({ params }: ArtistPageProps) {
-  const { id } = params;
-  const supabase = supabaseServer;
-
-  const { data, error } = await supabase
+async function getArtist(id: string): Promise<Artist> {
+  const { data, error } = await supabaseServer
     .from("artists")
     .select(
-      "id, name, genre, bio, website, instagram, hero_image_url, is_active"
+      `
+      id,
+      name,
+      slug,
+      genre,
+      bio,
+      website_url,
+      instagram_url,
+      facebook_url,
+      tiktok_url,
+      spotify_url,
+      image_path,
+      is_active
+    `
     )
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) {
-    console.error("[Artists] not found:", error);
+  if (error) {
+    console.error("[Artist edit] load error:", error);
+  }
+
+  if (!data) {
     notFound();
   }
 
-  const artist = data as ArtistRecord;
+  return data as Artist;
+}
 
-  const startChecked =
-    typeof artist.is_active === "boolean" ? artist.is_active : true;
+export default async function ArtistEditPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const artist = await getArtist(params.id);
+
+  async function updateArtist(formData: FormData) {
+    "use server";
+
+    const id = formData.get("id")?.toString() ?? "";
+    const name = formData.get("name")?.toString().trim() || "";
+    const slug = formData.get("slug")?.toString().trim() || null;
+    const genre = formData.get("genre")?.toString().trim() || null;
+    const bio = formData.get("bio")?.toString().trim() || null;
+    const website_url =
+      formData.get("website_url")?.toString().trim() || null;
+    const instagram_url =
+      formData.get("instagram_url")?.toString().trim() || null;
+    const facebook_url =
+      formData.get("facebook_url")?.toString().trim() || null;
+    const tiktok_url =
+      formData.get("tiktok_url")?.toString().trim() || null;
+    const spotify_url =
+      formData.get("spotify_url")?.toString().trim() || null;
+    const image_path =
+      formData.get("image_path")?.toString().trim() || null;
+
+    const is_active_value = formData.get("is_active");
+    const is_active = is_active_value === "on";
+
+    if (!id || !name) {
+      // Basic guard; in a real app you'd handle validation more elegantly
+      throw new Error("Artist name is required.");
+    }
+
+    const { error } = await supabaseServer
+      .from("artists")
+      .update({
+        name,
+        slug,
+        genre,
+        bio,
+        website_url,
+        instagram_url,
+        facebook_url,
+        tiktok_url,
+        spotify_url,
+        image_path,
+        is_active,
+      })
+      .eq("id", id);
+
+    if (error) {
+      console.error("[Artist edit] update error:", error);
+      throw error;
+    }
+
+    revalidatePath("/artists");
+    redirect("/artists");
+  }
 
   return (
     <DashboardShell
-      title="Edit artist"
-      subtitle={`Update profile details for ${
-        artist.name || "artist"
-      }.`}
+      title={`Edit artist`}
+      subtitle={artist.name}
       activeTab="artists"
     >
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm max-w-2xl">
-        <form action={updateArtist} className="space-y-4">
-          <input type="hidden" name="id" value={artist.id} />
+      <form action={updateArtist} className="space-y-4">
+        <input type="hidden" name="id" defaultValue={artist.id} />
 
-          {/* Name & genre */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1">
+        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Artist details
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Update how this artist appears in the app. Changes go live as
+                soon as you save.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
               <label
                 htmlFor="name"
-                className="text-xs font-semibold text-slate-700"
+                className="text-xs font-medium text-slate-800"
               >
-                Artist name
+                Name
               </label>
               <input
                 id="name"
                 name="name"
-                defaultValue={artist.name ?? ""}
+                defaultValue={artist.name}
                 required
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
             </div>
-            <div className="space-y-1">
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="slug"
+                className="text-xs font-medium text-slate-800"
+              >
+                Slug (optional)
+              </label>
+              <input
+                id="slug"
+                name="slug"
+                defaultValue={artist.slug ?? ""}
+                placeholder="e.g. the-movement"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
+              />
+              <p className="text-[11px] text-slate-400">
+                Used for pretty URLs or deep links. Leave blank to generate
+                automatically.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
               <label
                 htmlFor="genre"
-                className="text-xs font-semibold text-slate-700"
+                className="text-xs font-medium text-slate-800"
               >
                 Genre
               </label>
@@ -129,119 +183,192 @@ export default async function ArtistEditPage({ params }: ArtistPageProps) {
                 id="genre"
                 name="genre"
                 defaultValue={artist.genre ?? ""}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                placeholder="e.g. Reggae, Acoustic, Soul"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
             </div>
-          </div>
 
-          {/* Bio */}
-          <div className="space-y-1">
-            <label
-              htmlFor="bio"
-              className="text-xs font-semibold text-slate-700"
-            >
-              Bio
-            </label>
-            <textarea
-              id="bio"
-              name="bio"
-              defaultValue={artist.bio ?? ""}
-              rows={4}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
-              placeholder="Short description that appears in the app."
-            />
-          </div>
-
-          {/* Links */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label
-                htmlFor="website"
-                className="text-xs font-semibold text-slate-700"
+                htmlFor="image_path"
+                className="text-xs font-medium text-slate-800"
+              >
+                Image path
+              </label>
+              <input
+                id="image_path"
+                name="image_path"
+                defaultValue={artist.image_path ?? ""}
+                placeholder="e.g. artists/the-movement.jpg"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
+              />
+              <p className="text-[11px] text-slate-400">
+                Relative path in your Supabase storage bucket or CDN.
+              </p>
+            </div>
+
+            <div className="md:col-span-2 space-y-1.5">
+              <label
+                htmlFor="bio"
+                className="text-xs font-medium text-slate-800"
+              >
+                Bio
+              </label>
+              <textarea
+                id="bio"
+                name="bio"
+                defaultValue={artist.bio ?? ""}
+                rows={4}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
+              />
+              <p className="text-[11px] text-slate-400">
+                Short description that visitors see on the Artist screen.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <div className="mb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Links & social
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Add links that help fans follow and find the artist.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <label
+                htmlFor="website_url"
+                className="text-xs font-medium text-slate-800"
               >
                 Website
               </label>
               <input
-                id="website"
-                name="website"
-                defaultValue={artist.website ?? ""}
+                id="website_url"
+                name="website_url"
+                defaultValue={artist.website_url ?? ""}
                 placeholder="https://"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
             </div>
-            <div className="space-y-1">
+
+            <div className="space-y-1.5">
               <label
-                htmlFor="instagram"
-                className="text-xs font-semibold text-slate-700"
+                htmlFor="instagram_url"
+                className="text-xs font-medium text-slate-800"
               >
                 Instagram
               </label>
               <input
-                id="instagram"
-                name="instagram"
-                defaultValue={artist.instagram ?? ""}
-                placeholder="@handle or profile URL"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                id="instagram_url"
+                name="instagram_url"
+                defaultValue={artist.instagram_url ?? ""}
+                placeholder="https://instagram.com/…"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="facebook_url"
+                className="text-xs font-medium text-slate-800"
+              >
+                Facebook
+              </label>
+              <input
+                id="facebook_url"
+                name="facebook_url"
+                defaultValue={artist.facebook_url ?? ""}
+                placeholder="https://facebook.com/…"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="tiktok_url"
+                className="text-xs font-medium text-slate-800"
+              >
+                TikTok
+              </label>
+              <input
+                id="tiktok_url"
+                name="tiktok_url"
+                defaultValue={artist.tiktok_url ?? ""}
+                placeholder="https://tiktok.com/@…"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="spotify_url"
+                className="text-xs font-medium text-slate-800"
+              >
+                Spotify
+              </label>
+              <input
+                id="spotify_url"
+                name="spotify_url"
+                defaultValue={artist.spotify_url ?? ""}
+                placeholder="https://open.spotify.com/artist/…"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
             </div>
           </div>
+        </section>
 
-          {/* Image URL + Status */}
+        <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
           <div className="space-y-1">
-            <label
-              htmlFor="hero_image_url"
-              className="text-xs font-semibold text-slate-700"
-            >
-              Image path / URL
-            </label>
-            <input
-              id="hero_image_url"
-              name="hero_image_url"
-              defaultValue={artist.hero_image_url ?? ""}
-              placeholder="Storage path or full URL"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
-            />
-            <p className="mt-1 text-[11px] text-slate-400">
-              This controls whether the &ldquo;Image&rdquo; column shows as
-              set or missing.
+            <p className="text-xs font-medium text-slate-800">
+              Visibility & status
+            </p>
+            <p className="text-[11px] text-slate-500">
+              Use this toggle to temporarily hide an artist from the app
+              without deleting them.
             </p>
           </div>
-
-          {/* Active toggle */}
-          <div className="flex items-center gap-2 pt-2">
+          <div className="flex items-center gap-2">
             <input
               id="is_active"
               name="is_active"
               type="checkbox"
-              defaultChecked={startChecked}
+              defaultChecked={artist.is_active}
               className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-400"
             />
             <label
               htmlFor="is_active"
-              className="text-xs text-slate-700"
+              className="text-xs font-medium text-slate-800"
             >
-              Artist is active and should appear in app and event
-              picker.
+              Artist is active and should appear in the app
             </label>
           </div>
+        </section>
 
-          {/* Actions */}
-          <div className="flex justify-end gap-2 pt-4">
-            <a
-              href="/artists"
-              className="inline-flex items-center rounded-full border border-slate-300 px-4 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              Cancel
-            </a>
-            <button
-              type="submit"
-              className="inline-flex items-center rounded-full bg-amber-400 px-4 py-1.5 text-xs font-semibold text-slate-900 shadow-sm hover:bg-amber-500"
-            >
-              Save changes
-            </button>
-          </div>
-        </form>
-      </section>
+        <div className="flex flex-wrap justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              // simple client-side back; fine as a progressive enhancement
+              if (typeof window !== "undefined") {
+                window.history.back();
+              }
+            }}
+            className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="inline-flex items-center rounded-full bg-amber-500 px-4 py-1.5 text-xs font-semibold text-slate-900 shadow-sm hover:bg-amber-400"
+          >
+            Save changes
+          </button>
+        </div>
+      </form>
     </DashboardShell>
   );
 }
