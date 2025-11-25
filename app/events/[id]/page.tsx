@@ -3,213 +3,281 @@ import { revalidatePath } from "next/cache";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-type EventRecord = {
-  id: string;
-  artist_id: string;
-  event_date: string;
-  start_time: string | null;
-  end_time: string | null;
-  title: string | null;
-  genre_override: string | null;
-  notes: string | null;
-  is_cancelled: boolean;
+type EventPageProps = {
+  params: {
+    id: string;
+  };
 };
 
-async function updateEvent(id: string, formData: FormData) {
-  "use server";
+type EventRecord = {
+  id: string;
+  event_date: string; // ISO date string (YYYY-MM-DD)
+  start_time: string | null; // 'HH:MM:SS'
+  end_time: string | null; // 'HH:MM:SS'
+  title: string | null;
+  notes: string | null;
+  genre_override: string | null;
+  is_cancelled: boolean | null;
+};
 
-  const artist_id = (formData.get("artist_id") || "").toString().trim();
-  const event_date = (formData.get("event_date") || "").toString().trim();
-  const start_time_raw = (formData.get("start_time") || "")
-    .toString()
-    .trim();
-  const title = (formData.get("title") || "").toString().trim() || null;
-  const genre_override =
-    (formData.get("genre_override") || "").toString().trim() || null;
-  const notes = (formData.get("notes") || "").toString().trim() || null;
-  const is_cancelled = formData.get("is_cancelled") === "on";
+export const dynamic = "force-dynamic";
 
-  if (!artist_id || !event_date) {
-    return;
-  }
-
-  const start_time = start_time_raw ? `${start_time_raw}:00` : null;
-
-  const { error } = await supabaseServer
-    .from("artist_events")
-    .update({
-      artist_id,
-      event_date,
-      start_time,
-      title,
-      genre_override,
-      notes,
-      is_cancelled,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id);
-
-  if (error) {
-    console.error("[Events] update error:", error);
-  }
-
-  revalidatePath("/events");
-  redirect("/events");
-}
-
-export default async function EditEventPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function EventEditPage({ params }: EventPageProps) {
+  const supabase = supabaseServer;
   const { id } = params;
 
-  const [{ data: eventData, error: eventError }, { data: artists }] =
-    await Promise.all([
-      supabaseServer
-        .from("artist_events")
-        .select(
-          "id, artist_id, event_date, start_time, end_time, title, genre_override, notes, is_cancelled"
-        )
-        .eq("id", id)
-        .single(),
-      supabaseServer
-        .from("artists")
-        .select("id, name")
-        .eq("is_active", true)
-        .order("name", { ascending: true }),
-    ]);
+  const { data: event, error } = await supabase
+    .from("events")
+    .select(
+      `
+      id,
+      event_date,
+      start_time,
+      end_time,
+      title,
+      notes,
+      genre_override,
+      is_cancelled
+    `
+    )
+    .eq("id", id)
+    .maybeSingle();
 
-  if (eventError || !eventData) {
-    console.error("[Events] load event error:", eventError);
+  if (error) {
+    console.error("[Event Edit] load error:", error);
+  }
+
+  if (!event) {
     notFound();
   }
 
-  const event = eventData as EventRecord;
-  const artistOptions = artists ?? [];
+  async function updateEvent(formData: FormData) {
+    "use server";
+
+    const supabase = supabaseServer;
+
+    const id = formData.get("id") as string;
+    const event_date = formData.get("event_date") as string;
+    const start_time = (formData.get("start_time") as string) || null;
+    const end_time = (formData.get("end_time") as string) || null;
+    const title = ((formData.get("title") as string) || "").trim() || null;
+    const notes = ((formData.get("notes") as string) || "").trim() || null;
+    const genre_override =
+      ((formData.get("genre_override") as string) || "").trim() || null;
+    const is_cancelled = formData.get("is_cancelled") === "on";
+
+    if (!id || !event_date) {
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from("events")
+      .update({
+        event_date,
+        start_time,
+        end_time,
+        title,
+        notes,
+        genre_override,
+        is_cancelled,
+      })
+      .eq("id", id);
+
+    if (updateError) {
+      console.error("[Event Edit] update error:", updateError);
+      return;
+    }
+
+    revalidatePath("/events");
+    revalidatePath(`/events/${id}`);
+    redirect("/events");
+  }
 
   const startTimeValue = event.start_time
     ? event.start_time.slice(0, 5) // "HH:MM"
     : "";
-
-  async function action(formData: FormData) {
-    "use server";
-    await updateEvent(id, formData);
-  }
+  const endTimeValue = event.end_time ? event.end_time.slice(0, 5) : "";
 
   return (
     <DashboardShell
       title="Edit event"
       subtitle="Update details for this show."
+      activeTab="events"
     >
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4 max-w-xl">
-        <form action={action} className="space-y-4">
+      <form action={updateEvent} className="space-y-6 max-w-2xl">
+        <input type="hidden" name="id" value={event.id} />
+
+        {/* Basics */}
+        <section className="rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-4 space-y-4">
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
-              Artist
-            </label>
-            <select
-              name="artist_id"
-              required
-              defaultValue={event.artist_id}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            >
-              {artistOptions.map((artist) => (
-                <option key={artist.id} value={artist.id}>
-                  {artist.name}
-                </option>
-              ))}
-            </select>
+            <h2 className="text-sm font-semibold text-slate-50">
+              Event basics
+            </h2>
+            <p className="mt-1 text-xs text-slate-400">
+              Date and time are used for Tonight and Calendar in the app.
+            </p>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
+          <div className="space-y-3">
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor="event_date"
+                className="text-xs font-medium text-slate-200"
+              >
                 Date
               </label>
               <input
-                type="date"
+                id="event_date"
                 name="event_date"
-                required
+                type="date"
                 defaultValue={event.event_date}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                required
+                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
               />
             </div>
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
-                Start time
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor="start_time"
+                  className="text-xs font-medium text-slate-200"
+                >
+                  Start time
+                </label>
+                <input
+                  id="start_time"
+                  name="start_time"
+                  type="time"
+                  defaultValue={startTimeValue}
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor="end_time"
+                  className="text-xs font-medium text-slate-200"
+                >
+                  End time
+                </label>
+                <input
+                  id="end_time"
+                  name="end_time"
+                  type="time"
+                  defaultValue={endTimeValue}
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                id="is_cancelled"
+                name="is_cancelled"
+                type="checkbox"
+                defaultChecked={event.is_cancelled ?? false}
+                className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-amber-400"
+              />
+              <label
+                htmlFor="is_cancelled"
+                className="text-xs text-slate-200 select-none"
+              >
+                Mark event as cancelled
+              </label>
+            </div>
+          </div>
+        </section>
+
+        {/* Title & genre */}
+        <section className="rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-4 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-50">
+              Title & genre
+            </h2>
+            <p className="mt-1 text-xs text-slate-400">
+              Optional title and genre override for this specific show.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor="title"
+                className="text-xs font-medium text-slate-200"
+              >
+                Event title
               </label>
               <input
-                type="time"
-                name="start_time"
-                defaultValue={startTimeValue}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                id="title"
+                name="title"
+                defaultValue={event.title ?? ""}
+                placeholder="Landon McNamara – Full band show"
+                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor="genre_override"
+                className="text-xs font-medium text-slate-200"
+              >
+                Genre override
+              </label>
+              <input
+                id="genre_override"
+                name="genre_override"
+                defaultValue={event.genre_override ?? ""}
+                placeholder="If set, replaces the artist’s default genre for this show."
+                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
               />
             </div>
           </div>
+        </section>
 
+        {/* Notes */}
+        <section className="rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-4 space-y-4">
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
-              Event title (optional)
-            </label>
-            <input
-              name="title"
-              defaultValue={event.title ?? ""}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
+            <h2 className="text-sm font-semibold text-slate-50">Notes</h2>
+            <p className="mt-1 text-xs text-slate-400">
+              Internal notes or special info about this show.
+            </p>
           </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
-              Genre label (optional)
-            </label>
-            <input
-              name="genre_override"
-              defaultValue={event.genre_override ?? ""}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="notes"
+              className="text-xs font-medium text-slate-200"
+            >
               Notes
             </label>
             <textarea
+              id="notes"
               name="notes"
-              rows={3}
+              rows={4}
               defaultValue={event.notes ?? ""}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              className="resize-none rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
             />
           </div>
+        </section>
 
-          <div className="flex items-center justify-between pt-2">
-            <label className="inline-flex items-center gap-2 text-xs text-slate-700">
-              <input
-                type="checkbox"
-                name="is_cancelled"
-                defaultChecked={event.is_cancelled}
-                className="rounded border-slate-300"
-              />
-              Mark as cancelled
-            </label>
-
-            <div className="flex gap-2">
-              <a
-                href="/events"
-                className="text-xs px-3 py-1.5 rounded-full border border-slate-300 text-slate-700 hover:bg-slate-50"
-              >
-                Cancel
-              </a>
-              <button
-                type="submit"
-                className="text-xs px-4 py-1.5 rounded-full bg-amber-400 hover:bg-amber-500 text-slate-900 font-semibold shadow-sm"
-              >
-                Save changes
-              </button>
-            </div>
-          </div>
-        </form>
-      </section>
+        {/* Actions */}
+        <div className="flex items-center justify-between pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              history.back();
+            }}
+            className="inline-flex items-center rounded-full border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="inline-flex items-center rounded-full bg-[#ffc800] px-4 py-2 text-xs font-semibold text-black shadow hover:bg-[#e6b400]"
+          >
+            Save changes
+          </button>
+        </div>
+      </form>
     </DashboardShell>
   );
 }
