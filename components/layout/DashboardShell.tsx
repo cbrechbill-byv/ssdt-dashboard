@@ -8,62 +8,62 @@ type DashboardTabId =
   | "fan-wall"
   | "notifications";
 
-export type DashboardShellProps = {
+type DashboardShellProps = {
   title: string;
   subtitle?: string;
-  activeTab: DashboardTabId;
+  /** Which top-nav pill should be highlighted */
+  activeTab?: DashboardTabId;
   children: React.ReactNode;
 };
 
-const TABS: { id: DashboardTabId; label: string; href: string }[] = [
+const NAV_TABS: { id: DashboardTabId; label: string; href: string }[] = [
   { id: "dashboard", label: "Dashboard", href: "/dashboard" },
   { id: "artists", label: "Artists", href: "/artists" },
   { id: "events", label: "Events", href: "/events" },
-  { id: "fan-wall", label: "Fan Wall", href: "/fan-wall" },
+  { id: "fan-wall", label: "Fan wall", href: "/fan-wall" },
   { id: "notifications", label: "Notifications", href: "/notifications" },
 ];
 
 export default function DashboardShell({
   title,
   subtitle,
-  activeTab,
+  activeTab = "dashboard",
   children,
 }: DashboardShellProps) {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
-      {/* Top header bar */}
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
+      {/* Header */}
+      <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
+        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-4">
+          {/* Logo + brand */}
           <div className="flex items-center gap-3">
-            {/* Logo – keep square, no skew */}
-            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-slate-900">
-              <img
-                src="/ssdt-logo.png"
-                alt="Sugarshack Downtown"
-                className="h-9 w-9 object-contain"
-              />
-            </div>
-            <div className="leading-tight">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-500">
+            {/* Bigger, cleaner logo */}
+            <img
+              src="/ssdt-logo.png"
+              alt="Sugarshack Downtown logo"
+              className="h-12 w-auto md:h-14 rounded-xl"
+            />
+            <div className="flex flex-col">
+              <span className="text-xs font-semibold tracking-[0.18em] uppercase text-amber-600">
                 Sugarshack Downtown
-              </p>
-              <p className="text-sm font-semibold text-slate-900">
+              </span>
+              <span className="text-sm md:text-base font-medium text-slate-800">
                 VIP Dashboard
-              </p>
+              </span>
             </div>
           </div>
 
           {/* Top nav pills */}
-          <nav className="flex items-center gap-1 rounded-full bg-slate-100 p-1">
-            {TABS.map((tab) => (
+          <nav className="flex flex-wrap gap-1.5">
+            {NAV_TABS.map((tab) => (
               <Link
                 key={tab.id}
                 href={tab.href}
                 className={clsx(
-                  "px-3 py-1.5 text-xs font-semibold rounded-full border transition-colors",
+                  "px-3 py-1.5 rounded-full text-xs md:text-sm font-medium border transition-colors",
                   activeTab === tab.id
-                    ? "bg-amber-400 border-amber-400 text-slate-900 shadow-sm"
-                    : "bg-white border-slate-200 text-slate-600 hover:bg-amber-50"
+                    ? "bg-amber-500 text-slate-900 border-amber-500 shadow-sm"
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 {tab.label}
@@ -73,14 +73,18 @@ export default function DashboardShell({
         </div>
       </header>
 
-      {/* Page header + content */}
-      <main className="mx-auto max-w-6xl space-y-4 px-4 py-6">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
+      {/* Page content */}
+      <main className="mx-auto max-w-6xl px-4 py-6">
+        <header className="mb-6">
+          <h1 className="text-xl md:text-2xl font-semibold text-slate-900">
+            {title}
+          </h1>
           {subtitle && (
-            <p className="text-xs text-slate-500">{subtitle}</p>
+            <p className="mt-1 text-sm md:text-base text-slate-600">
+              {subtitle}
+            </p>
           )}
-        </div>
+        </header>
 
         {children}
       </main>
