@@ -152,7 +152,6 @@ export default async function EventsPage() {
           </p>
         )}
 
-        {/* Tiny debug helper to see raw artist payload from Supabase */}
         {firstArtistRaw && (
           <details className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
             <summary className="cursor-pointer select-none">
@@ -169,9 +168,7 @@ export default async function EventsPage() {
             No upcoming events with times set. Click &ldquo;Add event&rdquo; to
             schedule your first show.
           </p>
-        ) : null}
-
-        {events.length > 0 && (
+        ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-xs">
               <thead>
@@ -236,7 +233,7 @@ export default async function EventsPage() {
                       </td>
                       <td className="py-2 pl-3 align-top text-right whitespace-nowrap">
                         <a
-                          href={`/events/${evt.id}`}
+                          href={`/events/edit?id=${evt.id}`}
                           className="text-xs font-semibold text-slate-700 hover:text-slate-900 hover:underline"
                         >
                           Edit

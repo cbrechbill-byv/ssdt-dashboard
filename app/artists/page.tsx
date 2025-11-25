@@ -200,7 +200,7 @@ export default async function ArtistsPage() {
                         </td>
                         <td className="px-4 py-2 align-top text-right">
                           <Link
-                            href={`/artists/${artist.id}`}
+                            href={`/artists/edit?id=${artist.id}`}
                             className="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
                           >
                             Edit
