@@ -3,100 +3,103 @@ import { revalidatePath } from "next/cache";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-type EventPageProps = {
-  params: {
-    id: string;
-  };
-};
-
 type EventRecord = {
   id: string;
-  event_date: string; // ISO date string (YYYY-MM-DD)
-  start_time: string | null; // 'HH:MM:SS'
-  end_time: string | null; // 'HH:MM:SS'
+  event_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  is_cancelled: boolean;
+  genre_override: string | null;
   title: string | null;
   notes: string | null;
-  genre_override: string | null;
-  is_cancelled: boolean | null;
+  artist: { name: string | null; genre: string | null }[] | null;
 };
 
-export const dynamic = "force-dynamic";
+type EventPageProps = {
+  params: { id: string };
+};
+
+function toInputDate(isoDate: string | null): string {
+  if (!isoDate) return "";
+  return isoDate.slice(0, 10);
+}
+
+function toInputTime(time: string | null): string {
+  if (!time) return "";
+  const [h, m] = time.split(":");
+  if (!h || !m) return "";
+  return `${h}:${m}`;
+}
+
+async function updateEvent(formData: FormData) {
+  "use server";
+
+  const id = formData.get("id")?.toString();
+  if (!id) throw new Error("Missing event id");
+
+  const eventDate = formData.get("event_date")?.toString() || null;
+  const start = formData.get("start_time")?.toString() || null;
+  const end = formData.get("end_time")?.toString() || null;
+  const title = formData.get("title")?.toString().trim() || null;
+  const notes = formData.get("notes")?.toString().trim() || null;
+  const genreOverride =
+    formData.get("genre_override")?.toString().trim() || null;
+  const isCancelled = formData.get("is_cancelled") === "on";
+
+  const { error } = await supabaseServer
+    .from("artist_events")
+    .update({
+      event_date: eventDate,
+      start_time: start,
+      end_time: end,
+      title,
+      notes,
+      genre_override: genreOverride,
+      is_cancelled: isCancelled,
+    })
+    .eq("id", id);
+
+  if (error) {
+    console.error("[Events] update error:", error);
+    throw error;
+  }
+
+  revalidatePath("/events");
+  redirect("/events");
+}
 
 export default async function EventEditPage({ params }: EventPageProps) {
-  const supabase = supabaseServer;
   const { id } = params;
 
-  const { data: event, error } = await supabase
-    .from("events")
+  const { data, error } = await supabaseServer
+    .from("artist_events")
     .select(
       `
       id,
       event_date,
       start_time,
       end_time,
+      is_cancelled,
+      genre_override,
       title,
       notes,
-      genre_override,
-      is_cancelled
+      artist:artists (
+        name,
+        genre
+      )
     `
     )
     .eq("id", id)
-    .maybeSingle();
+    .single();
 
-  if (error) {
-    console.error("[Event Edit] load error:", error);
-  }
-
-  if (!event) {
+  if (error || !data) {
+    console.error("[Events] not found:", error);
     notFound();
   }
 
-  async function updateEvent(formData: FormData) {
-    "use server";
-
-    const supabase = supabaseServer;
-
-    const id = formData.get("id") as string;
-    const event_date = formData.get("event_date") as string;
-    const start_time = (formData.get("start_time") as string) || null;
-    const end_time = (formData.get("end_time") as string) || null;
-    const title = ((formData.get("title") as string) || "").trim() || null;
-    const notes = ((formData.get("notes") as string) || "").trim() || null;
-    const genre_override =
-      ((formData.get("genre_override") as string) || "").trim() || null;
-    const is_cancelled = formData.get("is_cancelled") === "on";
-
-    if (!id || !event_date) {
-      return;
-    }
-
-    const { error: updateError } = await supabase
-      .from("events")
-      .update({
-        event_date,
-        start_time,
-        end_time,
-        title,
-        notes,
-        genre_override,
-        is_cancelled,
-      })
-      .eq("id", id);
-
-    if (updateError) {
-      console.error("[Event Edit] update error:", updateError);
-      return;
-    }
-
-    revalidatePath("/events");
-    revalidatePath(`/events/${id}`);
-    redirect("/events");
-  }
-
-  const startTimeValue = event.start_time
-    ? event.start_time.slice(0, 5) // "HH:MM"
-    : "";
-  const endTimeValue = event.end_time ? event.end_time.slice(0, 5) : "";
+  const event = data as EventRecord;
+  const primaryArtist =
+    event.artist && event.artist.length > 0 ? event.artist[0] : null;
 
   return (
     <DashboardShell
@@ -104,180 +107,160 @@ export default async function EventEditPage({ params }: EventPageProps) {
       subtitle="Update details for this show."
       activeTab="events"
     >
-      <form action={updateEvent} className="space-y-6 max-w-2xl">
-        <input type="hidden" name="id" value={event.id} />
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm max-w-xl">
+        <form action={updateEvent} className="space-y-4">
+          <input type="hidden" name="id" value={event.id} />
 
-        {/* Basics */}
-        <section className="rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-4 space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-50">
-              Event basics
-            </h2>
-            <p className="mt-1 text-xs text-slate-400">
-              Date and time are used for Tonight and Calendar in the app.
+          {/* Artist (read-only) */}
+          <div className="space-y-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Artist
             </p>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex flex-col gap-1">
-              <label
-                htmlFor="event_date"
-                className="text-xs font-medium text-slate-200"
-              >
-                Date
-              </label>
-              <input
-                id="event_date"
-                name="event_date"
-                type="date"
-                defaultValue={event.event_date}
-                required
-                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="start_time"
-                  className="text-xs font-medium text-slate-200"
-                >
-                  Start time
-                </label>
-                <input
-                  id="start_time"
-                  name="start_time"
-                  type="time"
-                  defaultValue={startTimeValue}
-                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="end_time"
-                  className="text-xs font-medium text-slate-200"
-                >
-                  End time
-                </label>
-                <input
-                  id="end_time"
-                  name="end_time"
-                  type="time"
-                  defaultValue={endTimeValue}
-                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                id="is_cancelled"
-                name="is_cancelled"
-                type="checkbox"
-                defaultChecked={event.is_cancelled ?? false}
-                className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-amber-400"
-              />
-              <label
-                htmlFor="is_cancelled"
-                className="text-xs text-slate-200 select-none"
-              >
-                Mark event as cancelled
-              </label>
-            </div>
-          </div>
-        </section>
-
-        {/* Title & genre */}
-        <section className="rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-4 space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-50">
-              Title & genre
-            </h2>
-            <p className="mt-1 text-xs text-slate-400">
-              Optional title and genre override for this specific show.
+            <p className="text-sm font-semibold text-slate-900">
+              {primaryArtist?.name || "Unknown artist"}
             </p>
+            {primaryArtist?.genre && (
+              <p className="text-xs text-slate-500">
+                Default genre: {primaryArtist.genre}
+              </p>
+            )}
           </div>
 
-          <div className="space-y-3">
-            <div className="flex flex-col gap-1">
+          {/* Date */}
+          <div className="space-y-1">
+            <label
+              htmlFor="event_date"
+              className="text-xs font-semibold text-slate-700"
+            >
+              Date
+            </label>
+            <input
+              id="event_date"
+              name="event_date"
+              type="date"
+              defaultValue={toInputDate(event.event_date)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+            />
+          </div>
+
+          {/* Time range */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
               <label
-                htmlFor="title"
-                className="text-xs font-medium text-slate-200"
+                htmlFor="start_time"
+                className="text-xs font-semibold text-slate-700"
               >
-                Event title
+                Start time
               </label>
               <input
-                id="title"
-                name="title"
-                defaultValue={event.title ?? ""}
-                placeholder="Landon McNamara – Full band show"
-                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
+                id="start_time"
+                name="start_time"
+                type="time"
+                defaultValue={toInputTime(event.start_time)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
               />
             </div>
 
-            <div className="flex flex-col gap-1">
+            <div className="space-y-1">
+              <label
+                htmlFor="end_time"
+                className="text-xs font-semibold text-slate-700"
+              >
+                End time
+              </label>
+              <input
+                id="end_time"
+                name="end_time"
+                type="time"
+                defaultValue={toInputTime(event.end_time)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+              />
+            </div>
+          </div>
+
+          {/* Title */}
+          <div className="space-y-1">
+            <label
+              htmlFor="title"
+              className="text-xs font-semibold text-slate-700"
+            >
+              Show title (optional)
+            </label>
+            <input
+              id="title"
+              name="title"
+              defaultValue={event.title ?? ""}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+              placeholder="e.g. Live on the Lawn"
+            />
+          </div>
+
+          {/* Notes */}
+          <div className="space-y-1">
+            <label
+              htmlFor="notes"
+              className="text-xs font-semibold text-slate-700"
+            >
+              Notes (optional)
+            </label>
+            <textarea
+              id="notes"
+              name="notes"
+              rows={3}
+              defaultValue={event.notes ?? ""}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+              placeholder="e.g. Special guests, merch, etc."
+            />
+          </div>
+
+          {/* Genre override + Cancelled */}
+          <div className="grid gap-4 sm:grid-cols-[2fr,1fr]">
+            <div className="space-y-1">
               <label
                 htmlFor="genre_override"
-                className="text-xs font-medium text-slate-200"
+                className="text-xs font-semibold text-slate-700"
               >
-                Genre override
+                Genre override (optional)
               </label>
               <input
                 id="genre_override"
                 name="genre_override"
                 defaultValue={event.genre_override ?? ""}
-                placeholder="If set, replaces the artist’s default genre for this show."
-                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                placeholder="If set, replaces the default genre for Tonight/Calendar."
               />
             </div>
-          </div>
-        </section>
 
-        {/* Notes */}
-        <section className="rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-4 space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-50">Notes</h2>
-            <p className="mt-1 text-xs text-slate-400">
-              Internal notes or special info about this show.
-            </p>
+            <div className="flex items-end">
+              <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  name="is_cancelled"
+                  defaultChecked={event.is_cancelled}
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-amber-500 focus:ring-amber-400"
+                />
+                Cancelled
+              </label>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="notes"
-              className="text-xs font-medium text-slate-200"
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <a
+              href="/events"
+              className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
             >
-              Notes
-            </label>
-            <textarea
-              id="notes"
-              name="notes"
-              rows={4}
-              defaultValue={event.notes ?? ""}
-              className="resize-none rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-amber-400"
-            />
+              Cancel
+            </a>
+            <button
+              type="submit"
+              className="rounded-full bg-amber-400 px-4 py-1.5 text-xs font-semibold text-slate-900 shadow-sm hover:bg-amber-500"
+            >
+              Save changes
+            </button>
           </div>
-        </section>
-
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-2">
-          <button
-            type="button"
-            onClick={() => {
-              history.back();
-            }}
-            className="inline-flex items-center rounded-full border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="inline-flex items-center rounded-full bg-[#ffc800] px-4 py-2 text-xs font-semibold text-black shadow hover:bg-[#e6b400]"
-          >
-            Save changes
-          </button>
-        </div>
-      </form>
+        </form>
+      </section>
     </DashboardShell>
   );
 }

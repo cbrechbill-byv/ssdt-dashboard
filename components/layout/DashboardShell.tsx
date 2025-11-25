@@ -1,109 +1,84 @@
 import Link from "next/link";
-import Image from "next/image";
-import React from "react";
+import clsx from "clsx";
 
-type NavKey = "dashboard" | "fan-wall" | "notifications" | "artists" | "events";
-
-type PrimaryAction = {
-  label: string;
-  href: string;
-};
+type DashboardTabId =
+  | "dashboard"
+  | "artists"
+  | "events"
+  | "fan-wall"
+  | "notifications";
 
 export type DashboardShellProps = {
-  /** Big page title, e.g. "VIP Dashboard", "Artists", "Events" */
   title: string;
-  /** Smaller subtitle under the title */
   subtitle?: string;
-  /** Which nav pill should be highlighted */
-  activeTab: NavKey;
-  /** Optional button in the top-right of the page header */
-  primaryAction?: PrimaryAction;
+  activeTab: DashboardTabId;
   children: React.ReactNode;
 };
 
-const navItems: { key: NavKey; label: string; href: string }[] = [
-  { key: "dashboard", label: "Dashboard", href: "/dashboard" },
-  { key: "fan-wall", label: "Fan Wall", href: "/fan-wall" },
-  { key: "notifications", label: "Notifications", href: "/notifications" },
-  { key: "artists", label: "Artists", href: "/artists" },
-  { key: "events", label: "Events", href: "/events" },
+const TABS: { id: DashboardTabId; label: string; href: string }[] = [
+  { id: "dashboard", label: "Dashboard", href: "/dashboard" },
+  { id: "artists", label: "Artists", href: "/artists" },
+  { id: "events", label: "Events", href: "/events" },
+  { id: "fan-wall", label: "Fan Wall", href: "/fan-wall" },
+  { id: "notifications", label: "Notifications", href: "/notifications" },
 ];
 
 export default function DashboardShell({
   title,
   subtitle,
   activeTab,
-  primaryAction,
   children,
 }: DashboardShellProps) {
   return (
-    <div className="min-h-screen bg-[#050816] text-slate-50">
+    <div className="min-h-screen bg-slate-100 text-slate-900">
       {/* Top header bar */}
-      <header className="border-b border-slate-800 bg-[#050816]">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          {/* Logo + title */}
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-3">
-              <Image
+            {/* Logo – keep square, no skew */}
+            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-slate-900">
+              <img
                 src="/ssdt-logo.png"
                 alt="Sugarshack Downtown"
-                width={48}
-                height={48}
-                className="h-12 w-12 rounded-full shadow-lg"
+                className="h-9 w-9 object-contain"
               />
-              <div className="flex flex-col">
-                <span className="text-sm font-medium text-slate-300">
-                  Sugarshack Downtown
-                </span>
-                <span className="text-xs text-slate-400">
-                  Check-ins, VIP activity, and fan content at a glance.
-                </span>
-              </div>
+            </div>
+            <div className="leading-tight">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-500">
+                Sugarshack Downtown
+              </p>
+              <p className="text-sm font-semibold text-slate-900">
+                VIP Dashboard
+              </p>
             </div>
           </div>
 
-          {/* Nav pills */}
-          <nav className="flex items-center gap-2">
-            {navItems.map((item) => {
-              const isActive = item.key === activeTab;
-              return (
-                <Link
-                  key={item.key}
-                  href={item.href}
-                  className={[
-                    "rounded-full px-4 py-1.5 text-sm font-medium transition-colors border",
-                    isActive
-                      ? "bg-[#ffc800] text-black border-[#ffc800]"
-                      : "bg-transparent text-slate-200 border-slate-700 hover:bg-slate-800",
-                  ].join(" ")}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
+          {/* Top nav pills */}
+          <nav className="flex items-center gap-1 rounded-full bg-slate-100 p-1">
+            {TABS.map((tab) => (
+              <Link
+                key={tab.id}
+                href={tab.href}
+                className={clsx(
+                  "px-3 py-1.5 text-xs font-semibold rounded-full border transition-colors",
+                  activeTab === tab.id
+                    ? "bg-amber-400 border-amber-400 text-slate-900 shadow-sm"
+                    : "bg-white border-slate-200 text-slate-600 hover:bg-amber-50"
+                )}
+              >
+                {tab.label}
+              </Link>
+            ))}
           </nav>
         </div>
       </header>
 
-      {/* Page content */}
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
-              {title}
-            </h1>
-            {subtitle && (
-              <p className="mt-1 text-sm text-slate-400">{subtitle}</p>
-            )}
-          </div>
-
-          {primaryAction && (
-            <Link
-              href={primaryAction.href}
-              className="rounded-full bg-[#ffc800] px-4 py-2 text-sm font-semibold text-black shadow-md hover:bg-[#e6b400] transition-colors"
-            >
-              {primaryAction.label}
-            </Link>
+      {/* Page header + content */}
+      <main className="mx-auto max-w-6xl space-y-4 px-4 py-6">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
+          {subtitle && (
+            <p className="text-xs text-slate-500">{subtitle}</p>
           )}
         </div>
 
