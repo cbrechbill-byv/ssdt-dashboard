@@ -41,7 +41,7 @@ export default async function VipDetailPage({ params }: VipDetailPageProps) {
   }
 
   return (
-    <DashboardShell>
+    <DashboardShell title="VIP Details" subtitle="Individual VIP profile and activity">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
