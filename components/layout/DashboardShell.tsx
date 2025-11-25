@@ -1,91 +1,91 @@
+"use client";
+
+import React from "react";
 import Link from "next/link";
-import clsx from "clsx";
+import Image from "next/image";
+import { usePathname } from "next/navigation";
 
-type DashboardTabId =
-  | "dashboard"
-  | "artists"
-  | "events"
-  | "fan-wall"
-  | "notifications";
+type DashboardTab = "dashboard" | "artists" | "events" | "fan-wall" | "notifications";
 
-type DashboardShellProps = {
+interface DashboardShellProps {
   title: string;
   subtitle?: string;
-  /** Which top-nav pill should be highlighted */
-  activeTab?: DashboardTabId;
+  activeTab: DashboardTab;
   children: React.ReactNode;
-};
+}
 
-const NAV_TABS: { id: DashboardTabId; label: string; href: string }[] = [
-  { id: "dashboard", label: "Dashboard", href: "/dashboard" },
-  { id: "artists", label: "Artists", href: "/artists" },
-  { id: "events", label: "Events", href: "/events" },
-  { id: "fan-wall", label: "Fan wall", href: "/fan-wall" },
-  { id: "notifications", label: "Notifications", href: "/notifications" },
+const tabs: { key: DashboardTab; label: string; href: string }[] = [
+  { key: "dashboard", label: "Dashboard", href: "/dashboard" },
+  { key: "artists", label: "Artists", href: "/artists" },
+  { key: "events", label: "Events", href: "/events" },
+  { key: "fan-wall", label: "Fan wall", href: "/fan-wall" },
+  { key: "notifications", label: "Notifications", href: "/notifications" },
 ];
 
 export default function DashboardShell({
   title,
   subtitle,
-  activeTab = "dashboard",
+  activeTab,
   children,
 }: DashboardShellProps) {
+  const pathname = usePathname();
+
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      {/* Header */}
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-4">
-          {/* Logo + brand */}
-          <div className="flex items-center gap-3">
-            {/* Bigger, cleaner logo */}
-            <img
-              src="/ssdt-logo.png"
-              alt="Sugarshack Downtown logo"
-              className="h-12 w-auto md:h-14 rounded-xl"
-            />
+    <div className="min-h-screen bg-slate-100">
+      <header className="border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
+          {/* Logo + title */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            <Link
+              href="/dashboard"
+              className="flex items-center rounded-xl bg-slate-50/80 px-2 py-1.5 shadow-sm hover:bg-slate-100"
+            >
+              <Image
+                src="/ssdt-logo.png"
+                alt="Sugarshack Downtown"
+                width={200}
+                height={64}
+                priority
+                className="h-10 w-auto sm:h-12 md:h-14"
+              />
+            </Link>
             <div className="flex flex-col">
-              <span className="text-xs font-semibold tracking-[0.18em] uppercase text-amber-600">
-                Sugarshack Downtown
-              </span>
-              <span className="text-sm md:text-base font-medium text-slate-800">
-                VIP Dashboard
-              </span>
+              <h1 className="text-sm font-semibold text-slate-900 sm:text-base">
+                Sugarshack Downtown VIP Dashboard
+              </h1>
+              <p className="text-[11px] text-slate-500 sm:text-xs">
+                {title}
+                {subtitle ? ` · ${subtitle}` : null}
+              </p>
             </div>
           </div>
 
-          {/* Top nav pills */}
-          <nav className="flex flex-wrap gap-1.5">
-            {NAV_TABS.map((tab) => (
-              <Link
-                key={tab.id}
-                href={tab.href}
-                className={clsx(
-                  "px-3 py-1.5 rounded-full text-xs md:text-sm font-medium border transition-colors",
-                  activeTab === tab.id
-                    ? "bg-amber-500 text-slate-900 border-amber-500 shadow-sm"
-                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                {tab.label}
-              </Link>
-            ))}
+          {/* Navigation */}
+          <nav className="flex flex-wrap gap-1.5 text-xs">
+            {tabs.map((tab) => {
+              const isActive =
+                activeTab === tab.key || pathname?.startsWith(tab.href);
+
+              return (
+                <Link
+                  key={tab.key}
+                  href={tab.href}
+                  className={[
+                    "inline-flex items-center rounded-full border px-3 py-1 transition-colors",
+                    isActive
+                      ? "border-amber-400 bg-amber-50 text-slate-900 shadow-sm"
+                      : "border-transparent bg-slate-50 text-slate-600 hover:bg-slate-100",
+                  ].join(" ")}
+                >
+                  {tab.label}
+                </Link>
+              );
+            })}
           </nav>
         </div>
       </header>
 
-      {/* Page content */}
-      <main className="mx-auto max-w-6xl px-4 py-6">
-        <header className="mb-6">
-          <h1 className="text-xl md:text-2xl font-semibold text-slate-900">
-            {title}
-          </h1>
-          {subtitle && (
-            <p className="mt-1 text-sm md:text-base text-slate-600">
-              {subtitle}
-            </p>
-          )}
-        </header>
-
+      <main className="mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
         {children}
       </main>
     </div>
