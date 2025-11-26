@@ -73,8 +73,8 @@ export async function POST(request: Request) {
     const fileName = `${baseSlug}-${Date.now()}.jpg`;
 
     const bucket = "artist-photos";
-    // Object key *inside* the bucket
-    const key = `artist-photos/${fileName}`;
+    // Key INSIDE the bucket (no extra folder)
+    const key = fileName;
 
     const { error: uploadError } = await supabaseServer.storage
       .from(bucket)
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
     const publicUrl = data?.publicUrl ?? null;
 
     // image_path we store in the artists table
-    const imagePath = `${bucket}/${key.split("/").slice(1).join("/")}`;
+    const imagePath = `${bucket}/${key}`;
 
     return NextResponse.json({
       success: true,
