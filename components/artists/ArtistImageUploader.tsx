@@ -1,12 +1,11 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 
 interface ArtistImageUploaderProps {
   artistName: string;
   slug?: string | null;
   initialPath?: string | null;
-  /** Fully qualified public URL computed on the server (optional) */
   initialUrl?: string | null;
   fieldName?: string;
 }
@@ -33,9 +32,6 @@ export default function ArtistImageUploader({
   const [status, setStatus] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // What we actually show:
-  // 1. New uploaded image (uploadedUrl)
-  // 2. Else existing server-provided image (initialUrl)
   const effectivePreviewUrl = useMemo(() => {
     if (uploadedUrl) return uploadedUrl;
     if (initialUrl) return initialUrl;
@@ -56,7 +52,7 @@ export default function ArtistImageUploader({
       return;
     }
 
-    const maxBytes = 5 * 1024 * 1024; // 5 MB
+    const maxBytes = 5 * 1024 * 1024;
     if (file.size > maxBytes) {
       setStatus("Image is too large. Max size is 5 MB.");
       return;
@@ -86,14 +82,13 @@ export default function ArtistImageUploader({
         return;
       }
 
-      // Server returns .path and .publicUrl
       setImagePath(json.path as string);
       setUploadedUrl(json.publicUrl as string | null);
       setStatus(
         "Image uploaded successfully. Don’t forget to save the artist."
       );
-    } catch (err) {
-      console.error("[ArtistImageUploader] Upload exception:", err);
+    } catch (error) {
+      console.error("[ArtistImageUploader] Upload exception:", error);
       setStatus("Upload failed due to a network error.");
     } finally {
       setIsUploading(false);
@@ -102,7 +97,7 @@ export default function ArtistImageUploader({
 
   return (
     <div className="space-y-2">
-      {/* Hidden field that the server action will read */}
+      {/* Hidden field used by the server action */}
       <input type="hidden" name={fieldName} value={imagePath} />
 
       <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">

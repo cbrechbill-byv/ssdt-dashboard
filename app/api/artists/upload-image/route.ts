@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    let buffer = Buffer.from(arrayBuffer);
+    const buffer = Buffer.from(arrayBuffer);
 
     const img = sharp(buffer);
     const metadata = await img.metadata();
@@ -72,14 +72,13 @@ export async function POST(request: Request) {
     const baseSlug = providedSlug || slugify(artistName);
     const fileName = `${baseSlug}-${Date.now()}.jpg`;
 
-    // Object key *inside* bucket artist-photos
-    const objectKey = `artist-photos/${fileName}`;
-
     const bucket = "artist-photos";
+    // Object key *inside* the bucket
+    const key = `artist-photos/${fileName}`;
 
     const { error: uploadError } = await supabaseServer.storage
       .from(bucket)
-      .upload(objectKey, resized, {
+      .upload(key, resized, {
         contentType: "image/jpeg",
         upsert: true,
       });
@@ -95,12 +94,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // Build a public URL via Supabase (no env guessing on client)
-    const { data } = supabaseServer.storage.from(bucket).getPublicUrl(objectKey);
+    // Build public URL via Supabase
+    const { data } = supabaseServer.storage.from(bucket).getPublicUrl(key);
     const publicUrl = data?.publicUrl ?? null;
 
-    // We store the full "bucket/key" path in artists.image_path
-    const imagePath = `${bucket}/${fileName}`;
+    // image_path we store in the artists table
+    const imagePath = `${bucket}/${key.split("/").slice(1).join("/")}`;
 
     return NextResponse.json({
       success: true,

@@ -23,9 +23,7 @@ function truncate(value: string | null | undefined, length: number): string {
   return value.slice(0, length).trimEnd() + "…";
 }
 
-function getPublicUrlForImagePath(
-  imagePath: string | null
-): string | null {
+function getPublicUrlForImagePath(imagePath: string | null): string | null {
   if (!imagePath) return null;
 
   const segments = imagePath.split("/");
