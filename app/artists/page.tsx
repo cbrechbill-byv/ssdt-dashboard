@@ -52,6 +52,10 @@ export default async function ArtistsPage() {
   const totalCount = artists.length;
   const activeCount = artists.filter((a) => a.is_active).length;
 
+  const storageBaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/`
+    : "";
+
   return (
     <DashboardShell
       title="Artists"
@@ -130,7 +134,7 @@ export default async function ArtistsPage() {
                     <th className="px-3 py-2 text-left w-[40%]">Bio</th>
                     <th className="px-3 py-2 text-left w-40">Website</th>
                     <th className="px-3 py-2 text-left w-40">Instagram</th>
-                    <th className="px-3 py-2 text-left w-28">Image</th>
+                    <th className="px-3 py-2 text-left w-32">Image</th>
                     <th className="px-4 py-2 text-right w-24">Actions</th>
                   </tr>
                 </thead>
@@ -140,16 +144,20 @@ export default async function ArtistsPage() {
                     const hasWebsite = !!artist.website_url;
                     const hasInstagram = !!artist.instagram_url;
                     const hasImage = !!artist.image_path;
-
                     const rowBg =
                       idx % 2 === 0 ? "bg-white" : "bg-slate-50/40";
+
+                    const imageUrl =
+                      hasImage && storageBaseUrl
+                        ? `${storageBaseUrl}${artist.image_path}`
+                        : null;
 
                     return (
                       <tr
                         key={artist.id}
                         className={`${rowBg} border-b border-slate-100 last:border-b-0 transition-colors hover:bg-amber-50/60`}
                       >
-                        {/* Artist name + status (one line name) */}
+                        {/* Artist name */}
                         <td className="px-4 py-3 align-top whitespace-nowrap">
                           <div className="flex flex-col gap-0.5">
                             <span className="max-w-xs overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-slate-900">
@@ -163,7 +171,7 @@ export default async function ArtistsPage() {
                           </div>
                         </td>
 
-                        {/* Genre column */}
+                        {/* Genre */}
                         <td className="px-3 py-3 align-top whitespace-nowrap text-xs text-slate-700">
                           {artist.genre ? (
                             artist.genre
@@ -211,12 +219,22 @@ export default async function ArtistsPage() {
                           )}
                         </td>
 
-                        {/* Image status */}
+                        {/* Image status + thumbnail */}
                         <td className="px-3 py-3 align-top">
-                          {hasImage ? (
-                            <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
-                              ✓ Image set
-                            </span>
+                          {hasImage && imageUrl ? (
+                            <div className="flex items-center gap-2">
+                              <div className="h-9 w-9 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={imageUrl}
+                                  alt={artist.name ?? "Artist image"}
+                                  className="h-full w-full object-cover"
+                                />
+                              </div>
+                              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
+                                ✓ Image set
+                              </span>
+                            </div>
                           ) : (
                             <span className="inline-flex items-center rounded-full bg-slate-50 px-2.5 py-0.5 text-[11px] font-medium text-slate-400">
                               Missing
