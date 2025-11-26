@@ -23,6 +23,21 @@ function truncate(value: string | null | undefined, length: number): string {
   return value.slice(0, length).trimEnd() + "…";
 }
 
+function getPublicUrlForImagePath(
+  imagePath: string | null
+): string | null {
+  if (!imagePath) return null;
+
+  const segments = imagePath.split("/");
+  if (segments.length < 2) return null;
+
+  const bucket = segments[0];
+  const key = segments.slice(1).join("/");
+
+  const { data } = supabaseServer.storage.from(bucket).getPublicUrl(key);
+  return data?.publicUrl ?? null;
+}
+
 export default async function ArtistsPage() {
   const { data, error } = await supabaseServer
     .from("artists")
@@ -51,10 +66,6 @@ export default async function ArtistsPage() {
   const artists = (data ?? []) as ArtistRow[];
   const totalCount = artists.length;
   const activeCount = artists.filter((a) => a.is_active).length;
-
-  const storageBaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/`
-    : "";
 
   return (
     <DashboardShell
@@ -147,10 +158,9 @@ export default async function ArtistsPage() {
                     const rowBg =
                       idx % 2 === 0 ? "bg-white" : "bg-slate-50/40";
 
-                    const imageUrl =
-                      hasImage && storageBaseUrl
-                        ? `${storageBaseUrl}${artist.image_path}`
-                        : null;
+                    const imageUrl = hasImage
+                      ? getPublicUrlForImagePath(artist.image_path)
+                      : null;
 
                     return (
                       <tr

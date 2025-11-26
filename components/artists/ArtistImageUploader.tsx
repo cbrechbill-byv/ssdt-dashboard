@@ -6,6 +6,8 @@ interface ArtistImageUploaderProps {
   artistName: string;
   slug?: string | null;
   initialPath?: string | null;
+  /** Fully qualified public URL computed on the server (optional) */
+  initialUrl?: string | null;
   fieldName?: string;
 }
 
@@ -19,29 +21,26 @@ function slugify(value: string): string {
     .replace(/-{2,}/g, "") || "artist";
 }
 
-const storageBaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL
-    ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/`
-    : "";
-
 export default function ArtistImageUploader({
   artistName,
   slug,
   initialPath,
+  initialUrl,
   fieldName = "image_path",
 }: ArtistImageUploaderProps) {
   const [imagePath, setImagePath] = useState(initialPath ?? "");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  // What we actually show:
+  // 1. New uploaded image (uploadedUrl)
+  // 2. Else existing server-provided image (initialUrl)
   const effectivePreviewUrl = useMemo(() => {
-    if (previewUrl) return previewUrl;
-    if (imagePath && storageBaseUrl) {
-      return `${storageBaseUrl}${imagePath}`;
-    }
+    if (uploadedUrl) return uploadedUrl;
+    if (initialUrl) return initialUrl;
     return null;
-  }, [previewUrl, imagePath]);
+  }, [uploadedUrl, initialUrl]);
 
   async function handleFileChange(
     event: React.ChangeEvent<HTMLInputElement>
@@ -50,7 +49,7 @@ export default function ArtistImageUploader({
     if (!file) return;
 
     setStatus(null);
-    setPreviewUrl(null);
+    setUploadedUrl(null);
 
     if (!file.type.startsWith("image/")) {
       setStatus("Please choose an image file (JPEG or PNG).");
@@ -63,7 +62,6 @@ export default function ArtistImageUploader({
       return;
     }
 
-    setPreviewUrl(URL.createObjectURL(file));
     setIsUploading(true);
     setStatus("Uploading and resizing image…");
 
@@ -88,8 +86,12 @@ export default function ArtistImageUploader({
         return;
       }
 
+      // Server returns .path and .publicUrl
       setImagePath(json.path as string);
-      setStatus("Image uploaded successfully. Don’t forget to save the artist.");
+      setUploadedUrl(json.publicUrl as string | null);
+      setStatus(
+        "Image uploaded successfully. Don’t forget to save the artist."
+      );
     } catch (err) {
       console.error("[ArtistImageUploader] Upload exception:", err);
       setStatus("Upload failed due to a network error.");
@@ -126,7 +128,7 @@ export default function ArtistImageUploader({
           </label>
         </div>
 
-        {effectivePreviewUrl && (
+        {effectivePreviewUrl ? (
           <div className="flex items-center gap-3">
             <div className="h-16 w-16 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -141,9 +143,7 @@ export default function ArtistImageUploader({
               replace it, then save the artist.
             </p>
           </div>
-        )}
-
-        {!effectivePreviewUrl && (
+        ) : (
           <p className="text-[11px] text-slate-400">
             No image uploaded yet for this artist.
           </p>

@@ -74,6 +74,19 @@ async function fetchArtist(id: string): Promise<{
   return { artist: data as Artist, errorMessage: null };
 }
 
+function getPublicUrlForImagePath(imagePath: string | null): string | null {
+  if (!imagePath) return null;
+
+  const segments = imagePath.split("/");
+  if (segments.length < 2) return null;
+
+  const bucket = segments[0];
+  const key = segments.slice(1).join("/");
+
+  const { data } = supabaseServer.storage.from(bucket).getPublicUrl(key);
+  return data?.publicUrl ?? null;
+}
+
 // NOTE: searchParams is a Promise in Next 15+/16
 export default async function ArtistEditPage({
   searchParams,
@@ -176,6 +189,8 @@ export default async function ArtistEditPage({
     );
   }
 
+  const initialImageUrl = getPublicUrlForImagePath(artist.image_path);
+
   return (
     <DashboardShell
       title="Edit artist"
@@ -245,11 +260,11 @@ export default async function ArtistEditPage({
               />
             </div>
 
-            {/* Image uploader replaces raw image_path input */}
             <ArtistImageUploader
               artistName={artist.name}
               slug={artist.slug}
               initialPath={artist.image_path}
+              initialUrl={initialImageUrl}
               fieldName="image_path"
             />
 

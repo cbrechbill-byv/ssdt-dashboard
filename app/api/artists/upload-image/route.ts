@@ -72,12 +72,14 @@ export async function POST(request: Request) {
     const baseSlug = providedSlug || slugify(artistName);
     const fileName = `${baseSlug}-${Date.now()}.jpg`;
 
-    // This is the *object key* inside the bucket "artist-photos"
-    const path = `artist-photos/${fileName}`;
+    // Object key *inside* bucket artist-photos
+    const objectKey = `artist-photos/${fileName}`;
+
+    const bucket = "artist-photos";
 
     const { error: uploadError } = await supabaseServer.storage
-      .from("artist-photos") // <- use your existing bucket
-      .upload(path, resized, {
+      .from(bucket)
+      .upload(objectKey, resized, {
         contentType: "image/jpeg",
         upsert: true,
       });
@@ -93,8 +95,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Path is what we save into artists.image_path
-    return NextResponse.json({ success: true, path });
+    // Build a public URL via Supabase (no env guessing on client)
+    const { data } = supabaseServer.storage.from(bucket).getPublicUrl(objectKey);
+    const publicUrl = data?.publicUrl ?? null;
+
+    // We store the full "bucket/key" path in artists.image_path
+    const imagePath = `${bucket}/${fileName}`;
+
+    return NextResponse.json({
+      success: true,
+      path: imagePath,
+      publicUrl,
+    });
   } catch (error) {
     console.error("[Artist upload-image] Unexpected error:", error);
     return NextResponse.json(
