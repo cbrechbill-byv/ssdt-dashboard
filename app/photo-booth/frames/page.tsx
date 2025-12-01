@@ -96,10 +96,11 @@ export default function PhotoBoothFramesPage() {
     setError(null);
 
     const { data, error } = await supabase
-      .from<FrameRow>("photo_booth_frames")
-      .select("*")
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true });
+  .from("photo_booth_frames")
+  .select("*")
+  .order("sort_order", { ascending: true })
+  .order("created_at", { ascending: true });
+
 
     if (error) {
       console.error(error);
