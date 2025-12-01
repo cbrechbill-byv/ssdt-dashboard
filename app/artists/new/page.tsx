@@ -5,6 +5,7 @@ import { supabaseServer } from "@/lib/supabaseServer";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import ArtistImageUploader from "@/components/artists/ArtistImageUploader";
+import { getDashboardSession } from "@/lib/dashboardAuth";
 
 export default function NewArtistPage() {
   async function createArtist(formData: FormData) {
@@ -31,25 +32,50 @@ export default function NewArtistPage() {
       throw new Error("Artist name is required.");
     }
 
-    const { error } = await supabaseServer.from("artists").insert([
-      {
-        name,
-        slug,
-        genre,
-        bio,
-        website_url,
-        instagram_url,
-        facebook_url,
-        tiktok_url,
-        spotify_url,
-        image_path,
-        is_active: true,
-      },
-    ]);
+    // Insert artist and return id for logging
+    const { data, error } = await supabaseServer
+      .from("artists")
+      .insert([
+        {
+          name,
+          slug,
+          genre,
+          bio,
+          website_url,
+          instagram_url,
+          facebook_url,
+          tiktok_url,
+          spotify_url,
+          image_path,
+          is_active: true,
+        },
+      ])
+      .select("id")
+      .single();
 
     if (error) {
       console.error("[Artist new] insert error:", error);
       throw error;
+    }
+
+    // 🔐 Audit log
+    try {
+      const session = await getDashboardSession();
+      await supabaseServer.from("dashboard_audit_log").insert({
+        actor_email: session?.email ?? null,
+        actor_role: session?.role ?? null,
+        action: "create",
+        entity: "artists",
+        entity_id: data?.id ?? null,
+        details: {
+          name,
+          slug,
+          genre,
+          is_active: true,
+        },
+      });
+    } catch (logError) {
+      console.error("[Artist new] audit log error:", logError);
     }
 
     revalidatePath("/artists");

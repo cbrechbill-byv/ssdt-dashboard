@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import DashboardShell from "@/components/layout/DashboardShell";
+import { logDashboardEvent } from "@/lib/logDashboardEvent";
 
 type Audience = "all" | "vip" | "test";
 
@@ -50,7 +51,7 @@ export default function NotificationsPage() {
   }
 
   useEffect(() => {
-    loadLogs();
+    void loadLogs();
   }, []);
 
   async function handleSend(e: React.FormEvent) {
@@ -65,6 +66,11 @@ export default function NotificationsPage() {
       return;
     }
 
+    const cleanTitle = title.trim();
+    const cleanBody = body.trim();
+    const cleanRoute = (route.trim() || "/messages") as string;
+    const cleanAudience: Audience = audience;
+
     try {
       setIsSending(true);
 
@@ -72,10 +78,10 @@ export default function NotificationsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: title.trim(),
-          body: body.trim(),
-          route: route.trim() || "/messages", // 👈 default deep link
-          audience,
+          title: cleanTitle,
+          body: cleanBody,
+          route: cleanRoute,
+          audience: cleanAudience,
         }),
       });
 
@@ -90,6 +96,19 @@ export default function NotificationsPage() {
         message: "Notification queued and sent to Expo. 🎉",
       });
 
+      // 🔐 Audit log for notification send
+      void logDashboardEvent({
+        action: "create",
+        entity: "notifications",
+        entityId: json?.log_id ?? null, // if your API returns one
+        details: {
+          title: cleanTitle,
+          body: cleanBody,
+          route: cleanRoute,
+          audience: cleanAudience,
+        },
+      });
+
       // Reset form – keep messages as the default target
       setTitle("");
       setBody("");
@@ -97,7 +116,7 @@ export default function NotificationsPage() {
       setAudience("all");
 
       // Refresh logs
-      loadLogs();
+      void loadLogs();
     } catch (err: any) {
       setStatus({
         type: "error",
@@ -116,7 +135,8 @@ export default function NotificationsPage() {
   return (
     <DashboardShell
       title="Push notifications"
-      subtitle="Send targeted updates to VIPs and Sugarshack app users." activeTab="notifications"
+      subtitle="Send targeted updates to VIPs and Sugarshack app users."
+      activeTab="notifications"
     >
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(260px,2fr)]">
         {/* LEFT COLUMN: compose only */}

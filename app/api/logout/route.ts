@@ -1,14 +1,20 @@
+// app/api/logout/route.ts
+
 import { NextResponse } from "next/server";
+import { SESSION_COOKIE_NAME } from "@/lib/dashboardAuth";
+
+export const runtime = "nodejs";
 
 export async function POST() {
-  const res = NextResponse.json({ ok: true });
+  const res = NextResponse.json({ ok: true }, { status: 200 });
 
-  res.cookies.set("dashboard-auth", "", {
+  // Clear the session cookie
+  res.cookies.set(SESSION_COOKIE_NAME, "", {
     httpOnly: true,
-    secure: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    expires: new Date(0),
+    maxAge: 0,
   });
 
   return res;

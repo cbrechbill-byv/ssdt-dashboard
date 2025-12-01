@@ -4,7 +4,8 @@ import React, { useState } from "react";
 import Image from "next/image";
 
 export default function LoginPage() {
-  const [passcode, setPasscode] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -13,24 +14,31 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const res = await fetch("/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ passcode }),
-    });
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-    if (res.ok) {
-      window.location.href = "/dashboard";
-    } else {
+      if (res.ok) {
+        // Redirect to main dashboard shell
+        window.location.href = "/dashboard";
+      } else {
+        const data = await res.json().catch(() => null);
+        setError(data?.error || "Incorrect email or password.");
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Login failed. Please try again.");
       setLoading(false);
-      setError("Incorrect passcode.");
     }
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
       <div className="bg-white shadow-xl rounded-2xl p-10 max-w-md w-full text-center border border-slate-200">
-        
         {/* Logo */}
         <div className="relative w-48 h-20 mx-auto mb-6">
           <Image
@@ -48,14 +56,34 @@ export default function LoginPage() {
           Internal view for staff use only.
         </p>
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <input
-            type="password"
-            placeholder="Admin passcode"
-            value={passcode}
-            onChange={(e) => setPasscode(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm focus:ring-2 focus:ring-slate-400"
-          />
+        <form onSubmit={handleLogin} className="space-y-4 text-left">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              Email
+            </label>
+            <input
+              type="email"
+              placeholder="staff@yourvenue.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm focus:ring-2 focus:ring-slate-400"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              Password
+            </label>
+            <input
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm focus:ring-2 focus:ring-slate-400"
+              required
+            />
+          </div>
 
           {error && <p className="text-red-600 text-sm">{error}</p>}
 

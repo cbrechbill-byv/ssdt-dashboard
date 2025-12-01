@@ -2,90 +2,108 @@
 
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase-browser";
+import DashboardShell from "@/components/layout/DashboardShell";
 
-type Sponsor = {
+type FrameRow = {
   id: string;
-  name: string;
-};
-
-type Frame = {
-  id: string;
-  key: string;
+  frame_key: string;
   label: string;
   description: string | null;
-  overlay_path: string;
-  overlay_opacity: number;
-  is_active: boolean;
-  sort_order: number;
   season_tag: string | null;
   sponsor_id: string | null;
-  created_at: string;
-  updated_at: string;
+  overlay_opacity: number;
+  sort_order: number;
+  is_active: boolean;
+  overlay_path: string | null;
 };
 
-type FormState = {
+type FrameFormState = {
   id?: string;
-  key: string;
+  frame_key: string;
   label: string;
   description: string;
-  overlayFile?: File | null;
-  overlay_path?: string;
-  overlay_opacity: number;
-  is_active: boolean;
-  sort_order: number;
   season_tag: string;
   sponsor_id: string;
+  overlay_opacity: number;
+  sort_order: number;
+  is_active: boolean;
+  overlay_path?: string | null;
+  overlayFile?: File | null;
 };
 
-const EMPTY_FORM: FormState = {
-  key: "",
+const EMPTY_FRAME: FrameFormState = {
+  frame_key: "",
   label: "",
   description: "",
-  overlayFile: undefined,
-  overlay_path: undefined,
-  overlay_opacity: 1.0,
-  is_active: true,
-  sort_order: 0,
   season_tag: "",
   sponsor_id: "",
+  overlay_opacity: 1,
+  sort_order: 0,
+  is_active: true,
+  overlay_path: null,
+  overlayFile: undefined,
 };
 
-const FRAME_BUCKET = "photo-booth-overlays";
+const FRAME_BUCKET = "photo-booth-overlays"; // same bucket the mobile app uses
 
-function getOverlayPublicUrl(overlay_path: string | undefined) {
-  if (!overlay_path) return null;
-  const { data } = supabase.storage.from(FRAME_BUCKET).getPublicUrl(overlay_path);
+function getOverlayPublicUrl(path: string | null | undefined) {
+  if (!path) return null;
+  const { data } = supabase.storage.from(FRAME_BUCKET).getPublicUrl(path);
   return data?.publicUrl ?? null;
 }
 
-export default function FramesPage() {
-  const [frames, setFrames] = useState<Frame[]>([]);
-  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
+/**
+ * Normalize a raw string into a safe frame key:
+ * - lowercase
+ * - whitespace -> hyphens
+ * - strip emojis/symbols (keep only a–z, 0–9, and hyphens)
+ * - collapse duplicate hyphens
+ * - trim leading/trailing hyphens
+ */
+function sanitizeFrameKey(raw: string): string {
+  if (!raw) return "";
+
+  const lower = raw.toLowerCase();
+  const withHyphens = lower.replace(/\s+/g, "-");
+  const alnumHyphenOnly = withHyphens.replace(/[^a-z0-9-]/g, "");
+  const collapsed = alnumHyphenOnly.replace(/-+/g, "-");
+  const trimmed = collapsed.replace(/^-+|-+$/g, "");
+  return trimmed;
+}
+
+export default function PhotoBoothFramesPage() {
+  const [frames, setFrames] = useState<FrameRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [isEditing, setIsEditing] = useState(false);
+  const [form, setForm] = useState<FrameFormState>(EMPTY_FRAME);
   const [modalOpen, setModalOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  // Track whether the user has manually touched the key
+  // so we don't keep overwriting it when they edit the label.
+  const [frameKeyTouched, setFrameKeyTouched] = useState(false);
+  const [frameKeyWarning, setFrameKeyWarning] = useState<string | null>(null);
 
   useEffect(() => {
-    void Promise.all([fetchFrames(), fetchSponsors()]);
+    void fetchFrames();
   }, []);
 
   async function fetchFrames() {
     setLoading(true);
     setError(null);
+
     const { data, error } = await supabase
-      .from("photo_booth_frames")
+      .from<FrameRow>("photo_booth_frames")
       .select("*")
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
 
     if (error) {
       console.error(error);
-      setError("Failed to load frames.");
+      setError("Failed to load photo booth frames.");
       setLoading(false);
       return;
     }
@@ -94,43 +112,32 @@ export default function FramesPage() {
     setLoading(false);
   }
 
-  async function fetchSponsors() {
-    const { data, error } = await supabase
-      .from("sponsors")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("sort_order", { ascending: true });
-
-    if (error) {
-      console.error(error);
-      return;
-    }
-
-    setSponsors(data || []);
-  }
-
   function openCreateModal() {
-    setForm(EMPTY_FORM);
+    setForm(EMPTY_FRAME);
     setIsEditing(false);
     setError(null);
+    setFrameKeyTouched(false);
+    setFrameKeyWarning(null);
     setModalOpen(true);
   }
 
-  function openEditModal(frame: Frame) {
+  function openEditModal(frame: FrameRow) {
     setIsEditing(true);
     setError(null);
+    setFrameKeyTouched(false);
+    setFrameKeyWarning(null);
     setForm({
       id: frame.id,
-      key: frame.key,
+      frame_key: frame.frame_key,
       label: frame.label,
-      description: frame.description ?? "",
-      overlayFile: undefined,
-      overlay_path: frame.overlay_path,
-      overlay_opacity: frame.overlay_opacity ?? 1.0,
+      description: frame.description || "",
+      season_tag: frame.season_tag || "",
+      sponsor_id: frame.sponsor_id || "",
+      overlay_opacity: frame.overlay_opacity,
+      sort_order: frame.sort_order,
       is_active: frame.is_active,
-      sort_order: frame.sort_order ?? 0,
-      season_tag: frame.season_tag ?? "",
-      sponsor_id: frame.sponsor_id ?? "",
+      overlay_path: frame.overlay_path,
+      overlayFile: undefined,
     });
     setModalOpen(true);
   }
@@ -140,34 +147,80 @@ export default function FramesPage() {
     setSaving(false);
   }
 
-  function handleInputChange<K extends keyof FormState>(
+  function onFieldChange<K extends keyof FrameFormState>(
     key: K,
-    value: FormState[K]
+    value: FrameFormState[K]
   ) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function uploadOverlayIfNeeded(
-    frameId: string,
-    file?: File | null
-  ): Promise<string | undefined> {
-    if (!file) return form.overlay_path;
+  /**
+   * Check if a frame_key is unique (excluding the current record when editing).
+   * Sets frameKeyWarning accordingly and returns a boolean.
+   */
+  async function checkFrameKeyUniqueness(
+    cleanKey: string,
+    currentId?: string
+  ): Promise<boolean> {
+    setFrameKeyWarning(null);
 
-    const ext = file.name.split(".").pop() || "png";
-    const fileName = `${frameId}-${Date.now()}.${ext}`;
+    if (!cleanKey) return false;
 
-    const { error: uploadError } = await supabase.storage
-      .from(FRAME_BUCKET)
-      .upload(fileName, file, {
-        upsert: true,
-      });
+    const { data, error } = await supabase
+      .from("photo_booth_frames")
+      .select("id,label")
+      .eq("frame_key", cleanKey);
 
-    if (uploadError) {
-      console.error(uploadError);
-      throw new Error("Failed to upload overlay");
+    if (error) {
+      console.error(error);
+      setFrameKeyWarning("Could not verify frame key uniqueness.");
+      return false;
     }
 
-    return fileName;
+    if (!data || data.length === 0) {
+      // no conflicts
+      return true;
+    }
+
+    // If we're editing and the only row with this key is ourselves, it's OK.
+    if (currentId && data.length === 1 && data[0].id === currentId) {
+      return true;
+    }
+
+    const conflictLabel = data[0]?.label || "another frame";
+    setFrameKeyWarning(
+      `This frame key is already used by "${conflictLabel}". Please choose a different key.`
+    );
+    return false;
+  }
+
+  async function uploadOverlayIfNeeded(
+    file?: File | null
+  ): Promise<string | null | undefined> {
+    if (!file) return form.overlay_path ?? null;
+
+    const originalName = file.name || "overlay.png";
+    const ext = originalName.includes(".")
+      ? originalName.split(".").pop() || "png"
+      : "png";
+    const base = originalName
+      .replace(/\.[^/.]+$/, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .toLowerCase();
+
+    const filename = `${base}-${Date.now()}.${ext}`;
+
+    const { error } = await supabase.storage
+      .from(FRAME_BUCKET)
+      .upload(filename, file, { upsert: true });
+
+    if (error) {
+      console.error(error);
+      throw new Error(error.message || "Failed to upload overlay image");
+    }
+
+    return filename;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -176,67 +229,66 @@ export default function FramesPage() {
     setError(null);
 
     try {
-      if (!form.key.trim()) throw new Error("Frame key is required");
-      if (!form.label.trim()) throw new Error("Frame label is required");
-
-      let frameId = form.id;
-
-      // If new frame, insert first to get ID
-      if (!frameId) {
-        const { data, error } = await supabase
-          .from("photo_booth_frames")
-          .insert({
-            key: form.key,
-            label: form.label,
-            description: form.description || null,
-            overlay_path: form.overlay_path || "placeholder",
-            overlay_opacity: form.overlay_opacity,
-            is_active: form.is_active,
-            sort_order: form.sort_order,
-            season_tag: form.season_tag || null,
-            sponsor_id: form.sponsor_id || null,
-          })
-          .select("*")
-          .single();
-
-        if (error || !data) {
-          console.error(error);
-          throw new Error("Failed to create frame");
-        }
-
-        frameId = data.id;
+      if (!form.label.trim()) {
+        throw new Error("Label is required.");
       }
 
-      // Upload overlay file if a new one was chosen
-      const overlay_path = await uploadOverlayIfNeeded(
-        frameId,
-        form.overlayFile
-      );
+      // Always sanitize before saving
+      const cleanKey = sanitizeFrameKey(form.frame_key);
+      if (!cleanKey) {
+        throw new Error(
+          "Frame key is required. After sanitizing, it cannot be empty."
+        );
+      }
 
-      // Final update
-      const { error: updateError } = await supabase
-        .from("photo_booth_frames")
-        .update({
-          key: form.key,
-          label: form.label,
-          description: form.description || null,
-          overlay_path: overlay_path || form.overlay_path || "placeholder",
-          overlay_opacity: form.overlay_opacity,
-          is_active: form.is_active,
-          sort_order: form.sort_order,
-          season_tag: form.season_tag || null,
-          sponsor_id: form.sponsor_id || null,
-        })
-        .eq("id", frameId);
+      // Update state so input shows the sanitized value
+      setForm((prev) => ({ ...prev, frame_key: cleanKey }));
 
-      if (updateError) {
-        console.error(updateError);
-        throw new Error("Failed to save frame");
+      // Enforce uniqueness at save time
+      const isUnique = await checkFrameKeyUniqueness(cleanKey, form.id);
+      if (!isUnique) {
+        throw new Error("Frame key must be unique.");
+      }
+
+      const overlay_path = await uploadOverlayIfNeeded(form.overlayFile);
+
+      const payload = {
+        frame_key: cleanKey,
+        label: form.label.trim(),
+        description: form.description || null,
+        season_tag: form.season_tag || null,
+        sponsor_id: form.sponsor_id || null,
+        overlay_opacity: form.overlay_opacity,
+        sort_order: form.sort_order,
+        is_active: form.is_active,
+        overlay_path: overlay_path ?? null,
+      };
+
+      if (form.id) {
+        const { error } = await supabase
+          .from("photo_booth_frames")
+          .update(payload)
+          .eq("id", form.id);
+
+        if (error) {
+          console.error(error);
+          throw new Error(error.message || "Failed to save frame");
+        }
+      } else {
+        const { error } = await supabase
+          .from("photo_booth_frames")
+          .insert(payload);
+
+        if (error) {
+          console.error(error);
+          throw new Error(error.message || "Failed to create frame");
+        }
       }
 
       await fetchFrames();
       closeModal();
     } catch (err: any) {
+      console.error(err);
       setError(err.message || "Error saving frame");
       setSaving(false);
     }
@@ -244,6 +296,7 @@ export default function FramesPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this frame?")) return;
+
     setDeletingId(id);
     setError(null);
 
@@ -255,31 +308,60 @@ export default function FramesPage() {
 
       if (error) {
         console.error(error);
-        throw new Error("Failed to delete frame");
+        throw new Error(error.message || "Failed to delete frame");
       }
 
       await fetchFrames();
     } catch (err: any) {
+      console.error(err);
       setError(err.message || "Error deleting frame");
     } finally {
       setDeletingId(null);
     }
   }
 
+  function handleLabelChange(value: string) {
+    onFieldChange("label", value);
+
+    // For NEW frames only, auto-generate the key from the label
+    // until the user manually edits the frame_key.
+    if (!isEditing && !frameKeyTouched) {
+      const autoKey = sanitizeFrameKey(value);
+      onFieldChange("frame_key", autoKey);
+      setFrameKeyWarning(null);
+    }
+  }
+
+  function handleFrameKeyChange(value: string) {
+    setFrameKeyTouched(true);
+    const cleaned = sanitizeFrameKey(value);
+    onFieldChange("frame_key", cleaned);
+    setFrameKeyWarning(null);
+  }
+
+  async function handleFrameKeyBlur() {
+    const cleanKey = sanitizeFrameKey(form.frame_key);
+    onFieldChange("frame_key", cleanKey);
+    if (!cleanKey) return;
+    await checkFrameKeyUniqueness(cleanKey, form.id);
+  }
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
-      <div className="mx-auto max-w-6xl px-4 py-8">
-        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <DashboardShell
+      title="Photo Booth — Frames"
+      subtitle="Manage overlays used by the mobile Photo Booth."
+      activeTab="photo-booth"
+    >
+      <div className="space-y-4">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">
+            <h2 className="text-xl font-semibold text-slate-900">
               Photo Booth — Frames
-            </h1>
-            <p className="text-sm text-slate-400">
-              Manage overlays used by the mobile Photo Booth. The app always
-              draws the user photo first, then the overlay PNG, then{" "}
-              <span className="font-semibold">LIVE TONIGHT / Artist</span> and{" "}
-              <span className="font-semibold">@sugarshackdowntown</span> on
-              top.
+            </h2>
+            <p className="text-xs text-slate-600">
+              The app always draws the user’s photo first, then your overlay
+              PNG, then <strong>LIVE TONIGHT</strong> / Artist and{" "}
+              <strong>@sugarshackdowntown</strong> on top.
             </p>
           </div>
 
@@ -293,86 +375,79 @@ export default function FramesPage() {
         </header>
 
         {error && !modalOpen && (
-          <div className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-800">
             {error}
           </div>
         )}
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-sm shadow-black/30">
+        <section className="rounded-2xl border border-slate-200 bg-slate-900/95 p-4 text-slate-50 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-4">
-            <h2 className="text-base font-semibold text-slate-100">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-200">
               All Frames
-            </h2>
+            </h3>
             {loading && (
-              <span className="text-xs uppercase tracking-wide text-slate-400">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500">
                 Loading…
               </span>
             )}
           </div>
 
           {frames.length === 0 && !loading ? (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-300">
               No frames yet. Use “Add Frame” to create your first overlay.
             </p>
           ) : (
             <ul className="space-y-3">
               {frames.map((frame) => {
                 const overlayUrl = getOverlayPublicUrl(frame.overlay_path);
-                const sponsorName =
-                  sponsors.find((s) => s.id === frame.sponsor_id)?.name ?? null;
 
                 return (
                   <li
                     key={frame.id}
-                    className="flex flex-col gap-3 rounded-xl border border-slate-700/80 bg-slate-900 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-3 rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="flex items-center gap-3">
-                      {overlayUrl ? (
-                        <div className="relative h-16 w-28 overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
+                      <div className="flex h-16 w-28 items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-slate-900">
+                        {overlayUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={overlayUrl}
                             alt={frame.label}
                             className="h-full w-full object-cover"
                           />
-                        </div>
-                      ) : (
-                        <div className="flex h-16 w-28 items-center justify-center rounded-lg border border-dashed border-slate-600 bg-slate-900 text-[10px] text-slate-400">
-                          No overlay
-                        </div>
-                      )}
+                        ) : (
+                          <span className="text-[11px] text-slate-500">
+                            No preview
+                          </span>
+                        )}
+                      </div>
 
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-medium text-slate-50">
                             {frame.label}
                           </span>
+                          <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[10px] font-mono text-slate-200">
+                            {frame.frame_key}
+                          </span>
                           {!frame.is_active && (
-                            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+                            <span className="rounded-full bg-slate-700/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
                               Inactive
-                            </span>
-                          )}
-                          {frame.season_tag && (
-                            <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
-                              {frame.season_tag}
-                            </span>
-                          )}
-                          {sponsorName && (
-                            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
-                              {sponsorName}
                             </span>
                           )}
                         </div>
 
-                        <p className="text-xs text-slate-400">
-                          Key: <code>{frame.key}</code> · Order:{" "}
-                          {frame.sort_order} · Opacity:{" "}
-                          {frame.overlay_opacity.toFixed(2)}
-                        </p>
                         {frame.description && (
-                          <p className="mt-1 text-xs text-slate-400">
+                          <p className="text-xs text-slate-300">
                             {frame.description}
                           </p>
                         )}
+
+                        <p className="mt-0.5 text-[11px] text-slate-400">
+                          Order: {frame.sort_order} · Opacity:{" "}
+                          {frame.overlay_opacity.toFixed(2)}
+                          {frame.season_tag && ` · ${frame.season_tag}`}
+                        </p>
                       </div>
                     </div>
 
@@ -380,7 +455,7 @@ export default function FramesPage() {
                       <button
                         type="button"
                         onClick={() => openEditModal(frame)}
-                        className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-800"
+                        className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-50 hover:bg-slate-700"
                       >
                         Edit
                       </button>
@@ -388,7 +463,7 @@ export default function FramesPage() {
                         type="button"
                         onClick={() => void handleDelete(frame.id)}
                         disabled={deletingId === frame.id}
-                        className="rounded-lg border border-red-500/70 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-100 hover:bg-red-500/20 disabled:opacity-60"
+                        className="rounded-lg border border-red-500/60 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-500/20 disabled:opacity-60"
                       >
                         {deletingId === frame.id ? "Deleting…" : "Delete"}
                       </button>
@@ -403,194 +478,176 @@ export default function FramesPage() {
 
       {/* Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4">
-          <div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-2xl border border-slate-700 bg-slate-900 px-5 py-6 shadow-xl shadow-black/60">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
+          <div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-slate-50">
-                  {isEditing ? "Edit Frame" : "Add Frame"}
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {isEditing ? "Edit frame" : "Add frame"}
                 </h2>
-                <p className="text-xs text-slate-400">
-                  Season Tag is optional and currently used only for grouping in
-                  this dashboard. Overlay opacity is advanced; leave it at{" "}
-                  <code>1</code> unless you want the PNG to be semi-transparent.
+                <p className="text-xs text-slate-600">
+                  Upload a 1080×1920 PNG with transparency. The app will always
+                  draw your photo first, then this overlay.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-full border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                className="rounded-full border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
               >
                 Close
               </button>
             </div>
 
             {error && (
-              <div className="mb-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+              <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
                 {error}
               </div>
             )}
 
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-200">
-                  Frame Key
+                <label className="text-xs font-semibold text-slate-800">
+                  Frame key
                 </label>
                 <input
                   required
-                  className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
-                  value={form.key}
-                  onChange={(e) => handleInputChange("key", e.target.value)}
-                  placeholder="live-mic, neon-nights…"
+                  value={form.frame_key}
+                  onChange={(e) => handleFrameKeyChange(e.target.value)}
+                  onBlur={handleFrameKeyBlur}
+                  placeholder="rock-n-roll, sunset-vibes…"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                 />
-                <p className="text-[11px] text-slate-400">
-                  Short, unique ID used by the app to pick a frame.
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Auto-generated from the label for new frames. Lowercase,
+                  hyphens only (a–z, 0–9, -). Must be unique.
                 </p>
+                {frameKeyWarning && (
+                  <p className="mt-1 text-[11px] text-amber-700">
+                    {frameKeyWarning}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-200">
+                <label className="text-xs font-semibold text-slate-800">
                   Label
                 </label>
                 <input
                   required
-                  className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                   value={form.label}
-                  onChange={(e) => handleInputChange("label", e.target.value)}
-                  placeholder="Neon Nights, VIP Lounge…"
+                  onChange={(e) => handleLabelChange(e.target.value)}
+                  placeholder="Rock n Roll"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-200">
+                <label className="text-xs font-semibold text-slate-800">
                   Description (optional)
                 </label>
                 <textarea
                   rows={2}
-                  className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                   value={form.description}
                   onChange={(e) =>
-                    handleInputChange("description", e.target.value)
+                    onFieldChange("description", e.target.value)
                   }
-                  placeholder="Gold confetti VIP celebration frame…"
+                  placeholder="Rock band silhouettes with paint overlay"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                 />
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-200">
-                    Season Tag (optional)
+                  <label className="text-xs font-semibold text-slate-800">
+                    Season tag (optional)
                   </label>
                   <input
-                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                     value={form.season_tag}
                     onChange={(e) =>
-                      handleInputChange("season_tag", e.target.value)
+                      onFieldChange("season_tag", e.target.value)
                     }
-                    placeholder="summer, holiday, halloween…"
+                    placeholder="summer, holiday, VIP night…"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                   />
-                  <p className="text-[11px] text-slate-400">
-                    For grouping in the dashboard. The mobile app doesn&apos;t
-                    use this yet.
-                  </p>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-200">
-                    Sponsor (optional)
+                  <label className="text-xs font-semibold text-slate-800">
+                    Sort order
                   </label>
-                  <select
-                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
-                    value={form.sponsor_id}
+                  <input
+                    type="number"
+                    value={form.sort_order}
                     onChange={(e) =>
-                      handleInputChange("sponsor_id", e.target.value)
+                      onFieldChange("sort_order", Number(e.target.value) || 0)
                     }
-                  >
-                    <option value="">No sponsor</option>
-                    {sponsors.map((sponsor) => (
-                      <option key={sponsor.id} value={sponsor.id}>
-                        {sponsor.name}
-                      </option>
-                    ))}
-                  </select>
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+                  />
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-200">
-                    Overlay Opacity (advanced)
+                  <label className="text-xs font-semibold text-slate-800">
+                    Overlay opacity (0–1)
                   </label>
                   <input
                     type="number"
                     step="0.05"
                     min="0"
                     max="1"
-                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                     value={form.overlay_opacity}
                     onChange={(e) =>
-                      handleInputChange(
+                      onFieldChange(
                         "overlay_opacity",
-                        Number(e.target.value)
+                        Number(e.target.value) || 0
                       )
                     }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                   />
-                  <p className="text-[11px] text-slate-400">
-                    1 = fully solid PNG. Lower values make the overlay more
-                    see-through over the user photo.
-                  </p>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-200">
-                    Sort Order
+                  <label className="text-xs font-semibold text-slate-800">
+                    Active
                   </label>
-                  <input
-                    type="number"
-                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
-                    value={form.sort_order}
-                    onChange={(e) =>
-                      handleInputChange("sort_order", Number(e.target.value))
-                    }
-                  />
-                  <p className="text-[11px] text-slate-400">
-                    Lower numbers appear first in the app.
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.is_active}
+                      onChange={(e) =>
+                        onFieldChange("is_active", e.target.checked)
+                      }
+                      className="h-4 w-4 rounded border-slate-300 text-sky-500"
+                    />
+                    <span className="text-xs text-slate-600">
+                      Show this frame in the app
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-700 pt-3">
-                <label className="inline-flex items-center gap-2 text-xs text-slate-200">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-sky-500"
-                    checked={form.is_active}
-                    onChange={(e) =>
-                      handleInputChange("is_active", e.target.checked)
-                    }
-                  />
-                  Active
-                </label>
-
-                <div className="space-y-1 text-right">
-                  <p className="text-xs font-semibold text-slate-200">
-                    Overlay Image (PNG)
+              <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-3">
+                <div className="space-y-1 text-left">
+                  <p className="text-xs font-semibold text-slate-800">
+                    Overlay PNG
                   </p>
-                  <label className="inline-flex cursor-pointer items-center justify-center rounded-full border border-slate-500 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-50 hover:bg-slate-700">
-                    Choose File…
+                  <label className="inline-flex cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100">
+                    Choose file…
                     <input
                       type="file"
                       accept="image/*"
                       className="hidden"
                       onChange={(e) =>
-                        handleInputChange(
+                        onFieldChange(
                           "overlayFile",
                           e.target.files?.[0] ?? undefined
                         )
                       }
                     />
                   </label>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-500">
                     {form.overlayFile
                       ? `Selected: ${form.overlayFile.name}`
                       : form.overlay_path
@@ -604,7 +661,7 @@ export default function FramesPage() {
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-800"
+                  className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-100"
                 >
                   Cancel
                 </button>
@@ -618,14 +675,14 @@ export default function FramesPage() {
                       ? "Saving…"
                       : "Creating…"
                     : isEditing
-                    ? "Save Changes"
-                    : "Create Frame"}
+                    ? "Save changes"
+                    : "Create frame"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </div>
+    </DashboardShell>
   );
 }

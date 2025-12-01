@@ -1,205 +1,128 @@
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
-
-async function createEvent(formData: FormData) {
-  "use server";
-
-  const artist_id = (formData.get("artist_id") || "").toString().trim();
-  const event_date = (formData.get("event_date") || "").toString().trim();
-
-  const start_time_raw = (formData.get("start_time") || "")
-    .toString()
-    .trim();
-  const end_time_raw = (formData.get("end_time") || "")
-    .toString()
-    .trim();
-
-  const title = (formData.get("title") || "").toString().trim() || null;
-  const genre_override =
-    (formData.get("genre_override") || "").toString().trim() || null;
-  const notes = (formData.get("notes") || "").toString().trim() || null;
-  const is_cancelled = formData.get("is_cancelled") === "on";
-
-  if (!artist_id || !event_date) {
-    return;
-  }
-
-  // HTML <input type="time" /> gives "HH:MM" – DB expects "HH:MM:SS"
-  const normalizeTime = (value: string) =>
-    value ? `${value}:00` : null;
-
-  const start_time = normalizeTime(start_time_raw);
-  const end_time = normalizeTime(end_time_raw);
-
-  const { error } = await supabaseServer.from("artist_events").insert({
-    artist_id,
-    event_date,
-    start_time,
-    end_time,
-    title,
-    genre_override,
-    notes,
-    is_cancelled,
-  });
-
-  if (error) {
-    console.error("[Events] create error:", error);
-  }
-
-  revalidatePath("/events");
-  redirect("/events");
-}
+import { redirect } from "next/navigation";
+import { logDashboardEventServer } from "@/lib/logDashboardEventServer";
 
 export default async function NewEventPage() {
-  const { data: artists, error } = await supabaseServer
-    .from("artists")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name", { ascending: true });
+  async function createEvent(formData: FormData) {
+    "use server";
 
-  if (error) {
-    console.error("[Events] load artists error:", error);
+    const supabase = supabaseServer;
+
+    const title = formData.get("title")?.toString().trim() || "";
+    const description = formData.get("description")?.toString().trim() || null;
+    const start_time = formData.get("start_time")?.toString() || null;
+    const end_time = formData.get("end_time")?.toString() || null;
+    const artist_id = formData.get("artist_id")?.toString() || null;
+
+    if (!title) throw new Error("Title is required");
+
+    const payload = {
+      title,
+      description,
+      start_time,
+      end_time,
+      artist_id,
+    };
+
+    const { data, error } = await supabase
+      .from("events")
+      .insert(payload)
+      .select("id")
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    const eventId = data.id;
+
+    // 🔐 AUDIT LOG — CREATE EVENT
+    await logDashboardEventServer({
+      action: "create",
+      entity: "events",
+      entityId: eventId,
+      details: payload,
+    });
+
+    revalidatePath("/events");
+    redirect("/events");
   }
 
-  const artistOptions = artists ?? [];
-  const today = new Date().toISOString().slice(0, 10);
+  // Fetch artists for dropdown
+  const { data: artists } = await supabaseServer
+    .from("artists")
+    .select("id, name")
+    .order("name", { ascending: true });
 
   return (
-    <DashboardShell
-      title="Add event"
-      subtitle="Schedule a new show for Sugarshack Downtown."
-      activeTab="events"
-    >
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4 max-w-xl">
+    <DashboardShell title="Events" subtitle="Create new event" activeTab="events">
+      <div className="max-w-xl mx-auto bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        <h2 className="text-lg font-semibold mb-4">Add New Event</h2>
+
         <form action={createEvent} className="space-y-4">
-          {/* Artist */}
+
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
-              Artist
-            </label>
+            <label className="text-xs font-semibold block mb-1">Event Title</label>
+            <input
+              name="title"
+              required
+              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold block mb-1">Description</label>
+            <textarea
+              name="description"
+              rows={4}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-semibold block mb-1">Start Time</label>
+              <input
+                type="datetime-local"
+                name="start_time"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold block mb-1">End Time</label>
+              <input
+                type="datetime-local"
+                name="end_time"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold block mb-1">Artist</label>
             <select
               name="artist_id"
-              required
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              defaultValue=""
+              className="w-full rounded-lg border border-slate-300 px-3 py-2"
             >
-              <option value="" disabled>
-                Select an artist
-              </option>
-              {artistOptions.map((artist) => (
-                <option key={artist.id} value={artist.id}>
-                  {artist.name}
+              <option value="">No artist</option>
+              {artists?.map((a: any) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Date + times */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
-                Date
-              </label>
-              <input
-                type="date"
-                name="event_date"
-                required
-                defaultValue={today}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
-                  Start time
-                </label>
-                <input
-                  type="time"
-                  name="start_time"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
-                  End time
-                </label>
-                <input
-                  type="time"
-                  name="end_time"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Title */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
-              Event title (optional)
-            </label>
-            <input
-              name="title"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Live Mic Night, Acoustic Sessions…"
-            />
-          </div>
-
-          {/* Genre override */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
-              Genre label (optional)
-            </label>
-            <input
-              name="genre_override"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              placeholder="If blank, uses the artist's genre."
-            />
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-[0.12em] mb-1">
-              Notes (optional)
-            </label>
-            <textarea
-              name="notes"
-              rows={3}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Special guests, debut show, etc."
-            />
-          </div>
-
-          {/* Footer actions */}
-          <div className="flex items-center justify-between pt-2">
-            <label className="inline-flex items-center gap-2 text-xs text-slate-700">
-              <input
-                type="checkbox"
-                name="is_cancelled"
-                className="rounded border-slate-300"
-              />
-              Mark as cancelled
-            </label>
-
-            <div className="flex gap-2">
-              <a
-                href="/events"
-                className="text-xs px-3 py-1.5 rounded-full border border-slate-300 text-slate-700 hover:bg-slate-50"
-              >
-                Cancel
-              </a>
-              <button
-                type="submit"
-                className="text-xs px-4 py-1.5 rounded-full bg-amber-400 hover:bg-amber-500 text-slate-900 font-semibold shadow-sm"
-              >
-                Save event
-              </button>
-            </div>
+          <div className="flex justify-end">
+            <button
+              className="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-medium hover:bg-sky-500"
+            >
+              Create Event
+            </button>
           </div>
         </form>
-      </section>
+      </div>
     </DashboardShell>
   );
 }
