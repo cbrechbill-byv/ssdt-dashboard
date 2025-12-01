@@ -27,7 +27,7 @@ export default async function ActivityLogPage() {
     <DashboardShell
       title="Activity Log"
       subtitle="Recent changes made in the SSDT dashboard"
-      activeTab="activity-log"
+      activeTab="activity"  // ✅ must match DashboardTab type
     >
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm">
         <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
