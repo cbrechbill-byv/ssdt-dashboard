@@ -6,7 +6,7 @@ import DashboardShell from "@/components/layout/DashboardShell";
 
 type FrameRow = {
   id: string;
-  frame_key: string;
+  frame_key: string | null;
   label: string;
   description: string | null;
   season_tag: string | null;
@@ -15,6 +15,8 @@ type FrameRow = {
   sort_order: number;
   is_active: boolean;
   overlay_path: string | null;
+  // we don't actually use "key" in the UI, but it's in the table
+  // so it's fine if it exists there as well
 };
 
 type FrameFormState = {
@@ -41,10 +43,10 @@ const EMPTY_FRAME: FrameFormState = {
   sort_order: 0,
   is_active: true,
   overlay_path: null,
-  overlayFile: undefined,
+  overlayFile: null,
 };
 
-const FRAME_BUCKET = "photo-booth-overlays"; // same bucket the mobile app uses
+const FRAME_BUCKET = "photo-booth-overlays";
 
 function getOverlayPublicUrl(path: string | null | undefined) {
   if (!path) return null;
@@ -82,10 +84,11 @@ export default function PhotoBoothFramesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Track whether the user has manually touched the key
-  // so we don't keep overwriting it when they edit the label.
   const [frameKeyTouched, setFrameKeyTouched] = useState(false);
   const [frameKeyWarning, setFrameKeyWarning] = useState<string | null>(null);
+
+  // Whether the key should be locked (readonly)
+  const [isKeyLocked, setIsKeyLocked] = useState(false);
 
   useEffect(() => {
     void fetchFrames();
@@ -96,11 +99,10 @@ export default function PhotoBoothFramesPage() {
     setError(null);
 
     const { data, error } = await supabase
-  .from("photo_booth_frames")
-  .select("*")
-  .order("sort_order", { ascending: true })
-  .order("created_at", { ascending: true });
-
+      .from("photo_booth_frames")
+      .select("*")
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
 
     if (error) {
       console.error(error);
@@ -109,7 +111,7 @@ export default function PhotoBoothFramesPage() {
       return;
     }
 
-    setFrames(data || []);
+    setFrames((data || []) as FrameRow[]);
     setLoading(false);
   }
 
@@ -119,17 +121,26 @@ export default function PhotoBoothFramesPage() {
     setError(null);
     setFrameKeyTouched(false);
     setFrameKeyWarning(null);
+    setIsKeyLocked(false); // new frames: key is editable
     setModalOpen(true);
   }
 
   function openEditModal(frame: FrameRow) {
     setIsEditing(true);
     setError(null);
-    setFrameKeyTouched(false);
     setFrameKeyWarning(null);
+
+    const hasKey = !!frame.frame_key;
+    const effectiveKey = hasKey
+      ? frame.frame_key || ""
+      : sanitizeFrameKey(frame.label || "");
+
+    setIsKeyLocked(hasKey);
+    setFrameKeyTouched(hasKey);
+
     setForm({
       id: frame.id,
-      frame_key: frame.frame_key,
+      frame_key: effectiveKey,
       label: frame.label,
       description: frame.description || "",
       season_tag: frame.season_tag || "",
@@ -138,8 +149,9 @@ export default function PhotoBoothFramesPage() {
       sort_order: frame.sort_order,
       is_active: frame.is_active,
       overlay_path: frame.overlay_path,
-      overlayFile: undefined,
+      overlayFile: null,
     });
+
     setModalOpen(true);
   }
 
@@ -156,8 +168,7 @@ export default function PhotoBoothFramesPage() {
   }
 
   /**
-   * Check if a frame_key is unique (excluding the current record when editing).
-   * Sets frameKeyWarning accordingly and returns a boolean.
+   * Check uniqueness only against the already loaded frames in state.
    */
   async function checkFrameKeyUniqueness(
     cleanKey: string,
@@ -167,28 +178,17 @@ export default function PhotoBoothFramesPage() {
 
     if (!cleanKey) return false;
 
-    const { data, error } = await supabase
-      .from("photo_booth_frames")
-      .select("id,label")
-      .eq("frame_key", cleanKey);
+    const conflict = frames.find(
+      (f) =>
+        f.frame_key === cleanKey &&
+        (currentId ? f.id !== currentId : true)
+    );
 
-    if (error) {
-      console.error(error);
-      setFrameKeyWarning("Could not verify frame key uniqueness.");
-      return false;
-    }
-
-    if (!data || data.length === 0) {
-      // no conflicts
+    if (!conflict) {
       return true;
     }
 
-    // If we're editing and the only row with this key is ourselves, it's OK.
-    if (currentId && data.length === 1 && data[0].id === currentId) {
-      return true;
-    }
-
-    const conflictLabel = data[0]?.label || "another frame";
+    const conflictLabel = conflict.label || "another frame";
     setFrameKeyWarning(
       `This frame key is already used by "${conflictLabel}". Please choose a different key.`
     );
@@ -234,7 +234,6 @@ export default function PhotoBoothFramesPage() {
         throw new Error("Label is required.");
       }
 
-      // Always sanitize before saving
       const cleanKey = sanitizeFrameKey(form.frame_key);
       if (!cleanKey) {
         throw new Error(
@@ -242,10 +241,8 @@ export default function PhotoBoothFramesPage() {
         );
       }
 
-      // Update state so input shows the sanitized value
       setForm((prev) => ({ ...prev, frame_key: cleanKey }));
 
-      // Enforce uniqueness at save time
       const isUnique = await checkFrameKeyUniqueness(cleanKey, form.id);
       if (!isUnique) {
         throw new Error("Frame key must be unique.");
@@ -255,6 +252,8 @@ export default function PhotoBoothFramesPage() {
 
       const payload = {
         frame_key: cleanKey,
+        // 🔑 keep legacy "key" column satisfied & in sync
+        key: cleanKey,
         label: form.label.trim(),
         description: form.description || null,
         season_tag: form.season_tag || null,
@@ -324,9 +323,9 @@ export default function PhotoBoothFramesPage() {
   function handleLabelChange(value: string) {
     onFieldChange("label", value);
 
-    // For NEW frames only, auto-generate the key from the label
-    // until the user manually edits the frame_key.
-    if (!isEditing && !frameKeyTouched) {
+    if (isKeyLocked) return;
+
+    if (!frameKeyTouched) {
       const autoKey = sanitizeFrameKey(value);
       onFieldChange("frame_key", autoKey);
       setFrameKeyWarning(null);
@@ -347,6 +346,8 @@ export default function PhotoBoothFramesPage() {
     await checkFrameKeyUniqueness(cleanKey, form.id);
   }
 
+  const currentOverlayUrl = getOverlayPublicUrl(form.overlay_path ?? null);
+
   return (
     <DashboardShell
       title="Photo Booth — Frames"
@@ -354,68 +355,93 @@ export default function PhotoBoothFramesPage() {
       activeTab="photo-booth"
     >
       <div className="space-y-4">
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-900">
-              Photo Booth — Frames
-            </h2>
-            <p className="text-xs text-slate-600">
-              The app always draws the user’s photo first, then your overlay
-              PNG, then <strong>LIVE TONIGHT</strong> / Artist and{" "}
-              <strong>@sugarshackdowntown</strong> on top.
+        {/* Header card */}
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Photo booth overlays
             </p>
+            <p className="text-xs text-slate-600">
+              The app draws the guest photo first, then this PNG overlay, then
+              LIVE TONIGHT / artist / @sugarshackdowntown text.
+            </p>
+            {frames.length > 0 && (
+              <p className="text-[11px] text-slate-500">
+                {frames.length} frame
+                {frames.length === 1 ? "" : "s"} configured.
+              </p>
+            )}
           </div>
-
           <button
             type="button"
             onClick={openCreateModal}
-            className="inline-flex items-center justify-center rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-sky-500/40 hover:bg-sky-400"
+            className="inline-flex items-center justify-center rounded-full bg-amber-400 px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-sm hover:bg-amber-300"
           >
-            + Add Frame
+            + Add frame
           </button>
-        </header>
+        </div>
 
-        {error && !modalOpen && (
-          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-800">
-            {error}
-          </div>
-        )}
-
-        <section className="rounded-2xl border border-slate-200 bg-slate-900/95 p-4 text-slate-50 shadow-sm">
+        {/* List card */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-4">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-200">
-              All Frames
-            </h3>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                All frames
+              </h3>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                Larger previews, click thumbnail to open full overlay in a new
+                tab.
+              </p>
+            </div>
             {loading && (
-              <span className="text-[11px] uppercase tracking-wide text-slate-500">
+              <span className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
                 Loading…
               </span>
             )}
           </div>
 
+          {error && !modalOpen && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {error}
+            </div>
+          )}
+
           {frames.length === 0 && !loading ? (
-            <p className="text-sm text-slate-300">
-              No frames yet. Use “Add Frame” to create your first overlay.
+            <p className="text-sm text-slate-500">
+              No frames yet. Use <span className="font-semibold">Add frame</span>{" "}
+              to create your first overlay.
             </p>
-          ) : (
+          ) : null}
+
+          {frames.length > 0 && (
             <ul className="space-y-3">
-              {frames.map((frame) => {
+              {frames.map((frame, index) => {
                 const overlayUrl = getOverlayPublicUrl(frame.overlay_path);
+                const rowBg =
+                  index % 2 === 0 ? "bg-white" : "bg-slate-50/60";
 
                 return (
                   <li
                     key={frame.id}
-                    className="flex flex-col gap-3 rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    className={`flex flex-col gap-3 rounded-xl border border-slate-200 px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${rowBg} hover:bg-amber-50/60 transition-colors`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="flex h-16 w-28 items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-slate-900">
+                      <div className="flex h-24 w-40 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
                         {overlayUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={overlayUrl}
-                            alt={frame.label}
-                            className="h-full w-full object-cover"
-                          />
+                          <a
+                            href={overlayUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block h-full w-full"
+                            title="Open full overlay in new tab"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={overlayUrl}
+                              alt={frame.label}
+                              className="h-full w-full object-cover"
+                            />
+                          </a>
                         ) : (
                           <span className="text-[11px] text-slate-500">
                             No preview
@@ -425,26 +451,26 @@ export default function PhotoBoothFramesPage() {
 
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium text-slate-50">
+                          <span className="text-sm font-semibold text-slate-900">
                             {frame.label}
                           </span>
-                          <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[10px] font-mono text-slate-200">
-                            {frame.frame_key}
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-mono text-slate-600">
+                            {frame.frame_key || "no-key"}
                           </span>
                           {!frame.is_active && (
-                            <span className="rounded-full bg-slate-700/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+                            <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
                               Inactive
                             </span>
                           )}
                         </div>
 
                         {frame.description && (
-                          <p className="text-xs text-slate-300">
+                          <p className="mt-1 text-xs text-slate-600">
                             {frame.description}
                           </p>
                         )}
 
-                        <p className="mt-0.5 text-[11px] text-slate-400">
+                        <p className="mt-1 text-[11px] text-slate-500">
                           Order: {frame.sort_order} · Opacity:{" "}
                           {frame.overlay_opacity.toFixed(2)}
                           {frame.season_tag && ` · ${frame.season_tag}`}
@@ -456,7 +482,7 @@ export default function PhotoBoothFramesPage() {
                       <button
                         type="button"
                         onClick={() => openEditModal(frame)}
-                        className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-50 hover:bg-slate-700"
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
                       >
                         Edit
                       </button>
@@ -464,7 +490,7 @@ export default function PhotoBoothFramesPage() {
                         type="button"
                         onClick={() => void handleDelete(frame.id)}
                         disabled={deletingId === frame.id}
-                        className="rounded-lg border border-red-500/60 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-500/20 disabled:opacity-60"
+                        className="rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
                       >
                         {deletingId === frame.id ? "Deleting…" : "Delete"}
                       </button>
@@ -488,7 +514,7 @@ export default function PhotoBoothFramesPage() {
                 </h2>
                 <p className="text-xs text-slate-600">
                   Upload a 1080×1920 PNG with transparency. The app will always
-                  draw your photo first, then this overlay.
+                  draw the guest photo first, then this overlay.
                 </p>
               </div>
               <button
@@ -506,6 +532,32 @@ export default function PhotoBoothFramesPage() {
               </div>
             )}
 
+            {isEditing && currentOverlayUrl && (
+              <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  Current overlay
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="h-24 w-40 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={currentOverlayUrl}
+                      alt={form.label || "Current overlay"}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <a
+                    href={currentOverlayUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-semibold text-sky-600 hover:underline"
+                  >
+                    Open full overlay in new tab
+                  </a>
+                </div>
+              </div>
+            )}
+
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-slate-800">
@@ -514,14 +566,20 @@ export default function PhotoBoothFramesPage() {
                 <input
                   required
                   value={form.frame_key}
-                  onChange={(e) => handleFrameKeyChange(e.target.value)}
-                  onBlur={handleFrameKeyBlur}
-                  placeholder="rock-n-roll, sunset-vibes…"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+                  onChange={
+                    isKeyLocked
+                      ? undefined
+                      : (e) => handleFrameKeyChange(e.target.value)
+                  }
+                  onBlur={isKeyLocked ? undefined : handleFrameKeyBlur}
+                  placeholder="miami-vice, rock-n-roll…"
+                  readOnly={isKeyLocked}
+                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                 />
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Auto-generated from the label for new frames. Lowercase,
-                  hyphens only (a–z, 0–9, -). Must be unique.
+                  For new frames, this auto-generates from the label. Lowercase,
+                  hyphens only (a–z, 0–9, -). Must be unique. Existing keys are
+                  locked to avoid breaking the app.
                 </p>
                 {frameKeyWarning && (
                   <p className="mt-1 text-[11px] text-amber-700">
@@ -538,7 +596,7 @@ export default function PhotoBoothFramesPage() {
                   required
                   value={form.label}
                   onChange={(e) => handleLabelChange(e.target.value)}
-                  placeholder="Rock n Roll"
+                  placeholder="Miami Vice"
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                 />
               </div>
@@ -553,7 +611,7 @@ export default function PhotoBoothFramesPage() {
                   onChange={(e) =>
                     onFieldChange("description", e.target.value)
                   }
-                  placeholder="Rock band silhouettes with paint overlay"
+                  placeholder="Bright neon pastel overlay"
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                 />
               </div>
@@ -643,7 +701,7 @@ export default function PhotoBoothFramesPage() {
                       onChange={(e) =>
                         onFieldChange(
                           "overlayFile",
-                          e.target.files?.[0] ?? undefined
+                          e.target.files?.[0] ?? null
                         )
                       }
                     />

@@ -15,6 +15,13 @@ type FeedbackRow = {
   created_at: string;
 };
 
+type FeedbackSummary = {
+  count: number;
+  musicAvg: number | null;
+  foodAvg: number | null;
+  funAvg: number | null;
+};
+
 function RatingDots({ label, value }: { label: string; value: number | null }) {
   if (value == null) return null;
 
@@ -96,8 +103,73 @@ async function getFeedback(): Promise<FeedbackRow[]> {
   }
 }
 
+function computeSummary(rows: FeedbackRow[]): FeedbackSummary {
+  const count = rows.length;
+
+  if (count === 0) {
+    return {
+      count: 0,
+      musicAvg: null,
+      foodAvg: null,
+      funAvg: null,
+    };
+  }
+
+  let musicSum = 0;
+  let musicCount = 0;
+  let foodSum = 0;
+  let foodCount = 0;
+  let funSum = 0;
+  let funCount = 0;
+
+  for (const row of rows) {
+    if (row.music_rating != null) {
+      musicSum += row.music_rating;
+      musicCount += 1;
+    }
+    if (row.food_rating != null) {
+      foodSum += row.food_rating;
+      foodCount += 1;
+    }
+    if (row.fun_rating != null) {
+      funSum += row.fun_rating;
+      funCount += 1;
+    }
+  }
+
+  const safeAvg = (sum: number, cnt: number): number | null =>
+    cnt > 0 ? Number((sum / cnt).toFixed(1)) : null;
+
+  return {
+    count,
+    musicAvg: safeAvg(musicSum, musicCount),
+    foodAvg: safeAvg(foodSum, foodCount),
+    funAvg: safeAvg(funSum, funCount),
+  };
+}
+
+function StatPill({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex flex-col items-start rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+      <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">
+        {label}
+      </span>
+      <span className="mt-1 text-sm font-semibold text-slate-900">
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export default async function FeedbackPage() {
   const rows = await getFeedback();
+  const summary = computeSummary(rows);
 
   return (
     <DashboardShell
@@ -106,6 +178,50 @@ export default async function FeedbackPage() {
       activeTab="feedback"
     >
       <div className="space-y-4">
+        {/* Scorecard – only show when we have at least one row */}
+        {rows.length > 0 && (
+          <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Feedback scorecard
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Snapshot of how we&apos;re doing based on the last{" "}
+                  {summary.count} responses.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+                <StatPill
+                  label="# of Feedbacks"
+                  value={summary.count.toString()}
+                />
+                <StatPill
+                  label="Music Score"
+                  value={
+                    summary.musicAvg != null
+                      ? `${summary.musicAvg} / 5`
+                      : "—"
+                  }
+                />
+                <StatPill
+                  label="Food Score"
+                  value={
+                    summary.foodAvg != null ? `${summary.foodAvg} / 5` : "—"
+                  }
+                />
+                <StatPill
+                  label="Fun Score"
+                  value={
+                    summary.funAvg != null ? `${summary.funAvg} / 5` : "—"
+                  }
+                />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Existing feedback list / empty state */}
         {rows.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
             No feedback yet. Once guests start submitting from the app, it will
