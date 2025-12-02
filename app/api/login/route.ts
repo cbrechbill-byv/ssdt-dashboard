@@ -3,25 +3,31 @@ import { supabaseServer } from "@/lib/supabaseServer";
 import bcrypt from "bcryptjs";
 import { createDashboardSession } from "@/lib/dashboardAuth";
 
+type DashboardUserRow = {
+  id: string;
+  email: string;
+  password_hash: string | null;
+  role: string;
+};
+
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const email = body.email?.toLowerCase().trim();
-    const password = body.password;
+    const body = await req.json().catch(() => null);
+    const rawEmail = body?.email?.toString().trim();
+    const rawPassword = body?.password?.toString();
 
-    if (!email || !password) {
+    if (!rawEmail || !rawPassword) {
       return NextResponse.json(
-        { error: "Email and password are required" },
+        { ok: false, error: "Email and password are required." },
         { status: 400 }
       );
     }
 
+    const email = rawEmail.toLowerCase();
+
     const supabase = supabaseServer;
 
-    // ------------------------------------------
-    // FIXED: Removed broken generic <DashboardUserRow>
-    // ------------------------------------------
-    const { data: user, error } = await supabase
+    const { data, error } = await supabase
       .from("dashboard_users")
       .select("id, email, password_hash, role")
       .eq("email", email)
@@ -29,38 +35,50 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error("[login] Supabase error:", error);
+      return NextResponse.json(
+        { ok: false, error: "Unexpected error. Please try again." },
+        { status: 500 }
+      );
     }
+
+    const user = data as DashboardUserRow | null;
 
     if (!user || !user.password_hash) {
+      // Do not reveal which part is wrong
       return NextResponse.json(
-        { error: "Incorrect email or password" },
+        { ok: false, error: "Incorrect email or password." },
         { status: 401 }
       );
     }
 
-    // Validate password
-    const passwordValid = await bcrypt.compare(password, user.password_hash);
-    if (!passwordValid) {
+    const match = await bcrypt.compare(rawPassword, user.password_hash);
+    if (!match) {
       return NextResponse.json(
-        { error: "Incorrect email or password" },
+        { ok: false, error: "Incorrect email or password." },
         { status: 401 }
       );
     }
 
-    // Create dashboard session cookie
-    const res = NextResponse.json({ ok: true });
+    // At this point login is valid — set the session cookie
+    const response = NextResponse.json(
+      {
+        ok: true,
+        email: user.email,
+        role: user.role,
+      },
+      { status: 200 }
+    );
 
-    await createDashboardSession({
-      email: user.email,
-      role: user.role,
-      response: res,
-    });
+    createDashboardSession(
+      { email: user.email, role: user.role || "admin" },
+      response
+    );
 
-    return res;
-  } catch (err) {
-    console.error("[login] Unexpected error", err);
+    return response;
+  } catch (err: any) {
+    console.error("[login] Unexpected error:", err);
     return NextResponse.json(
-      { error: "Unexpected server error" },
+      { ok: false, error: "Unexpected server error." },
       { status: 500 }
     );
   }

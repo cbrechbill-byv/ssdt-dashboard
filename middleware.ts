@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export function middleware(req: NextRequest) {
-  const isAdmin = req.cookies.get("ssdt_admin")?.value === "1";
-  const isLoginPage = req.nextUrl.pathname.startsWith("/login");
-
-  if (!isAdmin && !isLoginPage) {
-    return NextResponse.redirect(new URL("/login", req.url));
-  }
-
+// TEMP: disable all auth / redirects in middleware so we can use the dashboard
+export function middleware(_req: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = {
-  matcher: ["/dashboard/:path*", "/fan-wall/:path*"],
-};
+// Optionally, you can keep a matcher if you had one before, but it's not required.
+// export const config = {
+//   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+// };
