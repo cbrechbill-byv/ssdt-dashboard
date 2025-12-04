@@ -14,7 +14,6 @@ type RewardMenuItem = {
   updated_at: string | null;
 };
 
-// Helper: load items from Supabase
 async function fetchRewardsMenuItems(): Promise<RewardMenuItem[]> {
   const supabase = supabaseServer();
 
@@ -50,7 +49,10 @@ export async function createReward(formData: FormData) {
   const sort_order = Number(sortRaw || "0");
 
   if (!name || !points_required || points_required <= 0) {
-    console.error("[RewardsMenu] Invalid input for create");
+    console.error("[RewardsMenu] Invalid input for create", {
+      name,
+      points_required,
+    });
     return;
   }
 
@@ -91,7 +93,11 @@ export async function updateReward(formData: FormData) {
   const is_active = isActiveRaw === "on" || isActiveRaw === "true";
 
   if (!name || !points_required || points_required <= 0) {
-    console.error("[RewardsMenu] Invalid input for update");
+    console.error("[RewardsMenu] Invalid input for update", {
+      id,
+      name,
+      points_required,
+    });
     return;
   }
 
@@ -149,14 +155,14 @@ export default async function RewardsMenuPage() {
       activeTab="rewards"
     >
       <div className="space-y-6">
-        {/* Top description */}
+        {/* Intro card */}
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
           <h2 className="text-sm font-semibold text-slate-900 sm:text-base">
             Rewards catalog
           </h2>
           <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-            These rewards power the in-app Rewards menu. You can change point
-            values and add new items without shipping a new mobile app build.
+            These rewards power the in-app Rewards menu. Update point values and
+            sort order without shipping a new app build.
           </p>
         </div>
 
@@ -166,8 +172,7 @@ export default async function RewardsMenuPage() {
             Add new reward
           </h3>
           <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-            Create a new reward with a label and required points. You can adjust
-            sort order to control the display order in the app.
+            Create a new reward with a label and required points.
           </p>
 
           <form
@@ -192,7 +197,7 @@ export default async function RewardsMenuPage() {
               </label>
               <input
                 name="description"
-                placeholder="Any non-alcoholic beverage up to $X"
+                placeholder="Any NA beverage up to $X"
                 className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
               />
             </div>
@@ -234,7 +239,7 @@ export default async function RewardsMenuPage() {
           </form>
         </div>
 
-        {/* Existing rewards table */}
+        {/* Existing rewards */}
         <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm sm:px-4 sm:py-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-slate-900 sm:text-base">
@@ -267,74 +272,98 @@ export default async function RewardsMenuPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item) => (
-                    <tr
-                      key={item.id}
-                      className="border-b border-slate-100 last:border-0"
-                    >
-                      <td className="px-2 py-2 align-top">
-                        <form action={updateReward} className="space-y-2">
-                          <input type="hidden" name="id" value={item.id} />
+                  {items.map((item) => {
+                    const formId = `reward-form-${item.id}`;
+                    return (
+                      <tr
+                        key={item.id}
+                        className="border-b border-slate-100 last:border-0"
+                      >
+                        {/* Hidden form that all inputs attach to via form= */}
+                        <td className="hidden">
+                          <form id={formId} action={updateReward}>
+                            <input type="hidden" name="id" value={item.id} />
+                          </form>
+                        </td>
+
+                        <td className="px-2 py-2 align-top">
                           <input
+                            form={formId}
                             name="name"
                             defaultValue={item.name}
                             className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 shadow-sm outline-none ring-0 focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
                           />
-                      </td>
-                      <td className="px-2 py-2 align-top">
+                        </td>
+
+                        <td className="px-2 py-2 align-top">
                           <input
+                            form={formId}
                             name="description"
                             defaultValue={item.description ?? ""}
                             placeholder="Optional description"
                             className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 shadow-sm outline-none ring-0 focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
                           />
-                      </td>
-                      <td className="px-2 py-2 align-top text-right">
+                        </td>
+
+                        <td className="px-2 py-2 align-top text-right">
                           <input
+                            form={formId}
                             name="points_required"
                             type="number"
                             min={1}
                             defaultValue={item.points_required}
                             className="w-24 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 text-right shadow-sm outline-none ring-0 focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
                           />
-                      </td>
-                      <td className="px-2 py-2 align-top text-right">
+                        </td>
+
+                        <td className="px-2 py-2 align-top text-right">
                           <input
+                            form={formId}
                             name="sort_order"
                             type="number"
                             defaultValue={item.sort_order}
                             className="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 text-right shadow-sm outline-none ring-0 focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
                           />
-                      </td>
-                      <td className="px-2 py-2 align-top text-center">
+                        </td>
+
+                        <td className="px-2 py-2 align-top text-center">
                           <input
+                            form={formId}
                             name="is_active"
                             type="checkbox"
                             defaultChecked={item.is_active}
                             className="h-3.5 w-3.5 rounded border-slate-300 text-amber-400 focus:ring-0"
                           />
-                      </td>
-                      <td className="flex flex-col items-end gap-1 px-2 py-2 align-top sm:flex-row sm:items-center sm:justify-end">
-                          <button
-                            type="submit"
-                            className="inline-flex items-center rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-emerald-600"
-                          >
-                            Save
-                          </button>
-                        </form>
+                        </td>
 
-                        <form action={deleteReward}>
-                          <input type="hidden" name="id" value={item.id} />
-                          <button
-                            type="submit"
-                            className="mt-1 inline-flex items-center rounded-full border border-red-200 bg-white px-3 py-1 text-[11px] font-medium text-red-600 shadow-sm hover:bg-red-50 sm:mt-0"
-                          >
-                            Delete
-                          </button>
-                        </form>
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="px-2 py-2 align-top">
+                          <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:justify-end">
+                            <button
+                              type="submit"
+                              form={formId}
+                              className="inline-flex items-center rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-emerald-600"
+                            >
+                              Save
+                            </button>
+
+                            <form action={deleteReward}>
+                              <input
+                                type="hidden"
+                                name="id"
+                                value={item.id}
+                              />
+                              <button
+                                type="submit"
+                                className="mt-1 inline-flex items-center rounded-full border border-red-200 bg-white px-3 py-1 text-[11px] font-medium text-red-600 shadow-sm hover:bg-red-50 sm:mt-0"
+                              >
+                                Delete
+                              </button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
