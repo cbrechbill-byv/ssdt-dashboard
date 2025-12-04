@@ -15,7 +15,7 @@ type RewardMenuItem = {
 };
 
 async function fetchRewardsMenuItems(): Promise<RewardMenuItem[]> {
-  const supabase = supabaseServer();
+  const supabase = supabaseServer;
 
   const { data, error } = await supabase
     .from("rewards_menu_items")
@@ -38,7 +38,7 @@ async function fetchRewardsMenuItems(): Promise<RewardMenuItem[]> {
 export async function createReward(formData: FormData) {
   "use server";
 
-  const supabase = supabaseServer();
+  const supabase = supabaseServer;
 
   const name = (formData.get("name") || "").toString().trim();
   const description = (formData.get("description") || "").toString().trim();
@@ -74,7 +74,7 @@ export async function createReward(formData: FormData) {
 export async function updateReward(formData: FormData) {
   "use server";
 
-  const supabase = supabaseServer();
+  const supabase = supabaseServer;
 
   const id = (formData.get("id") || "").toString();
   const name = (formData.get("name") || "").toString().trim();
@@ -122,7 +122,7 @@ export async function updateReward(formData: FormData) {
 export async function deleteReward(formData: FormData) {
   "use server";
 
-  const supabase = supabaseServer();
+  const supabase = supabaseServer;
   const id = (formData.get("id") || "").toString();
 
   if (!id) {
