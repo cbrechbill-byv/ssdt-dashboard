@@ -14,6 +14,7 @@ type DashboardTab =
   | "photo-booth"
   | "sponsors"
   | "bar-bites"
+  | "rewards"
   | "feedback"
   | "notifications"
   | "activity";
@@ -33,6 +34,7 @@ const tabs: { key: DashboardTab; label: string; href: string }[] = [
   { key: "photo-booth", label: "Photo booth", href: "/photo-booth/frames" },
   { key: "sponsors", label: "Sponsors", href: "/photo-booth/sponsors" },
   { key: "bar-bites", label: "Bar & Bites", href: "/menu/bar-bites" },
+  { key: "rewards", label: "Rewards menu", href: "/rewards" },
   { key: "feedback", label: "Feedback", href: "/feedback" },
   { key: "notifications", label: "Notifications", href: "/notifications" },
   { key: "activity", label: "Activity log", href: "/activity-log" },
