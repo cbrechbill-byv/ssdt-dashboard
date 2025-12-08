@@ -1,36 +1,38 @@
 import { NextResponse } from "next/server";
-
+import {
+  clearDashboardSession,
+  getDashboardSession,
+} from "@/lib/dashboardAuth";
 import { supabaseServer } from "@/lib/supabaseServer";
-import { clearDashboardSession, getDashboardSession } from "@/lib/dashboardAuth";
 
 export async function POST() {
-  const response = NextResponse.json({ ok: true });
-
+  // Read session BEFORE clearing cookie so we know who is logging out
+  const session = await getDashboardSession();
   const supabase = supabaseServer;
 
-  // Read current session (if any) before clearing cookie
-  let session = null;
-  try {
-    session = await getDashboardSession();
-  } catch (err) {
-    console.error("[logout] Error reading dashboard session:", err);
-  }
+  // Create the response we’ll send back
+  const response = NextResponse.json({ ok: true });
 
-  if (session) {
+  // Clear the cookie on this response
+  clearDashboardSession(response);
+
+  // Log logout if we know who it was
+  if (session?.email) {
     try {
       await supabase.from("dashboard_audit_log").insert({
-        actor_email: session.email ?? null,
-        actor_role: session.role ?? null,
+        actor_email: session.email,
+        actor_role: session.role ?? "unknown",
         action: "logout",
         entity: "dashboard_session",
         entity_id: null,
-        details: { source: "api/logout" },
+        details: {
+          source: "dashboard-logout-route",
+        },
       });
-    } catch (logErr) {
-      console.error("[logout] Failed to write logout audit log:", logErr);
+    } catch (err) {
+      console.error("[Dashboard logout] error writing audit log", err);
     }
   }
 
-  clearDashboardSession(response);
   return response;
 }

@@ -1,148 +1,170 @@
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
+import { getDashboardSession } from "@/lib/dashboardAuth";
+import { redirect } from "next/navigation";
 
-type LogRow = {
+export const dynamic = "force-dynamic";
+
+type AuditRow = {
   id: string;
-  created_at: string;
+  created_at: string | null;
   actor_email: string | null;
   actor_role: string | null;
-  action: "create" | "update" | "delete" | string;
-  entity: string;
+  action: string | null;
+  entity: string | null;
   entity_id: string | null;
-  details: any;
+  details: any | null;
 };
 
+function formatDateEST(value: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+
+  return d.toLocaleString("en-US", {
+    timeZone: "America/New_York", // ⬅️ EST/EDT display
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatActionLabel(action: string | null, entity: string | null) {
+  if (!action) return "—";
+  const a = action.toLowerCase();
+  const e = (entity ?? "").toLowerCase();
+
+  if (a === "login") return "Logged in";
+  if (a === "logout") return "Logged out";
+  if (e === "rewards_staff_code") {
+    if (a === "create") return "Created staff code";
+    if (a === "delete") return "Deleted staff code";
+  }
+  if (e === "rewards_menu_item" || e === "reward_menu") {
+    if (a === "create") return "Created reward";
+    if (a === "update") return "Updated reward";
+    if (a === "delete") return "Deleted reward";
+  }
+
+  return `${a} ${entity ?? ""}`.trim();
+}
+
+function formatDetails(details: any | null): string {
+  if (!details) return "";
+  try {
+    if (typeof details === "string") return details;
+    if (details.label && details.source === "staff-codes-page") {
+      return `Label: ${details.label}`;
+    }
+    if (details.name && details.source === "rewards-page") {
+      return `Reward: ${details.name}`;
+    }
+    if (details.source === "dashboard-login-route") {
+      return "Dashboard login";
+    }
+    if (details.source === "dashboard-logout-route") {
+      return "Dashboard logout";
+    }
+    // Fallback: compact JSON
+    return JSON.stringify(details);
+  } catch {
+    return "";
+  }
+}
+
 export default async function ActivityLogPage() {
+  // Require dashboard session (protect the page)
+  const session = await getDashboardSession();
+  if (!session) {
+    redirect("/login");
+  }
+
   const supabase = supabaseServer;
 
   const { data, error } = await supabase
     .from("dashboard_audit_log")
-    .select("*")
+    .select(
+      "id, created_at, actor_email, actor_role, action, entity, entity_id, details"
+    )
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const rows = (data ?? []) as LogRow[];
+  if (error) {
+    console.error("[Activity log] error loading dashboard_audit_log", error);
+  }
 
-  return (
+  const rows = (data ?? []) as AuditRow[];
+
+    return (
     <DashboardShell
-      title="Activity Log"
-      subtitle="Recent changes made in the SSDT dashboard"
-      activeTab="activity"  // ✅ must match DashboardTab type
+      activeTab="activity"
+      title="Activity log"
+      subtitle="See who changed what in the SSDT dashboard."
     >
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm">
-        <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">
-              Recent Activity
-            </h2>
-            <p className="text-xs text-slate-500">
-              Last {rows.length} actions across artists, events, sponsors,
-              notifications, and more.
-            </p>
-          </div>
+
+      <div className="space-y-4">
+        {/* Header card */}
+        <div className="rounded-3xl bg-white px-6 py-4 shadow-sm ring-1 ring-slate-200">
+          <p className="text-xs text-slate-600">
+            Timestamps are shown in{" "}
+            <span className="font-semibold">Eastern Time (EST/EDT)</span>. The
+            log includes reward changes, staff code changes, and{" "}
+            <span className="font-semibold">login / logout</span> events.
+          </p>
         </div>
 
-        {error && (
-          <div className="px-4 py-2 text-sm text-red-700 bg-red-50 border-b border-red-200">
-            Failed to load activity log: {error.message}
-          </div>
-        )}
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                  Time
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                  User
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                  Action
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                  Entity
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                  Details
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-3 py-6 text-center text-xs text-slate-500"
-                  >
-                    No activity yet. Changes to artists, events, sponsors,
-                    notifications, and frames will appear here.
-                  </td>
-                </tr>
-              )}
-
-              {rows.map((row) => {
-                const when = new Date(row.created_at);
-                const timeStr = when.toLocaleString("en-US", {
-                  month: "short",
-                  day: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                });
-
-                const userLabel =
-                  row.actor_email ||
-                  (row.actor_role ? `(${row.actor_role})` : "Unknown");
-
-                const details =
-                  row.details && typeof row.details === "object"
-                    ? JSON.stringify(row.details)
-                    : row.details?.toString() ?? "";
-
-                return (
-                  <tr
-                    key={row.id}
-                    className="border-b border-slate-100 hover:bg-slate-50/60"
-                  >
-                    <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
-                      {timeStr}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">
-                      {userLabel}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 capitalize">
-                        <span
-                          className={
-                            row.action === "create"
-                              ? "h-1.5 w-1.5 rounded-full bg-emerald-500"
-                              : row.action === "update"
-                              ? "h-1.5 w-1.5 rounded-full bg-sky-500"
-                              : row.action === "delete"
-                              ? "h-1.5 w-1.5 rounded-full bg-red-500"
-                              : "h-1.5 w-1.5 rounded-full bg-slate-400"
-                          }
-                        />
-                        {row.action}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">
-                      {row.entity}
-                      {row.entity_id && (
-                        <span className="ml-1 text-[10px] text-slate-400">
-                          ({row.entity_id.slice(0, 8)}…)
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-slate-600 max-w-xs truncate">
-                      {details}
-                    </td>
+        {/* Activity table */}
+        <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          {rows.length === 0 ? (
+            <p className="text-sm text-slate-600">
+              No activity recorded yet. As you and your team use the dashboard,
+              this log will capture edits, logins, and logouts.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm text-slate-900">
+                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="py-2 pr-4 text-left">Time (EST)</th>
+                    <th className="py-2 pr-4 text-left">User</th>
+                    <th className="py-2 pr-4 text-left">Action</th>
+                    <th className="py-2 pr-4 text-left">Entity</th>
+                    <th className="py-2 pr-4 text-left">Details</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((row) => (
+                    <tr key={row.id}>
+                      <td className="py-2 pr-4 text-xs text-slate-700">
+                        {formatDateEST(row.created_at)}
+                      </td>
+                      <td className="py-2 pr-4 text-xs text-slate-800">
+                        <div className="flex flex-col">
+                          <span>{row.actor_email ?? "Unknown"}</span>
+                          {row.actor_role && (
+                            <span className="text-[11px] text-slate-500">
+                              {row.actor_role}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2 pr-4 text-xs text-slate-800">
+                        {formatActionLabel(row.action, row.entity)}
+                      </td>
+                      <td className="py-2 pr-4 text-xs text-slate-700">
+                        {row.entity ?? "—"}
+                      </td>
+                      <td className="py-2 pr-4 text-xs text-slate-700">
+                        {formatDetails(row.details)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </DashboardShell>
