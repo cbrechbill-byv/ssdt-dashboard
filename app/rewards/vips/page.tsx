@@ -1,641 +1,496 @@
-// app/rewards/vips/page.tsx
-
-import Link from "next/link";
-import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
-
-import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
+import DashboardShell from "@/components/layout/DashboardShell";
 import { getDashboardSession } from "@/lib/dashboardAuth";
+import { revalidatePath } from "next/cache";
+import Link from "next/link";
 
-type VipRow = {
+type OverviewRow = {
   user_id: string;
   phone: string | null;
-  display_name: string | null;
   full_name: string | null;
   email: string | null;
-  ledger_points: number;
-  is_vip: boolean;
+  zip: string | null;
+  is_vip: boolean | null;
+  total_points: number | null;
+  total_visits: number | null;
+  first_scan_at: string | null;
   last_scan_at: string | null;
-  created_at: string;
-  // New activity fields
-  last_checkin_at: string | null;
-  last_redeem_at: string | null;
-  last_reward_name: string | null;
+};
+
+type RedemptionAggRow = {
+  user_id: string;
   redemption_count: number;
   total_points_redeemed: number;
+  last_redeem_at: string | null;
+  last_reward_name: string | null;
 };
 
-type VipStats = {
-  totalVips: number;
-  totalAvailablePoints: number;
-  totalRedemptions: number;
-  totalPointsRedeemed: number;
-  totalCheckinsLast7Days: number;
+type VipWithStats = {
+  user_id: string;
+  phone: string | null;
+  full_name: string | null;
+  email: string | null;
+  zip: string | null;
+  is_vip: boolean;
+  total_points: number;
+  total_visits: number;
+  first_scan_at: string | null;
+  last_scan_at: string | null;
+  redemption_count: number;
+  total_points_redeemed: number;
+  last_redeem_at: string | null;
+  last_reward_name: string | null;
 };
 
-async function requireDashboardSession() {
-  const session = await getDashboardSession();
-  if (!session) redirect("/login");
-  return session;
+function formatDate(value: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
-async function fetchVipData(): Promise<{ rows: VipRow[]; stats: VipStats }> {
+async function fetchVipOverview(): Promise<VipWithStats[]> {
   const supabase = supabaseServer;
 
-  // 1) Balances per VIP (view)
-  const { data: balances, error: balancesError } = await supabase
-    .from("rewards_balances")
-    .select("user_id, phone, ledger_points, is_vip, last_scan_at, created_at")
-    .order("created_at", { ascending: false });
+  // 1) Overview from rewards_user_overview (single source of truth for points)
+  const { data: overviewRows, error: overviewErr } = await supabase
+    .from("rewards_user_overview")
+    .select(
+      "user_id, phone, full_name, email, zip, is_vip, total_points, total_visits, first_scan_at, last_scan_at"
+    )
+    .order("last_scan_at", { ascending: false });
 
-  if (balancesError) {
-    console.error("[vip-points] fetch balances error", balancesError);
-    return {
-      rows: [],
-      stats: {
-        totalVips: 0,
-        totalAvailablePoints: 0,
-        totalRedemptions: 0,
-        totalPointsRedeemed: 0,
-        totalCheckinsLast7Days: 0,
-      },
-    };
+  if (overviewErr) {
+    console.error(
+      "[VIP overview] error loading rewards_user_overview",
+      overviewErr
+    );
+    return [];
   }
 
-  const baseBalances = balances ?? [];
-  const userIds = baseBalances.map((b) => b.user_id);
+  const overview = (overviewRows ?? []) as OverviewRow[];
 
-  // 2) User details (name/email)
-  let userMap = new Map<
-    string,
-    { full_name: string | null; display_name: string | null; email: string | null }
-  >();
-
-  if (userIds.length > 0) {
-    const { data: users, error: usersError } = await supabase
-      .from("rewards_users")
-      .select("user_id, full_name, display_name, email")
-      .in("user_id", userIds);
-
-    if (usersError) {
-      console.error("[vip-points] fetch users error", usersError);
-    } else {
-      (users ?? []).forEach((u: any) => {
-        userMap.set(u.user_id, {
-          full_name: u.full_name ?? null,
-          display_name: u.display_name ?? null,
-          email: u.email ?? null,
-        });
-      });
-    }
+  if (overview.length === 0) {
+    return [];
   }
 
-  // 3) Per-user last check-in from rewards_scans (source = 'qr-checkin')
-  let checkinMap = new Map<string, string>(); // user_id -> last_checkin_at ISO
+  const userIds = overview.map((row) => row.user_id).filter(Boolean);
 
-  if (userIds.length > 0) {
-    const { data: checkinsAll, error: checkinsAllError } = await supabase
-      .from("rewards_scans")
-      .select("user_id, scanned_at, scan_date, source")
-      .in("user_id", userIds)
-      .eq("source", "qr-checkin");
+  // 2) Redemption aggregates from rewards_redemptions
+  const { data: redemptionRows, error: redemptionErr } = await supabase
+    .from("rewards_redemptions")
+    .select("user_id, points_spent, created_at, reward_name")
+    .in("user_id", userIds);
 
-    if (checkinsAllError) {
-      console.error("[vip-points] fetch per-user checkins error", checkinsAllError);
-    } else {
-      (checkinsAll ?? []).forEach((row: any) => {
-        const key = row.user_id as string;
-        const existing = checkinMap.get(key);
-        // Prefer scanned_at if present, fall back to scan_date
-        const thisDate =
-          (row.scanned_at as string | null) ??
-          (row.scan_date ? `${row.scan_date}T00:00:00Z` : null);
-        if (!thisDate) return;
-        if (!existing || new Date(thisDate) > new Date(existing)) {
-          checkinMap.set(key, thisDate);
-        }
-      });
-    }
+  if (redemptionErr) {
+    console.error(
+      "[VIP overview] error loading rewards_redemptions aggregates",
+      redemptionErr
+    );
   }
 
-  // 4) Per-user redemptions from rewards_redemptions
-  type RedeemAgg = {
-    last_redeem_at: string | null;
-    last_reward_name: string | null;
-    redemption_count: number;
-    total_points_redeemed: number;
-  };
+  const redemptionAgg: Record<string, RedemptionAggRow> = {};
 
-  let redeemMap = new Map<string, RedeemAgg>();
+  (redemptionRows ?? []).forEach((row: any) => {
+    const uid: string = row.user_id;
+    if (!uid) return;
 
-  let allRedemptions: any[] = [];
+    const pointsSpent = Number(row.points_spent ?? 0);
+    const createdAt: string | null = row.created_at ?? null;
+    const rewardName: string | null = row.reward_name ?? null;
 
-  if (userIds.length > 0) {
-    const { data: redemptions, error: redemptionsError } = await supabase
-      .from("rewards_redemptions")
-      .select("user_id, points_spent, reward_name, created_at")
-      .in("user_id", userIds);
-
-    if (redemptionsError) {
-      console.error("[vip-points] fetch per-user redemptions error", redemptionsError);
-    } else {
-      allRedemptions = redemptions ?? [];
-      allRedemptions.forEach((r: any) => {
-        const uid = r.user_id as string;
-        const created_at = r.created_at as string;
-        const points_spent = (r.points_spent as number) ?? 0;
-        const reward_name = (r.reward_name as string) ?? null;
-
-        const existing = redeemMap.get(uid) ?? {
-          last_redeem_at: null,
-          last_reward_name: null,
-          redemption_count: 0,
-          total_points_redeemed: 0,
-        };
-
-        const newerLast =
-          !existing.last_redeem_at ||
-          new Date(created_at) > new Date(existing.last_redeem_at);
-
-        redeemMap.set(uid, {
-          last_redeem_at: newerLast ? created_at : existing.last_redeem_at,
-          last_reward_name: newerLast ? reward_name : existing.last_reward_name,
-          redemption_count: existing.redemption_count + 1,
-          total_points_redeemed: existing.total_points_redeemed + points_spent,
-        });
-      });
-    }
-  }
-
-  // 5) High-level stats for top summary tiles
-  const rows: VipRow[] = baseBalances.map((b: any) => {
-    const u = userMap.get(b.user_id);
-    const checkinAgg = checkinMap.get(b.user_id) ?? null;
-    const redeemAgg =
-      redeemMap.get(b.user_id) ?? {
-        last_redeem_at: null,
-        last_reward_name: null,
+    if (!redemptionAgg[uid]) {
+      redemptionAgg[uid] = {
+        user_id: uid,
         redemption_count: 0,
         total_points_redeemed: 0,
+        last_redeem_at: null,
+        last_reward_name: null,
       };
+    }
+
+    redemptionAgg[uid].redemption_count += 1;
+    redemptionAgg[uid].total_points_redeemed += pointsSpent;
+
+    const currentLast = redemptionAgg[uid].last_redeem_at;
+    if (!currentLast || (createdAt && createdAt > currentLast)) {
+      redemptionAgg[uid].last_redeem_at = createdAt;
+      redemptionAgg[uid].last_reward_name = rewardName;
+    }
+  });
+
+  // 3) Combine
+  const combined: VipWithStats[] = overview.map((row) => {
+    const agg = redemptionAgg[row.user_id];
 
     return {
-      user_id: b.user_id,
-      phone: b.phone ?? null,
-      display_name: u?.display_name ?? null,
-      full_name: u?.full_name ?? null,
-      email: u?.email ?? null,
-      ledger_points: b.ledger_points ?? 0,
-      is_vip: b.is_vip ?? false,
-      last_scan_at: b.last_scan_at ?? null,
-      created_at: b.created_at,
-      last_checkin_at: checkinAgg,
-      last_redeem_at: redeemAgg.last_redeem_at,
-      last_reward_name: redeemAgg.last_reward_name,
-      redemption_count: redeemAgg.redemption_count,
-      total_points_redeemed: redeemAgg.total_points_redeemed,
+      user_id: row.user_id,
+      phone: row.phone,
+      full_name: row.full_name,
+      email: row.email,
+      zip: row.zip,
+      is_vip: !!row.is_vip,
+      total_points: Number(row.total_points ?? 0),
+      total_visits: Number(row.total_visits ?? 0),
+      first_scan_at: row.first_scan_at,
+      last_scan_at: row.last_scan_at,
+      redemption_count: agg?.redemption_count ?? 0,
+      total_points_redeemed: agg?.total_points_redeemed ?? 0,
+      last_redeem_at: agg?.last_redeem_at ?? null,
+      last_reward_name: agg?.last_reward_name ?? null,
     };
   });
 
-  const totalVips = rows.length;
-  const totalAvailablePoints = rows.reduce(
-    (acc, row) => acc + (row.ledger_points || 0),
-    0
-  );
-
-  const totalRedemptions = allRedemptions.length;
-  const totalPointsRedeemed = allRedemptions.reduce(
-    (acc, r: any) => acc + ((r.points_spent as number) ?? 0),
-    0
-  );
-
-  // Check-ins last 7 days (overall)
-  const today = new Date();
-  const since = new Date(today);
-  since.setDate(today.getDate() - 6); // today + last 6 days
-  const sinceStr = since.toISOString().slice(0, 10); // YYYY-MM-DD
-
-  const { data: checkins7, error: checkins7Error } = await supabase
-    .from("rewards_scans")
-    .select("id")
-    .eq("source", "qr-checkin")
-    .gte("scan_date", sinceStr);
-
-  if (checkins7Error) {
-    console.error("[vip-points] fetch checkins last 7 days error", checkins7Error);
-  }
-
-  const totalCheckinsLast7Days = (checkins7 ?? []).length;
-
-  const stats: VipStats = {
-    totalVips,
-    totalAvailablePoints,
-    totalRedemptions,
-    totalPointsRedeemed,
-    totalCheckinsLast7Days,
-  };
-
-  return { rows, stats };
+  return combined;
 }
 
-// Log adjustments to dashboard_audit_log
-async function logVipPointsAdjustment(options: {
-  user_id: string;
-  phone?: string | null;
-  old_points: number;
-  new_points: number;
-}) {
-  const session = await getDashboardSession();
+// SERVER ACTION: adjust VIP points using rewards_scans + audit log
+export async function adjustVipPoints(formData: FormData) {
+  "use server";
+
+  const userId = String(formData.get("user_id") || "");
+  const phone = (formData.get("phone") as string | null) ?? null;
+  const currentPoints = Number(formData.get("current_points") ?? 0);
+  const newPoints = Number(formData.get("new_points") ?? 0);
+
+  if (!userId || Number.isNaN(currentPoints) || Number.isNaN(newPoints)) {
+    return;
+  }
+
+  const diff = newPoints - currentPoints;
+  if (diff === 0) {
+    return;
+  }
+
   const supabase = supabaseServer;
+  const session = await getDashboardSession();
 
   const actor_email = session?.email ?? "unknown";
   const actor_role = session?.role ?? "unknown";
 
-  const { error } = await supabase.from("dashboard_audit_log").insert({
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 1) Adjust today's rewards_scans row for this user
+  const { data: existingScan, error: scanErr } = await supabase
+    .from("rewards_scans")
+    .select("id, points, metadata")
+    .eq("user_id", userId)
+    .eq("scan_date", today)
+    .maybeSingle();
+
+  if (scanErr) {
+    console.error("[VIP adjust] error loading rewards_scans row", scanErr);
+  }
+
+  if (existingScan) {
+    const newPointsToday = Number(existingScan.points ?? 0) + diff;
+
+    const { error: updateErr } = await supabase
+      .from("rewards_scans")
+      .update({
+        points: newPointsToday,
+        metadata: {
+          ...(existingScan.metadata || {}),
+          last_dashboard_adjustment: {
+            from: currentPoints,
+            to: newPoints,
+            diff,
+            at: new Date().toISOString(),
+          },
+        },
+      })
+      .eq("id", existingScan.id);
+
+    if (updateErr) {
+      console.error("[VIP adjust] error updating rewards_scans row", updateErr);
+    }
+  } else {
+    const { error: insertErr } = await supabase.from("rewards_scans").insert({
+      user_id: userId,
+      points: diff,
+      source: "dashboard-adjust",
+      qr_code: "DASHBOARD_ADJUST",
+      scan_date: today,
+      note: "Manual adjustment from VIP dashboard",
+      metadata: {
+        from: currentPoints,
+        to: newPoints,
+        diff,
+        at: new Date().toISOString(),
+      },
+    });
+
+    if (insertErr) {
+      console.error("[VIP adjust] error inserting rewards_scans row", insertErr);
+    }
+  }
+
+  // 2) Audit log
+  const { error: logErr } = await supabase.from("dashboard_audit_log").insert({
     actor_email,
     actor_role,
     action: "update",
     entity: "rewards_user_points",
-    entity_id: options.user_id,
+    entity_id: userId,
     details: {
-      phone: options.phone ?? null,
-      old_points: options.old_points,
-      new_points: options.new_points,
-      source: "dashboard-vip-points",
+      phone: phone,
+      old_points: currentPoints,
+      new_points: newPoints,
+      diff,
+      source: "rewards-vips-page",
     },
   });
 
-  if (error) {
-    console.error("[vip-points] log adjustment error", error);
+  if (logErr) {
+    console.error("[VIP adjust] error writing dashboard_audit_log", logErr);
   }
+
+  revalidatePath("/rewards/vips");
 }
 
-export default async function VipPointsPage() {
-  await requireDashboardSession();
-  const { rows, stats } = await fetchVipData();
+export default async function VipUsersPage() {
+  const vips = await fetchVipOverview();
+
+  // Summary stats
+  const totalVipGuests = vips.length;
+  const totalPoints = vips.reduce(
+    (sum, v) => sum + (Number.isFinite(v.total_points) ? v.total_points : 0),
+    0
+  );
+  const totalRedemptions = vips.reduce(
+    (sum, v) =>
+      sum + (Number.isFinite(v.redemption_count) ? v.redemption_count : 0),
+    0
+  );
+  const totalPointsRedeemed = vips.reduce(
+    (sum, v) =>
+      sum +
+      (Number.isFinite(v.total_points_redeemed)
+        ? v.total_points_redeemed
+        : 0),
+    0
+  );
 
   return (
     <DashboardShell
       activeTab="rewards"
-      title="Sugarshack Downtown VIP Dashboard"
-      subtitle="Rewards · VIP points and redemption activity."
+      title="VIP users"
+      subtitle="See VIP guests, their points, check-ins, and reward redemptions."
     >
-      <div className="space-y-8">
-        {/* Sub-nav + summary */}
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-2">
+      <div className="space-y-6">
+        {/* Header card with sub-nav (matches Rewards / Staff codes) */}
+        <div className="rounded-3xl bg-white px-6 py-5 shadow-sm ring-1 ring-slate-200">
+          <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:items-center">
+            <div>
               <h1 className="text-xl font-semibold text-slate-900">
-                VIP users &amp; balances
+                VIP users
               </h1>
-              <p className="text-sm text-slate-500">
-                See all VIP guests, their current points, last check-in,
-                and what they&apos;ve redeemed. Use this to audit points
-                and understand how guests are using the program.
+              <p className="mt-1 text-sm text-slate-600">
+                VIP guests who have joined the rewards program. Adjust points
+                and review their check-ins and redemptions.
               </p>
-
-              {/* Summary chips */}
-              <div className="mt-2 grid gap-3 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                  <div className="font-semibold text-slate-900">
-                    {stats.totalVips.toLocaleString()}
-                  </div>
-                  <div className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-500">
-                    VIP guests
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                  <div className="font-semibold text-slate-900">
-                    {stats.totalAvailablePoints.toLocaleString()}
-                  </div>
-                  <div className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-500">
-                    Points currently available
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                  <div className="font-semibold text-slate-900">
-                    {stats.totalRedemptions.toLocaleString()}
-                  </div>
-                  <div className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-500">
-                    Rewards redeemed (all time)
-                  </div>
-                  <div className="mt-1 text-[11px] text-slate-500">
-                    {stats.totalPointsRedeemed.toLocaleString()} pts spent
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                  <div className="font-semibold text-slate-900">
-                    {stats.totalCheckinsLast7Days.toLocaleString()}
-                  </div>
-                  <div className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-500">
-                    Check-ins (last 7 days)
-                  </div>
-                </div>
-              </div>
             </div>
-
-            {/* Rewards sub-navigation */}
-            <div className="flex flex-wrap gap-2 justify-start lg:justify-end">
+            <div className="flex flex-wrap gap-2">
+              {/* Rewards menu = yellow (like Staff codes header) */}
               <Link
                 href="/rewards"
-                className="inline-flex items-center rounded-full bg-amber-400 px-5 py-2 text-xs font-semibold text-slate-900 shadow-sm transition hover:bg-amber-500"
+                className="inline-flex items-center rounded-full bg-yellow-400 px-5 py-2 text-xs font-semibold text-slate-900 shadow-sm hover:bg-yellow-300"
               >
                 Rewards menu
               </Link>
+              {/* VIP users = dark pill (active) */}
               <span className="inline-flex items-center rounded-full bg-slate-900 px-5 py-2 text-xs font-semibold text-white shadow-sm">
                 VIP users
               </span>
+              {/* Staff codes = light pill (inactive) */}
               <Link
                 href="/rewards/staff-codes"
-                className="inline-flex items-center rounded-full bg-white px-5 py-2 text-xs font-semibold text-slate-900 shadow-sm border border-slate-200 hover:bg-slate-50"
+                className="inline-flex items-center rounded-full border border-slate-300 bg-white px-5 py-2 text-xs font-semibold text-slate-900 hover:border-slate-400 hover:bg-slate-50"
               >
                 Staff codes
               </Link>
             </div>
           </div>
-        </section>
+        </div>
 
-        {/* VIP table */}
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
+        {/* Summary cards (light theme) */}
+        <div className="grid gap-4 md:grid-cols-4">
+          <SummaryCard
+            label="VIP guests"
+            helper="Total guests with a rewards profile."
+            value={totalVipGuests}
+          />
+          <SummaryCard
+            label="Total points outstanding"
+            helper="Sum of current points across all VIPs."
+            value={totalPoints}
+          />
+          <SummaryCard
+            label="Rewards redeemed"
+            helper="Total number of redemptions recorded."
+            value={totalRedemptions}
+          />
+          <SummaryCard
+            label="Total points redeemed"
+            helper="Total points spent on rewards."
+            value={totalPointsRedeemed}
+          />
+        </div>
+
+        {/* VIP table card */}
+        <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-slate-900">
-              VIP users &amp; balances
+              VIP guests & activity
             </h2>
-            <span className="text-xs text-slate-400">
-              {rows.length} {rows.length === 1 ? "VIP" : "VIPs"}
-            </span>
+            <p className="text-xs text-slate-500">
+              Points are calculated from all scans and redemptions.
+            </p>
           </div>
 
-          {rows.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              No VIP users yet. Once guests start joining, their balances and
-              activity will appear here.
+          {vips.length === 0 ? (
+            <p className="text-sm text-slate-600">
+              No VIP guests found yet. Once guests join the rewards program,
+              they&apos;ll appear here with their points and activity.
             </p>
           ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                      <th className="py-2 pr-4 text-left">Guest</th>
-                      <th className="py-2 pr-4 text-left">Contact</th>
-                      <th className="py-2 pr-4 text-left">Current points</th>
-                      <th className="py-2 pr-4 text-left">Activity</th>
-                      <th className="py-2 pr-4 text-left">Set to</th>
-                      <th className="py-2 pl-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {rows.map((row) => {
-                      const formId = `vip-${row.user_id}`;
-                      const displayName =
-                        row.display_name ||
-                        row.full_name ||
-                        "(No name on file)";
-
-                      const lastCheckin =
-                        row.last_checkin_at ||
-                        row.last_scan_at ||
-                        null;
-
-                      return (
-                        <tr key={row.user_id}>
-                          {/* Guest */}
-                          <td className="py-2 pr-4 align-top">
-                            <div className="text-sm font-medium text-slate-900">
-                              {displayName}
-                            </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2">
-                              {row.is_vip && (
-                                <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                                  VIP
-                                </span>
-                              )}
-                              {lastCheckin && (
-                                <span className="inline-flex rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                                  Last check-in{" "}
-                                  {new Date(
-                                    lastCheckin
-                                  ).toLocaleDateString()}
-                                </span>
-                              )}
-                              {row.last_redeem_at && row.last_reward_name && (
-                                <span className="inline-flex rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-medium text-purple-700">
-                                  Last redeem: {row.last_reward_name} ·{" "}
-                                  {new Date(
-                                    row.last_redeem_at
-                                  ).toLocaleDateString()}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Contact */}
-                          <td className="py-2 pr-4 align-top text-xs text-slate-600">
-                            <div>{row.phone ?? "No phone"}</div>
-                            <div className="mt-0.5 text-[11px] text-slate-400">
-                              {row.email ?? "No email"}
-                            </div>
-                          </td>
-
-                          {/* Current points + redemption summary */}
-                          <td className="py-2 pr-4 align-top">
-                            <div className="text-sm font-semibold text-slate-900">
-                              {row.ledger_points.toLocaleString()} pts
-                            </div>
-                            <div className="mt-1 text-[11px] text-slate-500">
-                              {row.redemption_count > 0 ? (
-                                <>
-                                  {row.redemption_count}{" "}
-                                  {row.redemption_count === 1
-                                    ? "redeem"
-                                    : "redeems"}
-                                  ,{" "}
-                                  {row.total_points_redeemed.toLocaleString()}{" "}
-                                  pts spent
-                                </>
-                              ) : (
-                                <>No redemptions yet</>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Activity summary */}
-                          <td className="py-2 pr-4 align-top text-xs text-slate-600">
-                            <div>
-                              Joined{" "}
-                              {new Date(
-                                row.created_at
-                              ).toLocaleDateString()}
-                            </div>
-                            {lastCheckin && (
-                              <div className="mt-0.5">
-                                Check-in:{" "}
-                                {new Date(
-                                  lastCheckin
-                                ).toLocaleDateString()}
-                              </div>
-                            )}
-                            {row.last_redeem_at && row.last_reward_name && (
-                              <div className="mt-0.5">
-                                Redeem: {row.last_reward_name}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Set to input */}
-                          <td className="py-2 pr-4 align-top">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm text-slate-900">
+                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="py-2 pr-4">Guest</th>
+                    <th className="py-2 pr-4">Contact</th>
+                    <th className="py-2 pr-4">Points</th>
+                    <th className="py-2 pr-4">Visits</th>
+                    <th className="py-2 pr-4">Last check-in</th>
+                    <th className="py-2 pr-4">Last redeem</th>
+                    <th className="py-2 pr-4">Redemptions</th>
+                    <th className="py-2 pr-4">Adjust</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {vips.map((vip) => (
+                    <tr
+                      key={vip.user_id}
+                      className="align-top hover:bg-slate-50/70 transition-colors"
+                    >
+                      <td className="py-3 pr-4">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-semibold text-slate-900">
+                            {vip.full_name || "Unknown guest"}
+                          </span>
+                          {vip.zip && (
+                            <span className="text-xs text-slate-500">
+                              ZIP {vip.zip}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 pr-4">
+                        <div className="flex flex-col text-xs text-slate-700">
+                          {vip.phone && (
+                            <span className="font-mono text-slate-800">
+                              {vip.phone}
+                            </span>
+                          )}
+                          {vip.email && <span>{vip.email}</span>}
+                        </div>
+                      </td>
+                      <td className="py-3 pr-4">
+                        <span className="text-sm font-semibold text-slate-900">
+                          {vip.total_points}
+                        </span>
+                      </td>
+                      <td className="py-3 pr-4 text-sm text-slate-800">
+                        {vip.total_visits}
+                      </td>
+                      <td className="py-3 pr-4 text-xs text-slate-700">
+                        {formatDate(vip.last_scan_at)}
+                      </td>
+                      <td className="py-3 pr-4 text-xs text-slate-700">
+                        {vip.redemption_count === 0
+                          ? "—"
+                          : `${vip.last_reward_name || "Reward"} on ${formatDate(
+                              vip.last_redeem_at
+                            )}`}
+                      </td>
+                      <td className="py-3 pr-4 text-xs text-slate-700">
+                        {vip.redemption_count === 0 ? (
+                          <span>0 redeems</span>
+                        ) : (
+                          <div className="flex flex-col gap-0.5">
+                            <span>
+                              {vip.redemption_count}{" "}
+                              {vip.redemption_count === 1
+                                ? "redeem"
+                                : "redeems"}
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              {vip.total_points_redeemed} pts spent
+                            </span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 pr-4 text-xs">
+                        <form action={adjustVipPoints} className="flex flex-col gap-1">
+                          <input type="hidden" name="user_id" value={vip.user_id} />
+                          <input type="hidden" name="phone" value={vip.phone ?? ""} />
+                          <input
+                            type="hidden"
+                            name="current_points"
+                            value={vip.total_points}
+                          />
+                          <div className="flex items-center gap-1">
+                            <span className="text-[11px] text-slate-500">
+                              Set to
+                            </span>
                             <input
-                              type="hidden"
-                              name="user_id"
-                              value={row.user_id}
-                              form={formId}
-                            />
-                            <input
-                              type="hidden"
-                              name="phone"
-                              value={row.phone ?? ""}
-                              form={formId}
-                            />
-                            <input
-                              name="target_points"
+                              name="new_points"
                               type="number"
-                              min={0}
-                              defaultValue={row.ledger_points}
-                              form={formId}
-                              className="w-28 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-900 outline-none ring-0 transition hover:bg-white focus:border-amber-400"
+                              defaultValue={vip.total_points}
+                              className="w-20 rounded-full border border-slate-300 bg-white px-2 py-1 text-right text-xs text-slate-900 focus:border-yellow-400 focus:outline-none"
                             />
-                          </td>
-
-                          {/* Actions */}
-                          <td className="py-2 pl-4 align-top text-right">
-                            <button
-                              type="submit"
-                              form={formId}
-                              className="inline-flex rounded-full bg-amber-400 px-4 py-1.5 text-xs font-semibold text-slate-900 shadow-sm transition hover:bg-amber-500"
-                            >
-                              Update
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Hidden forms (one per VIP row) for server action */}
-              {rows.map((row) => (
-                <form
-                  key={`adjust-form-${row.user_id}`}
-                  id={`vip-${row.user_id}`}
-                  action={adjustVipPoints}
-                />
-              ))}
-            </>
+                          </div>
+                          <button
+                            type="submit"
+                            className="mt-1 inline-flex items-center justify-center rounded-full bg-yellow-400 px-3 py-1 text-[11px] font-semibold text-slate-900 hover:bg-yellow-300"
+                          >
+                            Save
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-        </section>
+        </div>
       </div>
     </DashboardShell>
   );
 }
 
-/* SERVER ACTION: adjust VIP points via rewards_scans */
-export async function adjustVipPoints(formData: FormData) {
-  "use server";
+type SummaryCardProps = {
+  label: string;
+  helper: string;
+  value: number;
+};
 
-  await requireDashboardSession();
-  const supabase = supabaseServer;
-
-  const user_id = String(formData.get("user_id") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim() || null;
-  const targetPointsRaw = String(formData.get("target_points") ?? "").trim();
-  const target_points = Number(targetPointsRaw);
-
-  if (!user_id || Number.isNaN(target_points)) {
-    return;
-  }
-
-  // 1) Get current ledger_points from view
-  const { data: balanceRow, error: balanceError } = await supabase
-    .from("rewards_balances")
-    .select("ledger_points")
-    .eq("user_id", user_id)
-    .maybeSingle();
-
-  if (balanceError || !balanceRow) {
-    console.error("[vip-points] adjust: could not fetch current balance", {
-      error: balanceError,
-      user_id,
-    });
-    return;
-  }
-
-  const current_points: number = balanceRow.ledger_points ?? 0;
-
-  if (current_points === target_points) {
-    // Nothing to do
-    return;
-  }
-
-  const delta = target_points - current_points;
-
-  // 2) Modify today's rewards_scans row (or create it) to apply delta
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
-  const { data: existingScan, error: scanFetchError } = await supabase
-    .from("rewards_scans")
-    .select("id, points")
-    .eq("user_id", user_id)
-    .eq("scan_date", today)
-    .maybeSingle();
-
-  if (scanFetchError) {
-    console.error("[vip-points] adjust: fetch scan error", scanFetchError);
-    return;
-  }
-
-  if (existingScan) {
-    // Update existing scan for today
-    const { error: updateScanError } = await supabase
-      .from("rewards_scans")
-      .update({
-        points: (existingScan.points ?? 0) + delta,
-      })
-      .eq("id", existingScan.id);
-
-    if (updateScanError) {
-      console.error("[vip-points] adjust: update scan error", updateScanError);
-      return;
-    }
-  } else {
-    // Insert a new scan for today
-    const { error: insertScanError } = await supabase
-      .from("rewards_scans")
-      .insert({
-        user_id,
-        points: delta,
-        source: "dashboard-adjustment",
-        note: `Set balance from ${current_points} to ${target_points}`,
-        qr_code: `DASHBOARD_ADJUST_${user_id}_${today}`,
-        scan_date: today,
-      });
-
-    if (insertScanError) {
-      console.error("[vip-points] adjust: insert scan error", insertScanError);
-      return;
-    }
-  }
-
-  // 3) Log to dashboard audit
-  await logVipPointsAdjustment({
-    user_id,
-    phone,
-    old_points: current_points,
-    new_points: target_points,
-  });
-
-  // 4) Revalidate page
-  revalidatePath("/rewards/vips");
+function SummaryCard({ label, helper, value }: SummaryCardProps) {
+  return (
+    <div className="rounded-3xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </div>
+      <div className="mt-1 text-2xl font-semibold text-slate-900">
+        {value.toLocaleString("en-US")}
+      </div>
+      <div className="mt-1 text-xs text-slate-500">{helper}</div>
+    </div>
+  );
 }

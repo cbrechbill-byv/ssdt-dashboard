@@ -132,59 +132,58 @@ export default async function DashboardPage() {
 
   const today = getTodayDateString();
 
-  // 1) Today's stats: check-ins, unique VIPs, points
+    // 1) Today's stats: check-ins, unique VIPs, points (awarded vs redeemed)
   let checkinsToday = 0;
   let uniqueVipsToday = 0;
-  let pointsToday = 0;
+  let pointsAwardedToday = 0;
+  let pointsRedeemedToday = 0;
 
   const {
-    data: dailySummaryRows,
-    error: dailyError,
+    data: scanRows,
+    error: scansError,
   } = await supabase
-    .from("rewards_daily_summary")
-    .select(
-      "scan_date, total_scans, unique_vips_checked_in, total_points_earned"
-    )
-    .eq("scan_date", today)
-    .limit(1);
+    .from("rewards_scans")
+    .select("user_id, points, scan_date, source")
+    .eq("scan_date", today);
 
-  if (dailyError) {
-    console.error(
-      "[VIP Dashboard] Error loading rewards_daily_summary:",
-      dailyError
+  if (scansError) {
+    console.error("[VIP Dashboard] Error loading rewards_scans:", scansError);
+  }
+
+  if (scanRows && scanRows.length > 0) {
+    type ScanRow = {
+      user_id: string | null;
+      points: number | null;
+      scan_date: string;
+      source: string | null;
+    };
+
+    const rows = scanRows as ScanRow[];
+
+    // Treat only QR check-ins as "check-ins"
+    const checkinRows = rows.filter(
+      (row) => (row.source ?? "").toLowerCase() === "qr-checkin"
     );
-  }
 
-  const daily = dailySummaryRows?.[0] as DailySummary | undefined;
+    checkinsToday = checkinRows.length;
+    uniqueVipsToday = new Set(
+      checkinRows.map((row) => row.user_id ?? "__none__")
+    ).size;
 
-  if (daily) {
-    checkinsToday = Number(daily.total_scans ?? 0);
-    uniqueVipsToday = Number(daily.unique_vips_checked_in ?? 0);
-    pointsToday = Number(daily.total_points_earned ?? 0);
-  } else {
-    const {
-      data: scanRows,
-      error: scansError,
-    } = await supabase
-      .from("rewards_scans")
-      .select("user_id, points, scan_date")
-      .eq("scan_date", today);
+    for (const row of rows) {
+      const pts = Number(row.points ?? 0);
+      if (!Number.isFinite(pts) || pts === 0) continue;
 
-    if (scansError) {
-      console.error("[VIP Dashboard] Error loading rewards_scans:", scansError);
-    }
-
-    if (scanRows && scanRows.length > 0) {
-      checkinsToday = scanRows.length;
-      uniqueVipsToday = new Set(
-        scanRows.map((row: any) => row.user_id ?? "__none__")
-      ).size;
-      pointsToday = scanRows.reduce(
-        (sum: number, row: any) => sum + Number(row.points ?? 0),
-        0
-      );
+      if (pts > 0) {
+        // Points awarded (check-ins, manual boosts, etc.)
+        pointsAwardedToday += pts;
+      } else if (pts < 0) {
+        // Points redeemed (redemptions, adjustments)
+        pointsRedeemedToday += Math.abs(pts);
+      }
     }
   }
+
 
   // 2) VIP overview from rewards_user_overview
   const {
@@ -291,8 +290,8 @@ export default async function DashboardPage() {
       subtitle="Check-ins, VIP activity, and fan content at a glance." activeTab="dashboard"
     >
       <div className="space-y-6">
-        {/* Top stats row */}
-        <div className="grid gap-4 md:grid-cols-3">
+                {/* Top stats row */}
+        <div className="grid gap-4 md:grid-cols-4">
           <StatCard
             label="Check-ins today"
             helper="VIPs who checked in with tonight’s QR."
@@ -305,10 +304,16 @@ export default async function DashboardPage() {
           />
           <StatCard
             label="Points awarded today"
-            helper="From today’s check-ins and rewards."
-            value={pointsToday}
+            helper="Points given from check-ins and boosts."
+            value={pointsAwardedToday}
+          />
+          <StatCard
+            label="Points redeemed today"
+            helper="Points spent on rewards today."
+            value={pointsRedeemedToday}
           />
         </div>
+
 
         {/* Second stats row */}
         <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
