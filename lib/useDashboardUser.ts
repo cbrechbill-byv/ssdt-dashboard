@@ -1,17 +1,22 @@
+// lib/useDashboardUser.ts
 "use client";
 
 import { useEffect, useState } from "react";
 
-export type DashboardRole = "admin" | "viewer";
-
 type DashboardUser = {
-  id: string;
   email: string;
-  role: DashboardRole;
+  role: string;
 };
 
-export function useDashboardUser() {
+type UseDashboardUserResult = {
+  user: DashboardUser | null;
+  role: string | null;
+  loading: boolean;
+};
+
+export function useDashboardUser(): UseDashboardUserResult {
   const [user, setUser] = useState<DashboardUser | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,30 +24,35 @@ export function useDashboardUser() {
 
     async function load() {
       try {
+        setLoading(true);
         const res = await fetch("/api/dashboard/me", {
           method: "GET",
-          headers: { "Content-Type": "application/json" },
+          credentials: "include",
         });
 
         if (!res.ok) {
           if (!cancelled) {
             setUser(null);
+            setRole(null);
           }
           return;
         }
 
         const data = await res.json();
-        if (!cancelled) {
-          setUser({
-            id: data.id,
-            email: data.email,
-            role: data.role,
-          });
+        if (cancelled) return;
+
+        if (data.user) {
+          setUser(data.user);
+          setRole(data.user.role ?? null);
+        } else {
+          setUser(null);
+          setRole(null);
         }
-      } catch (e) {
-        console.error("[useDashboardUser] error:", e);
+      } catch (err) {
+        console.error("[useDashboardUser] error loading user", err);
         if (!cancelled) {
           setUser(null);
+          setRole(null);
         }
       } finally {
         if (!cancelled) {
@@ -52,15 +62,10 @@ export function useDashboardUser() {
     }
 
     load();
-
     return () => {
       cancelled = true;
     };
   }, []);
 
-  return {
-    user,
-    loading,
-    role: user?.role ?? null,
-  };
+  return { user, role, loading };
 }

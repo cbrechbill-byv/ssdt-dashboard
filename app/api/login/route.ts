@@ -1,85 +1,105 @@
-import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabaseServer";
+// app/api/login/route.ts
+
+import { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
-import { createDashboardSession } from "@/lib/dashboardAuth";
 
-type DashboardUserRow = {
-  id: string;
-  email: string;
-  password_hash: string | null;
-  role: string;
-};
+import { supabaseServer } from "@/lib/supabaseServer";
+import {
+  createSessionResponse,
+  clearSessionResponse,
+  DashboardSession,
+} from "@/lib/dashboardAuth";
 
-export async function POST(req: Request) {
+/**
+ * POST /api/login
+ * Body: { email, password } (JSON or form-encoded)
+ */
+export async function POST(req: NextRequest) {
+  let email = "";
+  let password = "";
+
+  const contentType = req.headers.get("content-type") || "";
+
   try {
-    const body = await req.json().catch(() => null);
-    const rawEmail = body?.email?.toString().trim();
-    const rawPassword = body?.password?.toString();
-
-    if (!rawEmail || !rawPassword) {
-      return NextResponse.json(
-        { ok: false, error: "Email and password are required." },
-        { status: 400 }
-      );
+    if (contentType.includes("application/json")) {
+      const body = await req.json();
+      email = String(body.email ?? "").trim().toLowerCase();
+      password = String(body.password ?? "");
+    } else {
+      const form = await req.formData();
+      email = String(form.get("email") ?? "").trim().toLowerCase();
+      password = String(form.get("password") ?? "");
     }
-
-    const email = rawEmail.toLowerCase();
-
-    const supabase = supabaseServer;
-
-    const { data, error } = await supabase
-      .from("dashboard_users")
-      .select("id, email, password_hash, role")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (error) {
-      console.error("[login] Supabase error:", error);
-      return NextResponse.json(
-        { ok: false, error: "Unexpected error. Please try again." },
-        { status: 500 }
-      );
-    }
-
-    const user = data as DashboardUserRow | null;
-
-    if (!user || !user.password_hash) {
-      // Do not reveal which part is wrong
-      return NextResponse.json(
-        { ok: false, error: "Incorrect email or password." },
-        { status: 401 }
-      );
-    }
-
-    const match = await bcrypt.compare(rawPassword, user.password_hash);
-    if (!match) {
-      return NextResponse.json(
-        { ok: false, error: "Incorrect email or password." },
-        { status: 401 }
-      );
-    }
-
-    // At this point login is valid — set the session cookie
-    const response = NextResponse.json(
-      {
-        ok: true,
-        email: user.email,
-        role: user.role,
-      },
-      { status: 200 }
+  } catch {
+    return clearSessionResponse(
+      { success: false, error: "Invalid request body" },
+      { status: 400 }
     );
+  }
 
-    createDashboardSession(
-      { email: user.email, role: user.role || "admin" },
-      response
+  if (!email || !password) {
+    return clearSessionResponse(
+      { success: false, error: "Email and password are required" },
+      { status: 400 }
     );
+  }
 
-    return response;
-  } catch (err: any) {
-    console.error("[login] Unexpected error:", err);
-    return NextResponse.json(
-      { ok: false, error: "Unexpected server error." },
+  const supabase = supabaseServer;
+
+  // Look up dashboard-only user
+  const { data: user, error } = await supabase
+    .from("dashboard_users")
+    .select("id, email, role, password_hash")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[login] dashboard_users lookup error", error);
+    return clearSessionResponse(
+      { success: false, error: "Unexpected error" },
       { status: 500 }
     );
   }
+
+  if (!user || !user.password_hash) {
+    // Don't leak whether the email exists
+    return clearSessionResponse(
+      { success: false, error: "Invalid email or password" },
+      { status: 401 }
+    );
+  }
+
+  const passwordMatches = await bcrypt.compare(password, user.password_hash);
+  if (!passwordMatches) {
+    return clearSessionResponse(
+      { success: false, error: "Invalid email or password" },
+      { status: 401 }
+    );
+  }
+
+  const session: DashboardSession = {
+    email: user.email,
+    role: user.role ?? "admin",
+  };
+
+  // Log login to dashboard_audit_log
+  const { error: auditError } = await supabase
+    .from("dashboard_audit_log")
+    .insert({
+      actor_email: user.email,
+      actor_role: user.role ?? "admin",
+      action: "login",
+      entity: "dashboard_session",
+      entity_id: user.id,
+      details: {
+        source: "dashboard-login",
+      },
+    });
+
+  if (auditError) {
+    console.error("[login] audit log error", auditError);
+  }
+
+  // Create session cookie + JSON response
+  return createSessionResponse(session, { success: true });
 }

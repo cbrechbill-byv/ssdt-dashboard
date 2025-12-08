@@ -1,16 +1,35 @@
-import { NextResponse } from "next/server";
+// app/api/dashboard/me/route.ts
 
-// TEMPORARY: always report an "admin" user so the dashboard works
-export async function GET() {
+import { NextRequest, NextResponse } from "next/server";
+import { getDashboardSession } from "@/lib/dashboardAuth";
+
+/**
+ * GET /api/dashboard/me
+ * Returns { user: { email, role } } if signed in, else { user: null }.
+ */
+export async function GET(_req: NextRequest) {
+  const session = await getDashboardSession();
+
+  if (!session) {
+    return NextResponse.json(
+      {
+        user: null,
+      },
+      {
+        status: 200,
+      }
+    );
+  }
+
   return NextResponse.json(
     {
-      ok: true,
-      authenticated: true,
       user: {
-        email: "test@sugarshackdowntown.com",
-        role: "admin",
+        email: session.email,
+        role: session.role,
       },
     },
-    { status: 200 }
+    {
+      status: 200,
+    }
   );
 }

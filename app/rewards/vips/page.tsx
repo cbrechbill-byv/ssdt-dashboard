@@ -249,8 +249,8 @@ async function logVipPointsAdjustment(options: {
   const session = await getDashboardSession();
   const supabase = supabaseServer;
 
-  const actor_email = session?.user?.email ?? "unknown";
-  const actor_role = session?.user?.role ?? "unknown";
+  const actor_email = session?.email ?? "unknown";
+  const actor_role = session?.role ?? "unknown";
 
   const { error } = await supabase.from("dashboard_audit_log").insert({
     actor_email,
