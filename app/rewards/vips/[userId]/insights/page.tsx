@@ -56,7 +56,7 @@ type FeedbackRow = {
   contact_email: string | null;
   contact_phone: string | null;
   submitted_at: string | null;
-  created_at: string | null; // 👈 added so we can safely use fb.created_at
+  created_at: string | null; // keep this
 };
 
 function formatDate(iso: string | null | undefined) {
@@ -94,7 +94,6 @@ function averageRating(row: FeedbackRow): number | null {
   return sum / values.length;
 }
 
-// Build a unified “activity” timeline for the left-hand column
 type ActivityItem =
   | {
       kind: "scan";
@@ -130,8 +129,6 @@ type ActivityItem =
       avg_rating: number | null;
     };
 
-// --- The page component ------------------------------------------------------
-
 // Next 16: params is a Promise; we must await it.
 export default async function VipInsightsPage(props: {
   params: Promise<{ userId: string }>;
@@ -157,7 +154,6 @@ export default async function VipInsightsPage(props: {
       ? (overviewRows[0] as VipOverviewRow)
       : null;
 
-  // If somehow no overview row, we still want to try to show something
   const phone = overview?.phone ?? null;
   const email = overview?.email ?? null;
 
@@ -175,7 +171,6 @@ export default async function VipInsightsPage(props: {
 
   const scans: RewardScan[] = (scansData ?? []) as RewardScan[];
 
-  // Calculate earned vs spent from scans
   let totalEarned = 0;
   let totalSpent = 0;
 
@@ -230,7 +225,7 @@ export default async function VipInsightsPage(props: {
         .from("feedback")
         .select(
           "id, music_rating, food_rating, fun_rating, comment, anonymous, contact_name, contact_email, contact_phone, submitted_at, created_at"
-        ) // 👈 created_at now selected
+        )
         .or(orFilters.join(","))
         .order("submitted_at", { ascending: false })
         .limit(50);
@@ -291,7 +286,6 @@ export default async function VipInsightsPage(props: {
     });
   }
 
-  // Sort newest first
   activities.sort((a, b) => {
     const aTime = new Date(a.at).getTime();
     const bTime = new Date(b.at).getTime();
@@ -314,7 +308,7 @@ export default async function VipInsightsPage(props: {
     <DashboardShell
       title={`VIP Insights`}
       subtitle={headerSubtitle}
-      activeTab="rewards-vips"
+      activeTab="rewards-menu" // 👈 changed from "rewards-vips"
     >
       <div className="space-y-6">
         {/* Top identity + core stats */}
@@ -436,7 +430,7 @@ export default async function VipInsightsPage(props: {
                     className="flex gap-3 border-b border-slate-100 pb-3 last:border-b-0 last:pb-0"
                   >
                     <div className="mt-1 h-2 w-2 rounded-full bg-slate-900 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-xs font-semibold text-slate-900">
                           {item.label}
@@ -496,7 +490,7 @@ export default async function VipInsightsPage(props: {
           <div className="space-y-4">
             {/* Recent redemptions */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Recent redemptions
               </h2>
               {redemptions.length === 0 ? (
@@ -530,7 +524,7 @@ export default async function VipInsightsPage(props: {
 
             {/* Fan Wall posts */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Fan Wall posts
               </h2>
               {fanPosts.length === 0 ? (
@@ -560,7 +554,7 @@ export default async function VipInsightsPage(props: {
 
             {/* Feedback */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Feedback from this guest
               </h2>
               {feedbackRows.length === 0 ? (
@@ -585,7 +579,7 @@ export default async function VipInsightsPage(props: {
                           </p>
                         </div>
                         {fb.comment && (
-                          <p className="text-xs text-slate-700 mt-0.5">
+                          <p className="mt-0.5 text-xs text-slate-700">
                             {fb.comment.length > 120
                               ? `${fb.comment.slice(0, 120)}…`
                               : fb.comment}
