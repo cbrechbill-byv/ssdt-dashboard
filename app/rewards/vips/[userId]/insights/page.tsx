@@ -56,6 +56,7 @@ type FeedbackRow = {
   contact_email: string | null;
   contact_phone: string | null;
   submitted_at: string | null;
+  created_at: string | null; // 👈 added so we can safely use fb.created_at
 };
 
 function formatDate(iso: string | null | undefined) {
@@ -228,8 +229,8 @@ export default async function VipInsightsPage(props: {
       const { data: fbData, error: fbError } = await supabase
         .from("feedback")
         .select(
-          "id, music_rating, food_rating, fun_rating, comment, anonymous, contact_name, contact_email, contact_phone, submitted_at"
-        )
+          "id, music_rating, food_rating, fun_rating, comment, anonymous, contact_name, contact_email, contact_phone, submitted_at, created_at"
+        ) // 👈 created_at now selected
         .or(orFilters.join(","))
         .order("submitted_at", { ascending: false })
         .limit(50);
@@ -580,7 +581,7 @@ export default async function VipInsightsPage(props: {
                               : "Feedback submitted"}
                           </p>
                           <p className="text-[11px] text-slate-500">
-                            {formatDate(fb.submitted_at ?? null)}
+                            {formatDate(fb.submitted_at ?? fb.created_at ?? null)}
                           </p>
                         </div>
                         {fb.comment && (
