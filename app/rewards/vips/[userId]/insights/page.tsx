@@ -308,7 +308,7 @@ export default async function VipInsightsPage(props: {
     <DashboardShell
       title={`VIP Insights`}
       subtitle={headerSubtitle}
-      activeTab="rewards-menu" // 👈 changed from "rewards-vips"
+      activeTab="rewards"
     >
       <div className="space-y-6">
         {/* Top identity + core stats */}
