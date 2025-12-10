@@ -326,6 +326,20 @@ export default async function DashboardPage() {
             </p>
 
             <div className="space-y-2 text-xs">
+              {/* NEW: Tonight live board quick action */}
+              <Link
+                href="/dashboard/tonight"
+                className="block w-full rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 hover:bg-amber-100"
+              >
+                <p className="font-medium text-slate-900">
+                  Tonight&apos;s live board
+                </p>
+                <p className="text-[11px] text-slate-600">
+                  See today&apos;s check-ins, points, and redemptions in real
+                  time.
+                </p>
+              </Link>
+
               <Link
                 href="/events"
                 className="block w-full rounded-xl border border-slate-200 px-3 py-2 hover:bg-slate-50"

@@ -1,4 +1,3 @@
-// components/layout/DashboardShell.tsx
 "use client";
 
 import React from "react";
@@ -41,15 +40,61 @@ const tabs: { key: DashboardTab; label: string; href: string }[] = [
   { key: "activity", label: "Activity log", href: "/activity-log" },
 ];
 
+type SubMenuItem = {
+  label: string;
+  href: string;
+  description?: string;
+};
+
+const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
+  dashboard: [
+    {
+      label: "Tonight board",
+      href: "/dashboard/tonight",
+      description: "Tonight view for the in-venue screen.",
+    },
+  ],
+  rewards: [
+    {
+      label: "VIP Users",
+      href: "/rewards/vips",
+      description: "See all VIPs, points, and visits.",
+    },
+    {
+      label: "VIP Overview",
+      href: "/rewards/overview",
+      description: "High-level stats across all VIPs.",
+    },
+    {
+      label: "Staff Codes",
+      href: "/rewards/staff-codes",
+      description: "Manage staff PINs for redemptions.",
+    },
+  ],
+  notifications: [
+    {
+      label: "Analytics",
+      href: "/notifications/analytics",
+      description: "Delivery stats and platform breakdown.",
+    },
+  ],
+};
+
 export default function DashboardShell({
   title,
   subtitle,
-  children,
   activeTab,
+  children,
 }: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, loading, role } = useDashboardUser();
+
+  const [openMenu, setOpenMenu] = React.useState<DashboardTab | null>(null);
+
+  function isTabActive(tab: (typeof tabs)[number]) {
+    return activeTab === tab.key || (pathname ?? "").startsWith(tab.href);
+  }
 
   async function handleLogout() {
     try {
@@ -61,12 +106,17 @@ export default function DashboardShell({
     }
   }
 
-  const baseClasses =
-    "inline-flex items-center rounded-full border px-3 py-1 transition-colors";
-  const activeClasses =
-    "border-amber-400 bg-amber-400 text-slate-900 shadow-sm";
-  const inactiveClasses =
-    "border-slate-200 bg-white text-slate-600 hover:bg-amber-50 hover:border-amber-200";
+  function handleMenuTabClick(tabKey: DashboardTab, href: string) {
+    // Mobile + click behavior:
+    // - First click: open submenu
+    // - Second click (while open): navigate to main tab page
+    if (openMenu === tabKey) {
+      setOpenMenu(null);
+      router.push(href);
+    } else {
+      setOpenMenu(tabKey);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -100,6 +150,7 @@ export default function DashboardShell({
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Current user info */}
               <div className="hidden text-right sm:block">
                 {loading && (
                   <p className="text-[11px] text-slate-400">
@@ -131,72 +182,81 @@ export default function DashboardShell({
             </div>
           </div>
 
-          {/* Navigation pills */}
+          {/* Navigation pills with dropdown submenus */}
           <nav className="flex flex-wrap gap-1.5 text-xs">
             {tabs.map((tab) => {
-              const isActive =
-                activeTab === tab.key || pathname?.startsWith(tab.href);
+              const isActive = isTabActive(tab);
+              const menuItems = subMenus[tab.key];
+              const hasMenu = !!menuItems && menuItems.length > 0;
 
-              if (tab.key === "rewards") {
-                const rewardsActive =
-                  pathname?.startsWith("/rewards") || activeTab === "rewards";
+              const baseClasses =
+                "inline-flex items-center rounded-full border px-3 py-1 transition-colors";
+              const activeClasses =
+                "border-amber-400 bg-amber-400 text-slate-900 shadow-sm";
+              const inactiveClasses =
+                "border-slate-200 bg-white text-slate-600 hover:bg-amber-50 hover:border-amber-200";
 
-                const rewardsButtonClasses = `${baseClasses} ${
-                  rewardsActive ? activeClasses : inactiveClasses
-                }`;
-
+              // Tabs without submenu: simple pill that links directly
+              if (!hasMenu) {
                 return (
-                  <div key={tab.key} className="relative group">
-                    {/* Main Rewards pill (goes to /rewards) */}
-                    <Link href={tab.href} className={rewardsButtonClasses}>
-                      {tab.label}
-                    </Link>
-
-                    {/* Sub menu on hover */}
-                    <div className="invisible absolute left-0 z-20 mt-1 w-44 rounded-2xl border border-slate-200 bg-white py-1.5 text-xs shadow-lg opacity-0 transition-all group-hover:visible group-hover:opacity-100">
-                      <Link
-                        href="/rewards/vips"
-                        className={`block px-3 py-1.5 text-left ${
-                          pathname?.startsWith("/rewards/vips")
-                            ? "bg-amber-50 text-slate-900 font-semibold"
-                            : "text-slate-700 hover:bg-slate-50"
-                        }`}
-                      >
-                        VIP users
-                      </Link>
-                      <Link
-                        href="/rewards/overview"
-                        className={`block px-3 py-1.5 text-left ${
-                          pathname?.startsWith("/rewards/overview")
-                            ? "bg-amber-50 text-slate-900 font-semibold"
-                            : "text-slate-700 hover:bg-slate-50"
-                        }`}
-                      >
-                        VIP overview
-                      </Link>
-                      <Link
-                        href="/rewards/staff-codes"
-                        className={`block px-3 py-1.5 text-left ${
-                          pathname?.startsWith("/rewards/staff-codes")
-                            ? "bg-amber-50 text-slate-900 font-semibold"
-                            : "text-slate-700 hover:bg-slate-50"
-                        }`}
-                      >
-                        Staff codes
-                      </Link>
-                    </div>
-                  </div>
+                  <Link
+                    key={tab.key}
+                    href={tab.href}
+                    className={`${baseClasses} ${
+                      isActive ? activeClasses : inactiveClasses
+                    }`}
+                  >
+                    {tab.label}
+                  </Link>
                 );
               }
 
-              const tabClasses = `${baseClasses} ${
-                isActive ? activeClasses : inactiveClasses
-              }`;
+              // Tabs with submenu: traditional dropdown
+              const isMenuOpen = openMenu === tab.key;
 
               return (
-                <Link key={tab.key} href={tab.href} className={tabClasses}>
-                  {tab.label}
-                </Link>
+                <div
+                  key={tab.key}
+                  className="relative inline-block"
+                >
+                  <button
+                    type="button"
+                    onMouseEnter={() => setOpenMenu(tab.key)}
+                    onClick={() => handleMenuTabClick(tab.key, tab.href)}
+                    className={`${baseClasses} ${
+                      isActive ? activeClasses : inactiveClasses
+                    } flex items-center gap-1`}
+                    aria-haspopup="menu"
+                    aria-expanded={isMenuOpen}
+                  >
+                    <span>{tab.label}</span>
+                    <span className="text-[9px] opacity-80">▾</span>
+                  </button>
+
+                  {isMenuOpen && (
+                    <div
+                      className="absolute left-0 top-full z-20 mt-1 min-w-[14rem] rounded-2xl border border-slate-200 bg-white py-1 shadow-lg"
+                      onMouseEnter={() => setOpenMenu(tab.key)}
+                      onMouseLeave={() => setOpenMenu(null)}
+                    >
+                      {menuItems!.map((item) => (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setOpenMenu(null)}
+                          className="block px-3 py-1.5 text-[11px] text-slate-700 hover:bg-amber-50"
+                        >
+                          <div className="font-medium">{item.label}</div>
+                          {item.description && (
+                            <div className="text-[10px] text-slate-500">
+                              {item.description}
+                            </div>
+                          )}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </nav>

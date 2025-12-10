@@ -5,6 +5,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 import { getDashboardSession } from "@/lib/dashboardAuth";
@@ -371,9 +372,18 @@ export default async function VipUsersPage() {
                         value={points}
                       />
 
-                      {/* Guest */}
+                      {/* Guest (clickable to open Insights) */}
                       <div className="font-semibold text-slate-900">
-                        {displayName}
+                        {userId ? (
+                          <Link
+                            href={`/rewards/vips/${userId}/insights`}
+                            className="hover:underline hover:text-slate-700"
+                          >
+                            {displayName}
+                          </Link>
+                        ) : (
+                          displayName
+                        )}
                       </div>
 
                       {/* Contact */}
