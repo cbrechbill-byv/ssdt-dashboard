@@ -91,6 +91,34 @@ async function hidePost(formData: FormData) {
   revalidatePath("/dashboard");
 }
 
+async function deletePost(formData: FormData) {
+  "use server";
+
+  const id = formData.get("id");
+  if (!id || typeof id !== "string") {
+    console.error("[FanWall] deletePost: missing or invalid id");
+    return;
+  }
+
+  const supabase = supabaseServer;
+
+  // Delete the row
+  const { error } = await supabase
+    .from("fan_wall_posts")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    console.error("[FanWall] deletePost error:", error);
+  }
+
+  // Optionally you could also delete from storage here
+  // if you want to clean up the image file as well.
+
+  revalidatePath("/fan-wall");
+  revalidatePath("/dashboard");
+}
+
 /* ------------------------------------------------------------------ */
 /*  PAGE                                                              */
 /* ------------------------------------------------------------------ */
@@ -109,9 +137,7 @@ export default async function FanWallPage() {
     console.error("[FanWall] load error:", error);
   }
 
-  const posts = ((data ?? []) as FanWallPost[]).filter(
-    (p) => !p.is_hidden
-  );
+  const posts = ((data ?? []) as FanWallPost[]).filter((p) => !p.is_hidden);
 
   // Attach public URLs using Supabase storage helper
   const postsWithUrls = posts.map((post) => {
@@ -133,7 +159,8 @@ export default async function FanWallPage() {
   return (
     <DashboardShell
       title="Fan Wall"
-      subtitle="Review and approve Photo Booth shots before they appear in the app." activeTab="fan-wall"
+      subtitle="Review and approve Photo Booth shots before they appear in the app."
+      activeTab="fan-wall"
     >
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm">
         {/* Header */}
@@ -201,7 +228,7 @@ export default async function FanWallPage() {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex gap-2 sm:ml-4">
+                    <div className="flex flex-wrap gap-2 sm:ml-4">
                       {!post.is_approved && (
                         <form action={approvePost}>
                           <input type="hidden" name="id" value={post.id} />
@@ -223,6 +250,16 @@ export default async function FanWallPage() {
                           Hide
                         </button>
                       </form>
+
+                      <form action={deletePost}>
+                        <input type="hidden" name="id" value={post.id} />
+                        <button
+                          type="submit"
+                          className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 hover:bg-rose-100 text-[11px] font-semibold text-rose-700 px-3 py-1.5"
+                        >
+                          Delete
+                        </button>
+                      </form>
                     </div>
                   </div>
                 </div>
@@ -234,4 +271,3 @@ export default async function FanWallPage() {
     </DashboardShell>
   );
 }
-

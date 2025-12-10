@@ -1,4 +1,6 @@
-// app/dashboard/page.tsx
+// Path: app/dashboard/page.tsx
+// Purpose: Main Sugarshack Downtown overview (check-ins, VIP health, fan wall, quick actions, Top VIPs).
+
 import { redirect } from "next/navigation";
 import { getDashboardSession } from "@/lib/dashboardAuth";
 import React from "react";
@@ -6,32 +8,18 @@ import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-/* Force dynamic so we always see fresh stats */
+/**
+ * Force dynamic so the dashboard always shows fresh stats.
+ */
 export const dynamic = "force-dynamic";
 
-/* ------------------------------------------------------------------ */
-/*  AUTH GUARD — NEW                                                   */
-/* ------------------------------------------------------------------ */
-
 export default async function DashboardPage() {
-  // Require dashboard session before viewing any content
   const session = await getDashboardSession();
   if (!session) {
     redirect("/login");
   }
 
   const supabase = supabaseServer;
-
-  /* ------------------------------------------------------------------ */
-  /*  EVERYTHING BELOW THIS POINT IS YOUR ORIGINAL LOGIC (UNCHANGED)   */
-  /* ------------------------------------------------------------------ */
-
-  type DailySummary = {
-    scan_date: string;
-    total_scans: number | null;
-    unique_vips_checked_in: number | null;
-    total_points_earned: number | null;
-  };
 
   type RewardsUserOverview = {
     user_id: string | null;
@@ -50,56 +38,6 @@ export default async function DashboardPage() {
     visits: number;
     lastVisitLabel: string;
   };
-
-  type StatCardProps = {
-    label: string;
-    helper: string;
-    value: string | number;
-  };
-
-  function StatCard({ label, helper, value }: StatCardProps) {
-    return (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-        <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-          {label}
-        </p>
-        <p className="mt-2 text-3xl font-semibold text-slate-900">{value}</p>
-        <p className="mt-1 text-xs text-slate-500">{helper}</p>
-      </div>
-    );
-  }
-
-  function PercentCard({
-    label,
-    helper,
-    value,
-  }: {
-    label: string;
-    helper: string;
-    value: number;
-  }) {
-    const clamped = Number.isFinite(value)
-      ? Math.max(0, Math.min(100, value))
-      : 0;
-
-    return (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-        <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-          {label}
-        </p>
-        <p className="mt-2 text-3xl font-semibold text-slate-900">
-          {clamped.toFixed(0)}%
-        </p>
-        <p className="mt-1 text-xs text-slate-500">{helper}</p>
-        <div className="mt-3 h-1.5 w-full rounded-full bg-slate-100">
-          <div
-            className="h-1.5 rounded-full bg-emerald-500 transition-all"
-            style={{ width: `${clamped}%` }}
-          />
-        </div>
-      </div>
-    );
-  }
 
   function getTodayDateString(): string {
     const now = new Date();
@@ -138,7 +76,9 @@ export default async function DashboardPage() {
 
   const today = getTodayDateString();
 
-  // Today's stats
+  // -----------------------------
+  // 1) Today’s rewards_scans stats
+  // -----------------------------
   let checkinsToday = 0;
   let uniqueVipsToday = 0;
   let pointsAwardedToday = 0;
@@ -176,7 +116,11 @@ export default async function DashboardPage() {
     }
   }
 
-  // VIP overview
+  const netPointsToday = pointsAwardedToday - pointsRedeemedToday;
+
+  // -----------------------------
+  // 2) VIP overview via rewards_user_overview
+  // -----------------------------
   const { data: vipOverviewRows } = await supabase
     .from("rewards_user_overview")
     .select(
@@ -187,6 +131,7 @@ export default async function DashboardPage() {
   const vipUsers = allUsers.filter((u) => u.is_vip);
 
   const vipBaseCount = vipUsers.length;
+  const totalVipCount = vipBaseCount;
 
   const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
   const nowMs = Date.now();
@@ -200,7 +145,9 @@ export default async function DashboardPage() {
   const activePercentage =
     vipBaseCount > 0 ? (activeVipsCount / vipBaseCount) * 100 : 0;
 
-  // Fan Wall stats
+  // -----------------------------
+  // 3) Fan Wall stats
+  // -----------------------------
   const [
     { count: pendingCount },
     { count: liveCount },
@@ -231,6 +178,9 @@ export default async function DashboardPage() {
   const fanHidden = hiddenCount ?? 0;
   const fanTotal = totalCount ?? 0;
 
+  // -----------------------------
+  // 4) Top VIPs list
+  // -----------------------------
   const topVipRows = [...vipUsers]
     .sort((a, b) => {
       const aTime = a.last_scan_at ? new Date(a.last_scan_at).getTime() : 0;
@@ -248,11 +198,9 @@ export default async function DashboardPage() {
     lastVisitLabel: formatDateTimeLabel(row.last_scan_at),
   }));
 
-  const totalVipCount = vipUsers.length;
-
-  /* ------------------------------------------------------------------ */
-  /*  RENDER                                                             */
-  /* ------------------------------------------------------------------ */
+  // -----------------------------
+  // Render
+  // -----------------------------
 
   return (
     <DashboardShell
@@ -261,8 +209,8 @@ export default async function DashboardPage() {
       activeTab="dashboard"
     >
       <div className="space-y-6">
-        {/* TOP STAT ROW */}
-        <div className="grid gap-4 md:grid-cols-4">
+        {/* Top stat row */}
+        <div className="grid gap-4 md:grid-cols-5">
           <StatCard
             label="Check-ins today"
             helper="VIPs who checked in with tonight’s QR."
@@ -283,13 +231,18 @@ export default async function DashboardPage() {
             helper="Points spent on rewards today."
             value={pointsRedeemedToday}
           />
+          <StatCard
+            label="Net points today"
+            helper="Awarded minus redeemed (today only)."
+            value={netPointsToday}
+          />
         </div>
 
-        {/* VIP BASE & ACTIVE PERCENTAGE */}
+        {/* VIP base + active percentage */}
         <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <StatCard
             label="VIP base"
-            helper="Total unique VIPs with a verified phone number."
+            helper="Total unique VIPs with a rewards profile."
             value={vipBaseCount}
           />
           <PercentCard
@@ -299,7 +252,7 @@ export default async function DashboardPage() {
           />
         </div>
 
-        {/* FAN WALL */}
+        {/* Fan wall + Quick actions */}
         <div className="grid gap-4 lg:grid-cols-3">
           <section className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -363,7 +316,7 @@ export default async function DashboardPage() {
             </div>
           </section>
 
-          {/* QUICK ACTIONS */}
+          {/* Quick actions */}
           <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
             <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
               Quick actions
@@ -412,7 +365,7 @@ export default async function DashboardPage() {
           </section>
         </div>
 
-        {/* VIP LIST */}
+        {/* Top VIPs */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -420,7 +373,11 @@ export default async function DashboardPage() {
                 Top VIPs
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Showing most recent & engaged VIPs. Total VIPs:{" "}
+                Uses{" "}
+                <code className="font-mono text-[10px]">
+                  rewards_user_overview
+                </code>{" "}
+                (same points as the mobile app). Total VIPs:{" "}
                 <span className="font-semibold text-slate-900">
                   {totalVipCount}
                 </span>
@@ -488,5 +445,59 @@ export default async function DashboardPage() {
         </section>
       </div>
     </DashboardShell>
+  );
+}
+
+// -----------------------------
+// Presentational components
+// -----------------------------
+
+type StatCardProps = {
+  label: string;
+  helper: string;
+  value: string | number;
+};
+
+function StatCard({ label, helper, value }: StatCardProps) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
+      <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
+        {label}
+      </p>
+      <p className="mt-2 text-3xl font-semibold text-slate-900">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{helper}</p>
+    </div>
+  );
+}
+
+function PercentCard({
+  label,
+  helper,
+  value,
+}: {
+  label: string;
+  helper: string;
+  value: number;
+}) {
+  const clamped = Number.isFinite(value)
+    ? Math.max(0, Math.min(100, value))
+    : 0;
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
+      <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
+        {label}
+      </p>
+      <p className="mt-2 text-3xl font-semibold text-slate-900">
+        {clamped.toFixed(0)}%
+      </p>
+      <p className="mt-1 text-xs text-slate-500">{helper}</p>
+      <div className="mt-3 h-1.5 w-full rounded-full bg-slate-100">
+        <div
+          className="h-1.5 rounded-full bg-emerald-500 transition-all"
+          style={{ width: `${clamped}%` }}
+        />
+      </div>
+    </div>
   );
 }

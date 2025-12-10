@@ -1,3 +1,4 @@
+// components/layout/DashboardShell.tsx
 "use client";
 
 import React from "react";
@@ -43,8 +44,8 @@ const tabs: { key: DashboardTab; label: string; href: string }[] = [
 export default function DashboardShell({
   title,
   subtitle,
-  activeTab,
   children,
+  activeTab,
 }: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -59,6 +60,13 @@ export default function DashboardShell({
       router.push("/login");
     }
   }
+
+  const baseClasses =
+    "inline-flex items-center rounded-full border px-3 py-1 transition-colors";
+  const activeClasses =
+    "border-amber-400 bg-amber-400 text-slate-900 shadow-sm";
+  const inactiveClasses =
+    "border-slate-200 bg-white text-slate-600 hover:bg-amber-50 hover:border-amber-200";
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -92,7 +100,6 @@ export default function DashboardShell({
             </div>
 
             <div className="flex items-center gap-3">
-              {/* Current user info */}
               <div className="hidden text-right sm:block">
                 {loading && (
                   <p className="text-[11px] text-slate-400">
@@ -130,21 +137,64 @@ export default function DashboardShell({
               const isActive =
                 activeTab === tab.key || pathname?.startsWith(tab.href);
 
-              const baseClasses =
-                "inline-flex items-center rounded-full border px-3 py-1 transition-colors";
-              const activeClasses =
-                "border-amber-400 bg-amber-400 text-slate-900 shadow-sm";
-              const inactiveClasses =
-                "border-slate-200 bg-white text-slate-600 hover:bg-amber-50 hover:border-amber-200";
+              if (tab.key === "rewards") {
+                const rewardsActive =
+                  pathname?.startsWith("/rewards") || activeTab === "rewards";
+
+                const rewardsButtonClasses = `${baseClasses} ${
+                  rewardsActive ? activeClasses : inactiveClasses
+                }`;
+
+                return (
+                  <div key={tab.key} className="relative group">
+                    {/* Main Rewards pill (goes to /rewards) */}
+                    <Link href={tab.href} className={rewardsButtonClasses}>
+                      {tab.label}
+                    </Link>
+
+                    {/* Sub menu on hover */}
+                    <div className="invisible absolute left-0 z-20 mt-1 w-44 rounded-2xl border border-slate-200 bg-white py-1.5 text-xs shadow-lg opacity-0 transition-all group-hover:visible group-hover:opacity-100">
+                      <Link
+                        href="/rewards/vips"
+                        className={`block px-3 py-1.5 text-left ${
+                          pathname?.startsWith("/rewards/vips")
+                            ? "bg-amber-50 text-slate-900 font-semibold"
+                            : "text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        VIP users
+                      </Link>
+                      <Link
+                        href="/rewards/overview"
+                        className={`block px-3 py-1.5 text-left ${
+                          pathname?.startsWith("/rewards/overview")
+                            ? "bg-amber-50 text-slate-900 font-semibold"
+                            : "text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        VIP overview
+                      </Link>
+                      <Link
+                        href="/rewards/staff-codes"
+                        className={`block px-3 py-1.5 text-left ${
+                          pathname?.startsWith("/rewards/staff-codes")
+                            ? "bg-amber-50 text-slate-900 font-semibold"
+                            : "text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        Staff codes
+                      </Link>
+                    </div>
+                  </div>
+                );
+              }
+
+              const tabClasses = `${baseClasses} ${
+                isActive ? activeClasses : inactiveClasses
+              }`;
 
               return (
-                <Link
-                  key={tab.key}
-                  href={tab.href}
-                  className={`${baseClasses} ${
-                    isActive ? activeClasses : inactiveClasses
-                  }`}
-                >
+                <Link key={tab.key} href={tab.href} className={tabClasses}>
                   {tab.label}
                 </Link>
               );

@@ -1,432 +1,320 @@
-import { supabaseServer } from "@/lib/supabaseServer";
-import DashboardShell from "@/components/layout/DashboardShell";
-import { getDashboardSession } from "@/lib/dashboardAuth";
-import { revalidatePath } from "next/cache";
-import Link from "next/link";
-import bcrypt from "bcryptjs";
+// app/rewards/staff-codes/page.tsx
+// Path: /rewards/staff-codes
+// Manage staff PIN codes used for in-app reward redemptions.
 
-type StaffCodeRow = {
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import DashboardShell from "@/components/layout/DashboardShell";
+import { supabaseServer } from "@/lib/supabaseServer";
+import { getDashboardSession } from "@/lib/dashboardAuth";
+
+type StaffCode = {
   id: string;
   label: string;
+  pin_hash: string; // currently storing plain 4-digit PIN
   created_at: string | null;
 };
 
-type RedemptionRow = {
-  staff_label: string | null;
-  points_spent: number | null;
-  created_at: string | null;
-};
-
-type StaffStats = {
-  label: string;
-  redemption_count: number;
-  total_points_redeemed: number;
-  last_redeem_at: string | null;
-};
-
-function formatDate(value: string | null): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+async function requireDashboardSession() {
+  const session = await getDashboardSession();
+  if (!session) redirect("/login");
+  return session;
 }
 
-async function fetchStaffCodesWithStats(): Promise<{
-  codes: StaffCodeRow[];
-  statsByLabel: Record<string, StaffStats>;
-  totals: {
-    totalCodes: number;
-    totalRedeems: number;
-    totalPoints: number;
-  };
-}> {
+async function fetchStaffCodes(): Promise<StaffCode[]> {
+  const { data, error } = await supabaseServer
+    .from("rewards_staff_codes")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("[staff-codes] fetchStaffCodes error", error);
+    return [];
+  }
+
+  return (data ?? []) as StaffCode[];
+}
+
+async function logStaffCodeAction(options: {
+  action: string;
+  entityId?: string;
+  details?: Record<string, unknown>;
+}) {
+  const session = await getDashboardSession();
   const supabase = supabaseServer;
 
-  // All staff codes
-  const { data: codeRows, error: codeErr } = await supabase
-    .from("rewards_staff_codes")
-    .select("id, label, created_at")
-    .order("label", { ascending: true });
+  const actor_email = session?.email ?? "unknown";
+  const actor_role = session?.role ?? "unknown";
 
-  if (codeErr) {
-    console.error("[Staff codes] error loading rewards_staff_codes", codeErr);
-  }
-
-  const codes = (codeRows ?? []) as StaffCodeRow[];
-
-  // All redemptions that have a staff_label
-  const { data: redemptionRows, error: redemptionErr } = await supabase
-    .from("rewards_redemptions")
-    .select("staff_label, points_spent, created_at")
-    .not("staff_label", "is", null);
-
-  if (redemptionErr) {
-    console.error(
-      "[Staff codes] error loading rewards_redemptions",
-      redemptionErr
-    );
-  }
-
-  const statsByLabel: Record<string, StaffStats> = {};
-
-  (redemptionRows ?? []).forEach((row: RedemptionRow) => {
-    const label = row.staff_label;
-    if (!label) return;
-
-    const points = Number(row.points_spent ?? 0);
-    const createdAt = row.created_at ?? null;
-
-    if (!statsByLabel[label]) {
-      statsByLabel[label] = {
-        label,
-        redemption_count: 0,
-        total_points_redeemed: 0,
-        last_redeem_at: null,
-      };
-    }
-
-    statsByLabel[label].redemption_count += 1;
-    statsByLabel[label].total_points_redeemed += points;
-
-    const currentLast = statsByLabel[label].last_redeem_at;
-    if (!currentLast || (createdAt && createdAt > currentLast)) {
-      statsByLabel[label].last_redeem_at = createdAt;
-    }
+  const { error } = await supabase.from("dashboard_audit_log").insert({
+    actor_email,
+    actor_role,
+    action: options.action,
+    entity: "rewards_staff_codes",
+    entity_id: options.entityId ?? null,
+    details: options.details ?? null,
   });
 
-  // Totals across all staff
-  const totals = Object.values(statsByLabel).reduce(
-    (acc, s) => {
-      acc.totalRedeems += s.redemption_count;
-      acc.totalPoints += s.total_points_redeemed;
-      return acc;
-    },
-    { totalCodes: codes.length, totalRedeems: 0, totalPoints: 0 }
-  );
-
-  return { codes, statsByLabel, totals };
+  if (error) {
+    console.error("[staff-codes] log action error", error);
+  }
 }
 
-/**
- * SERVER ACTION: Add a new staff code
- */
-export async function addStaffCode(formData: FormData) {
+// --- Server actions ----------------------------------------------------------
+
+export async function createStaffCode(formData: FormData) {
   "use server";
 
-  const labelRaw = (formData.get("label") as string | null) ?? "";
-  const pinRaw = (formData.get("pin") as string | null) ?? "";
+  await requireDashboardSession();
 
-  const label = labelRaw.trim();
-  const pin = pinRaw.trim();
+  const label = (formData.get("label") as string)?.trim();
+  const pin = (formData.get("pin") as string)?.trim();
 
-  if (!label || !pin || pin.length < 4 || pin.length > 6) {
+  if (!label || !pin) {
+    console.error("[staff-codes] label or pin missing");
     return;
   }
 
-  const supabase = supabaseServer;
-  const session = await getDashboardSession();
-  const actor_email = session?.email ?? "unknown";
-  const actor_role = session?.role ?? "unknown";
-
-  const saltRounds = 10;
-  const pin_hash = await bcrypt.hash(pin, saltRounds);
-
-  const { error: insertErr, data: inserted } = await supabase
+  // For now we store the raw 4-digit PIN in pin_hash to match the mobile app.
+  // (Later we can migrate to hashing + RPC verify function.)
+  const { data, error } = await supabaseServer
     .from("rewards_staff_codes")
     .insert({
       label,
-      pin_hash,
+      pin_hash: pin,
     })
-    .select("id")
-    .maybeSingle();
+    .select()
+    .single();
 
-  if (insertErr) {
-    console.error("[Staff codes] error inserting staff code", insertErr);
-  } else {
-    // Audit log
-    try {
-      await supabase.from("dashboard_audit_log").insert({
-        actor_email,
-        actor_role,
-        action: "create",
-        entity: "rewards_staff_code",
-        entity_id: inserted?.id ?? null,
-        details: {
-          label,
-          source: "staff-codes-page",
-        },
-      });
-    } catch (logErr) {
-      console.error("[Staff codes] error writing audit log (create)", logErr);
-    }
+  if (error) {
+    console.error("[staff-codes] create error", error);
+  } else if (data) {
+    await logStaffCodeAction({
+      action: "staff_code:create",
+      entityId: data.id,
+      details: { label: data.label },
+    });
   }
 
   revalidatePath("/rewards/staff-codes");
 }
 
-/**
- * SERVER ACTION: Delete a staff code
- */
-export async function deleteStaffCode(formData: FormData) {
+export async function upsertOrDeleteStaffCode(formData: FormData) {
   "use server";
 
-  const id = (formData.get("id") as string | null) ?? "";
-  const label = (formData.get("label") as string | null) ?? "";
+  await requireDashboardSession();
 
-  if (!id) return;
+  const id = formData.get("id") as string;
+  const intent = (formData.get("intent") as string | null) ?? "save";
 
-  const supabase = supabaseServer;
-  const session = await getDashboardSession();
-  const actor_email = session?.email ?? "unknown";
-  const actor_role = session?.role ?? "unknown";
+  if (!id) {
+    console.error("[staff-codes] Missing id in upsertOrDeleteStaffCode");
+    return;
+  }
 
-  const { error: deleteErr } = await supabase
+  if (intent === "delete") {
+    const { error } = await supabaseServer
+      .from("rewards_staff_codes")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("[staff-codes] delete error", error);
+    } else {
+      await logStaffCodeAction({
+        action: "staff_code:delete",
+        entityId: id,
+      });
+    }
+
+    revalidatePath("/rewards/staff-codes");
+    return;
+  }
+
+  // Save / update
+  const label = (formData.get("label") as string)?.trim();
+  const pin = (formData.get("pin") as string)?.trim();
+
+  const { error } = await supabaseServer
     .from("rewards_staff_codes")
-    .delete()
+    .update({
+      label,
+      pin_hash: pin,
+    })
     .eq("id", id);
 
-  if (deleteErr) {
-    console.error("[Staff codes] error deleting staff code", deleteErr);
+  if (error) {
+    console.error("[staff-codes] update error", error);
   } else {
-    try {
-      await supabase.from("dashboard_audit_log").insert({
-        actor_email,
-        actor_role,
-        action: "delete",
-        entity: "rewards_staff_code",
-        entity_id: id,
-        details: {
-          label,
-          source: "staff-codes-page",
-        },
-      });
-    } catch (logErr) {
-      console.error("[Staff codes] error writing audit log (delete)", logErr);
-    }
+    await logStaffCodeAction({
+      action: "staff_code:update",
+      entityId: id,
+      details: { label },
+    });
   }
 
   revalidatePath("/rewards/staff-codes");
 }
 
+// --- Page --------------------------------------------------------------------
+
 export default async function StaffCodesPage() {
-  const { codes, statsByLabel, totals } = await fetchStaffCodesWithStats();
+  await requireDashboardSession();
+  const codes = await fetchStaffCodes();
 
   return (
     <DashboardShell
       activeTab="rewards"
-      title="Staff codes"
-      subtitle="Control who can approve VIP redemptions."
+      title="Sugarshack Downtown VIP Dashboard"
+      subtitle="Staff codes · PINs used to approve reward redemptions."
     >
-      <div className="space-y-6">
-        {/* Header card with sub-nav (matches screenshot) */}
-        <div className="rounded-3xl bg-white px-6 py-5 shadow-sm ring-1 ring-slate-200">
-          <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:items-center">
-            <div>
-              <h1 className="text-xl font-semibold text-slate-900">
-                Staff codes
-              </h1>
-              <p className="mt-1 text-sm text-slate-600">
-                Staff codes are entered on the “Redeem Now” screen in the app.
-                Create one per server, bartender, or POS device so you can track
-                who is approving VIP redemptions and how many points each
-                server has redeemed.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href="/rewards"
-                className="inline-flex items-center rounded-full bg-yellow-400 px-5 py-2 text-xs font-semibold text-slate-900 shadow-sm hover:bg-yellow-300"
-              >
-                Rewards menu
-              </Link>
-              <Link
-                href="/rewards/vips"
-                className="inline-flex items-center rounded-full border border-slate-300 bg-white px-5 py-2 text-xs font-semibold text-slate-900 hover:border-slate-400 hover:bg-slate-50"
-              >
-                VIP users
-              </Link>
-              <span className="inline-flex items-center rounded-full bg-slate-900 px-5 py-2 text-xs font-semibold text-white shadow-sm">
-                Staff codes
-              </span>
-            </div>
-          </div>
-        </div>
+      <div className="space-y-8">
+        {/* Add new staff code */}
+        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+          <h1 className="text-base font-semibold text-slate-900">
+            Add new staff code
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Create a simple label and 4-digit PIN that staff can use to approve
+            in-app reward redemptions.
+          </p>
 
-        {/* Main content: existing codes + add new */}
-        <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)]">
-          {/* Existing staff codes */}
-          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Existing staff codes
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  Activity and redemptions are based on the{" "}
-                  <span className="font-semibold">rewards_redemptions</span>{" "}
-                  table.
-                </p>
-              </div>
-              <div className="text-xs text-slate-500">
-                {totals.totalCodes === 1
-                  ? "1 code"
-                  : `${totals.totalCodes} codes`}
-              </div>
+          <form
+            action={createStaffCode}
+            className="mt-4 grid gap-3 text-sm md:grid-cols-[minmax(0,2.5fr)_minmax(0,1.2fr)_auto] md:items-end"
+          >
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Label
+              </label>
+              <input
+                type="text"
+                name="label"
+                required
+                placeholder="Jess – Bar, Inside"
+                className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-300"
+              />
             </div>
 
-            {codes.length === 0 ? (
-              <p className="text-sm text-slate-600">
-                No staff codes yet. Create a code on the right to get started.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm text-slate-900">
-                  <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="py-2 pr-4">Label</th>
-                      <th className="py-2 pr-4">Activity</th>
-                      <th className="py-2 pr-4">Redeems</th>
-                      <th className="py-2 pr-4">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {codes.map((code) => {
-                      const stats = statsByLabel[code.label] ?? {
-                        label: code.label,
-                        redemption_count: 0,
-                        total_points_redeemed: 0,
-                        last_redeem_at: null,
-                      };
-
-                      return (
-                        <tr key={code.id} className="align-top">
-                          <td className="py-3 pr-4">
-                            <div className="flex flex-col gap-1">
-                              <span className="inline-flex w-fit items-center rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-800">
-                                {code.label}
-                              </span>
-                              <span className="text-[11px] text-slate-500">
-                                Created {formatDate(code.created_at)}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3 pr-4 text-xs text-slate-700">
-                            {stats.redemption_count === 0 ? (
-                              <span>No redemptions yet</span>
-                            ) : (
-                              <div className="flex flex-col gap-0.5">
-                                <span>
-                                  Last redeem:{" "}
-                                  {formatDate(stats.last_redeem_at)}
-                                </span>
-                                <span>
-                                  Total{" "}
-                                  <span className="font-semibold">
-                                    {stats.total_points_redeemed}
-                                  </span>{" "}
-                                  pts redeemed
-                                </span>
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 pr-4 text-xs text-slate-700">
-                            {stats.redemption_count === 0 ? (
-                              <span>0 redeems</span>
-                            ) : (
-                              <span className="font-semibold">
-                                {stats.redemption_count}{" "}
-                                {stats.redemption_count === 1
-                                  ? "redeem"
-                                  : "redeems"}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 pr-4 text-xs">
-                            <form action={deleteStaffCode}>
-                              <input type="hidden" name="id" value={code.id} />
-                              <input
-                                type="hidden"
-                                name="label"
-                                value={code.label}
-                              />
-                              <button
-                                type="submit"
-                                className="inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-200"
-                              >
-                                Delete
-                              </button>
-                            </form>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Add new staff code */}
-          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <div className="mb-3">
-              <h2 className="text-sm font-semibold text-slate-900">
-                Add new staff code
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Create codes for servers, bartenders, and tablets. The PIN is
-                hashed with bcrypt before storing — only the label is visible
-                here.
-              </p>
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                PIN (4 digits)
+              </label>
+              <input
+                type="password"
+                name="pin"
+                required
+                maxLength={4}
+                pattern="\d{4}"
+                placeholder="1234"
+                className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-300"
+              />
             </div>
 
-            <form action={addStaffCode} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Label (who or what this code is for)
-                </label>
-                <input
-                  name="label"
-                  type="text"
-                  placeholder="Bar 1 POS · Server John"
-                  className="w-full rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-yellow-400 focus:outline-none"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  PIN (staff enters this in the app)
-                </label>
-                <input
-                  name="pin"
-                  type="password"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  minLength={4}
-                  maxLength={6}
-                  placeholder="4–6 digits"
-                  className="w-full rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-yellow-400 focus:outline-none"
-                  required
-                />
-                <p className="text-[11px] text-slate-500">
-                  PINs are hashed before storing. Share the plain PIN with staff
-                  outside of the app.
-                </p>
-              </div>
-
+            <div className="flex items-end">
               <button
                 type="submit"
-                className="mt-2 inline-flex w-full items-center justify-center rounded-full bg-yellow-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-yellow-300"
+                className="inline-flex items-center rounded-full bg-amber-400 px-6 py-2.5 text-sm font-semibold text-slate-900 shadow-sm hover:bg-amber-500"
               >
                 Add staff code
               </button>
-            </form>
+            </div>
+          </form>
+        </section>
+
+        {/* Existing staff codes */}
+        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+          <div className="flex items-baseline justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                Existing staff codes
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Update labels or rotate PINs as needed. Changes apply
+                immediately in the app.
+              </p>
+            </div>
+            {codes.length > 0 && (
+              <p className="text-xs text-slate-500">
+                {codes.length} code{codes.length === 1 ? "" : "s"}
+              </p>
+            )}
           </div>
-        </div>
+
+          {codes.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">
+              No staff codes yet. Add your first PIN above.
+            </p>
+          ) : (
+            <>
+              {/* Header row */}
+              <div className="mt-5 grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,2.5fr)_minmax(0,1.4fr)_minmax(0,1.4fr)_minmax(0,1.4fr)]">
+                <span>Label</span>
+                <span>PIN</span>
+                <span>Created</span>
+                <span className="text-right">Actions</span>
+              </div>
+
+              {/* Rows */}
+              <div className="mt-1 space-y-3">
+                {codes.map((code) => (
+                  <form
+                    key={code.id}
+                    action={upsertOrDeleteStaffCode}
+                    className="grid gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-sm shadow-sm md:grid-cols-[minmax(0,2.5fr)_minmax(0,1.4fr)_minmax(0,1.4fr)_minmax(0,1.4fr)] md:items-center"
+                  >
+                    <input type="hidden" name="id" value={code.id} />
+
+                    <div>
+                      <input
+                        type="text"
+                        name="label"
+                        defaultValue={code.label}
+                        className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                      />
+                    </div>
+
+                    <div>
+                      <input
+                        type="password"
+                        name="pin"
+                        defaultValue={code.pin_hash}
+                        maxLength={4}
+                        pattern="\d{4}"
+                        className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                      />
+                    </div>
+
+                    <div className="text-xs text-slate-500">
+                      {code.created_at
+                        ? new Date(code.created_at).toLocaleString()
+                        : "—"}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="submit"
+                        name="intent"
+                        value="save"
+                        className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-600"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="submit"
+                        name="intent"
+                        value="delete"
+                        className="rounded-full bg-rose-100 px-4 py-1.5 text-xs font-semibold text-rose-700 shadow-sm hover:bg-rose-200"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </form>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
       </div>
     </DashboardShell>
   );
