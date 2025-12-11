@@ -1,11 +1,10 @@
+export const dynamic = "force-dynamic";
+
 import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
-// ...other imports
-
-export const dynamic = "force-dynamic";
-
-// rest of your Events page code...
+import { revalidatePath } from "next/cache";
+import { logDashboardEventServer } from "@/lib/logDashboardEventServer";
 
 type EventArtist = {
   name: string | null;
@@ -89,6 +88,47 @@ function getArtistGenre(evt: EventRow): string {
   }
 
   return artist.genre || "—";
+}
+
+// Treat events on today's date (America/New_York) as "Tonight"
+function isTonight(eventDate: string | null | undefined) {
+  if (!eventDate) return false;
+
+  const todayNY = new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }); // e.g. "2025-12-11"
+
+  return eventDate === todayNY;
+}
+
+// --- Server action: delete event --------------------------------------------
+async function deleteEvent(formData: FormData) {
+  "use server";
+
+  const id = formData.get("id")?.toString();
+  if (!id) return;
+
+  const { error } = await supabaseServer
+    .from("artist_events")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    console.error("[Events] delete error:", error);
+    throw new Error(error.message);
+  }
+
+  await logDashboardEventServer({
+    action: "delete",
+    entity: "events",
+    entityId: id,
+    details: { id },
+  });
+
+  revalidatePath("/events");
 }
 
 export default async function EventsPage() {
@@ -192,13 +232,22 @@ export default async function EventsPage() {
                     ? "bg-rose-100 text-rose-700"
                     : "bg-emerald-100 text-emerald-700";
 
+                  const tonight = isTonight(evt.event_date);
+
                   return (
                     <tr
                       key={evt.id}
                       className="border-b border-slate-100 last:border-0 transition-colors hover:bg-amber-50/60"
                     >
                       <td className="py-2 pr-3 align-top whitespace-nowrap">
-                        {dateLabel}
+                        <div className="flex items-center gap-2">
+                          <span>{dateLabel}</span>
+                          {tonight && (
+                            <span className="inline-flex items-center rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold text-slate-900 uppercase tracking-wide">
+                              Tonight
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2 pr-3 align-top whitespace-nowrap">
                         {timeLabel}
@@ -223,12 +272,23 @@ export default async function EventsPage() {
                         </span>
                       </td>
                       <td className="py-2 pl-3 align-top text-right whitespace-nowrap">
-                        <Link
-                          href={`/events/edit?id=${evt.id}`}
-                          className="text-xs font-semibold text-slate-700 hover:text-slate-900 hover:underline"
-                        >
-                          Edit
-                        </Link>
+                        <div className="flex justify-end gap-2">
+                          <Link
+                            href={`/events/edit?id=${evt.id}`}
+                            className="text-xs font-semibold text-slate-700 hover:text-slate-900 hover:underline"
+                          >
+                            Edit
+                          </Link>
+                          <form action={deleteEvent}>
+                            <input type="hidden" name="id" value={evt.id} />
+                            <button
+                              type="submit"
+                              className="text-xs font-semibold text-rose-700 hover:text-rose-900 hover:underline"
+                            >
+                              Delete
+                            </button>
+                          </form>
+                        </div>
                       </td>
                     </tr>
                   );
