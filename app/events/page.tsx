@@ -1,6 +1,11 @@
 import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
+// ...other imports
+
+export const dynamic = "force-dynamic";
+
+// rest of your Events page code...
 
 type EventArtist = {
   name: string | null;
