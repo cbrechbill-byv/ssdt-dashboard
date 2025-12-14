@@ -1,6 +1,8 @@
 // app/dashboard/page.tsx
 // Path: /dashboard
-// Purpose: Main Sugarshack Downtown overview (today KPIs, VIP health, fan wall, quick actions, Top VIPs). Top VIP names link to VIP Insights.
+// Purpose: Main Sugarshack Downtown overview (today KPIs, VIP health, fan wall, quick actions, Top VIPs).
+// Sprint 3 (Run 1): Add "Content readiness" -> Artists data quality card (missing images/bios/socials) with Edit links.
+// Note: Does NOT change /artists page. Only adds summary visibility on dashboard.
 
 import { redirect } from "next/navigation";
 import { getDashboardSession } from "@/lib/dashboardAuth";
@@ -8,6 +10,7 @@ import React from "react";
 import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
+import { TopVipsTableClient } from "./TopVipsTableClient";
 
 /**
  * Force dynamic so the dashboard always shows fresh stats.
@@ -39,6 +42,19 @@ export default async function DashboardPage() {
     points: number;
     visits: number;
     lastVisitLabel: string;
+  };
+
+  type ArtistRow = {
+    id: string;
+    name: string;
+    bio: string | null;
+    website_url: string | null;
+    instagram_url: string | null;
+    facebook_url: string | null;
+    tiktok_url: string | null;
+    spotify_url: string | null;
+    image_path: string | null;
+    is_active: boolean;
   };
 
   function getTodayDateString(): string {
@@ -108,7 +124,6 @@ export default async function DashboardPage() {
 
     checkinsToday = checkinRows.length;
 
-    // only count real user_ids (avoid "__none__" being treated as a VIP)
     uniqueVipsToday = new Set(
       checkinRows.map((row) => row.user_id).filter(Boolean)
     ).size;
@@ -182,18 +197,18 @@ export default async function DashboardPage() {
   const fanTotal = totalCount ?? 0;
 
   // -----------------------------
-  // 4) Top VIPs list
+  // 4) Top VIPs list (Top 20 computed server-side)
   // -----------------------------
-  const topVipRows = [...vipUsers]
-    .sort((a, b) => {
-      const aTime = a.last_scan_at ? new Date(a.last_scan_at).getTime() : 0;
-      const bTime = b.last_scan_at ? new Date(b.last_scan_at).getTime() : 0;
-      if (bTime !== aTime) return bTime - aTime;
-      return (b.total_points ?? 0) - (a.total_points ?? 0);
-    })
-    .slice(0, 5);
+  const sortedVipRows = [...vipUsers].sort((a, b) => {
+    const aTime = a.last_scan_at ? new Date(a.last_scan_at).getTime() : 0;
+    const bTime = b.last_scan_at ? new Date(b.last_scan_at).getTime() : 0;
+    if (bTime !== aTime) return bTime - aTime;
+    return (b.total_points ?? 0) - (a.total_points ?? 0);
+  });
 
-  const vipList: VipListRow[] = topVipRows
+  const topTwentyRows = sortedVipRows.slice(0, 20);
+
+  const vipList: VipListRow[] = topTwentyRows
     .filter((row) => Boolean(row.user_id))
     .map((row) => ({
       userId: row.user_id as string,
@@ -205,9 +220,74 @@ export default async function DashboardPage() {
     }));
 
   // -----------------------------
+  // 5) Sprint 3 (Run 1): Artists readiness summary (dashboard only)
+  // -----------------------------
+  const { data: artistRows, error: artistsError } = await supabase
+    .from("artists")
+    .select(
+      "id, name, bio, website_url, instagram_url, facebook_url, tiktok_url, spotify_url, image_path, is_active"
+    );
+
+  if (artistsError) {
+    console.error("[dashboard] artists readiness error:", artistsError);
+  }
+
+  const artists = (artistRows ?? []) as ArtistRow[];
+  const artistsTotal = artists.length;
+  const artistsActive = artists.filter((a) => a.is_active).length;
+
+  const activeArtists = artists.filter((a) => a.is_active);
+
+  const missingArtistImage = activeArtists.filter((a) => !a.image_path).length;
+  const missingArtistBio = activeArtists.filter(
+    (a) => !a.bio || a.bio.trim().length === 0
+  ).length;
+
+  const missingArtistAnySocial = activeArtists.filter((a) => {
+    const hasAny =
+      !!a.website_url ||
+      !!a.instagram_url ||
+      !!a.facebook_url ||
+      !!a.tiktok_url ||
+      !!a.spotify_url;
+    return !hasAny;
+  }).length;
+
+  // Needs attention list:
+  // Sort by: missing image first, then missing bio, then missing socials, then name
+  const artistsNeedingAttention = [...activeArtists]
+    .map((a) => {
+      const hasImage = !!a.image_path;
+      const hasBio = !!(a.bio && a.bio.trim().length > 0);
+      const hasAnySocial =
+        !!a.website_url ||
+        !!a.instagram_url ||
+        !!a.facebook_url ||
+        !!a.tiktok_url ||
+        !!a.spotify_url;
+
+      const score =
+        (hasImage ? 0 : 4) + (hasBio ? 0 : 2) + (hasAnySocial ? 0 : 1);
+
+      return {
+        id: a.id,
+        name: a.name || "Untitled artist",
+        hasImage,
+        hasBio,
+        hasAnySocial,
+        score,
+      };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, 5);
+
+  // -----------------------------
   // Render
   // -----------------------------
-
   return (
     <DashboardShell
       title="Sugarshack Downtown VIP Dashboard"
@@ -257,6 +337,153 @@ export default async function DashboardPage() {
             value={activePercentage}
           />
         </div>
+
+        {/* Sprint 3: Content readiness */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div>
+              <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
+                Content readiness
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Launch-facing data checks to keep the mobile app high quality.
+              </p>
+            </div>
+
+            <Link
+              href="/artists"
+              className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
+            >
+              Open Artists
+            </Link>
+          </div>
+
+          {artistsError ? (
+            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+              <p className="text-xs text-rose-700">
+                There was a problem loading artists readiness:{" "}
+                <span className="font-mono">{artistsError.message}</span>
+              </p>
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+              {/* Summary */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Artists data quality (active only)
+                </p>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-3 text-xs">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                      Active artists
+                    </p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">
+                      {artistsActive}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      {artistsTotal} total in directory
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                      Missing image
+                    </p>
+                    <p className="mt-1 text-xl font-semibold text-amber-600">
+                      {missingArtistImage}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Needed for Artist + Events pages
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                      Missing bio
+                    </p>
+                    <p className="mt-1 text-xl font-semibold text-amber-600">
+                      {missingArtistBio}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Improves app engagement
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 text-xs">
+                  <span className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                    Missing any social link
+                  </span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-xl font-semibold text-amber-600">
+                      {missingArtistAnySocial}
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Website / IG / FB / TikTok / Spotify all blank
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Needs attention list */}
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Needs attention
+                  </p>
+                  <Link
+                    href="/artists"
+                    className="text-[11px] font-semibold text-slate-700 hover:text-amber-600"
+                  >
+                    View all
+                  </Link>
+                </div>
+
+                {artistsNeedingAttention.length === 0 ? (
+                  <p className="mt-3 text-xs text-emerald-700">
+                    ✅ All active artists have image, bio, and at least one link.
+                  </p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {artistsNeedingAttention.map((a) => (
+                      <div
+                        key={a.id}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-slate-900">
+                            {a.name}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">
+                            {!a.hasImage ? "Missing image" : null}
+                            {!a.hasImage && (!a.hasBio || !a.hasAnySocial)
+                              ? " · "
+                              : null}
+                            {!a.hasBio ? "Missing bio" : null}
+                            {!a.hasBio && !a.hasAnySocial ? " · " : null}
+                            {!a.hasAnySocial ? "No links" : null}
+                          </p>
+                        </div>
+
+                        <Link
+                          href={`/artists/edit?id=${a.id}`}
+                          className="inline-flex flex-shrink-0 items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
+                        >
+                          Edit
+                        </Link>
+                      </div>
+                    ))}
+                    <p className="pt-1 text-[11px] text-slate-400">
+                      Tip: prioritize adding the main image first (most visible
+                      in the app).
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
 
         {/* Fan wall + Quick actions */}
         <div className="grid gap-4 lg:grid-cols-3">
@@ -384,89 +611,8 @@ export default async function DashboardPage() {
           </section>
         </div>
 
-        {/* Top VIPs */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
-                Top VIPs
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Uses{" "}
-                <code className="font-mono text-[10px]">
-                  rewards_user_overview
-                </code>{" "}
-                (same points as the mobile app). Total VIPs:{" "}
-                <span className="font-semibold text-slate-900">
-                  {totalVipCount}
-                </span>
-              </p>
-            </div>
-
-            <button
-              type="button"
-              className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
-            >
-              Export CSV
-            </button>
-          </div>
-
-          {vipList.length === 0 ? (
-            <p className="text-xs text-slate-400">No VIP activity yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs">
-                <thead>
-                  <tr className="text-[11px] uppercase tracking-[0.12em] text-slate-500 border-b border-slate-100">
-                    <th className="py-2 pr-3 text-left font-semibold">VIP</th>
-                    <th className="py-2 pr-3 text-left font-semibold">Phone</th>
-                    <th className="py-2 pr-3 text-right font-semibold">
-                      Points
-                    </th>
-                    <th className="py-2 pr-3 text-right font-semibold">
-                      Visits
-                    </th>
-                    <th className="py-2 text-right font-semibold">Last visit</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {vipList.map((row, idx) => (
-                    <tr
-                      key={`${row.userId}-${idx}`}
-                      className="border-b border-slate-50 last:border-0"
-                    >
-                      <td className="py-2 pr-3 text-[13px] text-slate-900">
-                        <Link
-                          href={`/rewards/vips/${row.userId}/insights`}
-                          className="font-semibold text-slate-900 hover:text-amber-600"
-                        >
-                          {row.nameLabel}
-                        </Link>
-                      </td>
-
-                      <td className="py-2 pr-3 text-[13px] text-slate-700">
-                        {row.phoneLabel}
-                      </td>
-
-                      <td className="py-2 pr-3 text-right text-[13px] text-slate-900">
-                        {row.points}
-                      </td>
-
-                      <td className="py-2 pr-3 text-right text-[13px] text-slate-900">
-                        {row.visits}
-                      </td>
-
-                      <td className="py-2 text-right text-[13px] text-slate-600">
-                        {row.lastVisitLabel}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+        {/* Top VIPs (client expand; no CSV export) */}
+        <TopVipsTableClient vipList={vipList} totalVipCount={totalVipCount} />
       </div>
     </DashboardShell>
   );
