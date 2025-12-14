@@ -1,3 +1,10 @@
+// components/layout/DashboardShell.tsx
+// Purpose: Top-level dashboard shell (header, auth status, primary nav pills, and optional dropdown submenus).
+// Notes (Sprint nav cleanup):
+// - Removed Dashboard submenu for "Tonight board" (Tonight should live inside /dashboard, not as a primary submenu).
+// - Reworked Rewards submenu ordering/labels for clarity (Overview → VIP Users → Staff Codes).
+// - Pointed Sponsors primary tab to /sponsors (separate section from Photo Booth).
+
 "use client";
 
 import React from "react";
@@ -32,9 +39,13 @@ const tabs: { key: DashboardTab; label: string; href: string }[] = [
   { key: "events", label: "Events", href: "/events" },
   { key: "fan-wall", label: "Fan wall", href: "/fan-wall" },
   { key: "photo-booth", label: "Photo booth", href: "/photo-booth/frames" },
-  { key: "sponsors", label: "Sponsors", href: "/photo-booth/sponsors" },
+
+  // IMPORTANT: Sponsors now points to the dedicated /sponsors section.
+  // Photo Booth sponsor overlays remain under /photo-booth/sponsors.
+  { key: "sponsors", label: "Sponsors", href: "/sponsors" },
+
   { key: "bar-bites", label: "Bar & Bites", href: "/menu/bar-bites" },
-  { key: "rewards", label: "Rewards menu", href: "/rewards" },
+  { key: "rewards", label: "Rewards", href: "/rewards" },
   { key: "feedback", label: "Feedback", href: "/feedback" },
   { key: "notifications", label: "Notifications", href: "/notifications" },
   { key: "activity", label: "Activity log", href: "/activity-log" },
@@ -47,23 +58,19 @@ type SubMenuItem = {
 };
 
 const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
-  dashboard: [
-    {
-      label: "Tonight board",
-      href: "/dashboard/tonight",
-      description: "Tonight view for the in-venue screen.",
-    },
-  ],
+  // Removed: dashboard submenu "Tonight board"
+  // Tonight should be surfaced inside /dashboard (Tonight snapshot) and optionally linked via Quick Actions.
+
   rewards: [
+    {
+      label: "Overview",
+      href: "/rewards/overview",
+      description: "High-level stats across all VIPs.",
+    },
     {
       label: "VIP Users",
       href: "/rewards/vips",
       description: "See all VIPs, points, and visits.",
-    },
-    {
-      label: "VIP Overview",
-      href: "/rewards/overview",
-      description: "High-level stats across all VIPs.",
     },
     {
       label: "Staff Codes",
@@ -215,10 +222,7 @@ export default function DashboardShell({
               const isMenuOpen = openMenu === tab.key;
 
               return (
-                <div
-                  key={tab.key}
-                  className="relative inline-block"
-                >
+                <div key={tab.key} className="relative inline-block">
                   <button
                     type="button"
                     onMouseEnter={() => setOpenMenu(tab.key)}
