@@ -1,9 +1,9 @@
 // components/layout/DashboardShell.tsx
 // Purpose: Top-level dashboard shell (header, auth status, primary nav pills, and optional dropdown submenus).
-// Notes (Sprint nav cleanup):
-// - Removed Dashboard submenu for "Tonight board" (Tonight should live inside /dashboard, not as a primary submenu).
-// - Reworked Rewards submenu ordering/labels for clarity (Overview → VIP Users → Staff Codes).
-// - Pointed Sponsors primary tab to /sponsors (separate section from Photo Booth).
+// Notes (Nav fix):
+// - Sponsors tab correctly routes to /photo-booth/sponsors (app/photo-booth/sponsors/page.tsx).
+// - Photo booth tab routes to /photo-booth/frames (app/photo-booth/frames/page.tsx).
+// - Dashboard submenu "Tonight board" removed (Tonight should be surfaced inside /dashboard).
 
 "use client";
 
@@ -38,11 +38,12 @@ const tabs: { key: DashboardTab; label: string; href: string }[] = [
   { key: "artists", label: "Artists", href: "/artists" },
   { key: "events", label: "Events", href: "/events" },
   { key: "fan-wall", label: "Fan wall", href: "/fan-wall" },
+
+  // Photo Booth = overlays/frames
   { key: "photo-booth", label: "Photo booth", href: "/photo-booth/frames" },
 
-  // IMPORTANT: Sponsors now points to the dedicated /sponsors section.
-  // Photo Booth sponsor overlays remain under /photo-booth/sponsors.
-  { key: "sponsors", label: "Sponsors", href: "/sponsors" },
+  // Sponsors = sponsor list/detail hub inside Photo Booth section
+  { key: "sponsors", label: "Sponsors", href: "/photo-booth/sponsors" },
 
   { key: "bar-bites", label: "Bar & Bites", href: "/menu/bar-bites" },
   { key: "rewards", label: "Rewards", href: "/rewards" },
@@ -59,7 +60,7 @@ type SubMenuItem = {
 
 const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
   // Removed: dashboard submenu "Tonight board"
-  // Tonight should be surfaced inside /dashboard (Tonight snapshot) and optionally linked via Quick Actions.
+  // Tonight should be surfaced inside /dashboard and optionally linked via Quick Actions.
 
   rewards: [
     {
