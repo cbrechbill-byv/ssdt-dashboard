@@ -39,11 +39,29 @@ export default async function DashboardPage() {
     lastVisitLabel: string;
   };
 
-  function getTodayDateString(): string {
+  type ScanRow = {
+    user_id: string | null;
+    points: number | null;
+    scan_date: string;
+    source: string | null;
+    created_at: string | null;
+  };
+
+  function getTodayDateStringET(): string {
+    // IMPORTANT: Rewards “one check-in per night” logic is Eastern time.
+    // Use ET date string to prevent UTC drift in dashboard stats.
     const now = new Date();
-    return `${now.getFullYear()}-${String(
-      now.getMonth() + 1
-    ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now);
+
+    const y = parts.find((p) => p.type === "year")?.value ?? "1970";
+    const m = parts.find((p) => p.type === "month")?.value ?? "01";
+    const d = parts.find((p) => p.type === "day")?.value ?? "01";
+    return `${y}-${m}-${d}`;
   }
 
   function formatPhone(phone?: string | null): string {
@@ -74,7 +92,18 @@ export default async function DashboardPage() {
     });
   }
 
-  const today = getTodayDateString();
+  function formatTimeOnlyET(iso: string | null): string {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleTimeString("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  const today = getTodayDateStringET();
 
   // -----------------------------
   // 1) Today’s rewards_scans stats
@@ -86,27 +115,25 @@ export default async function DashboardPage() {
 
   const { data: scanRows } = await supabase
     .from("rewards_scans")
-    .select("user_id, points, scan_date, source")
+    .select("user_id, points, scan_date, source, created_at")
     .eq("scan_date", today);
 
-  if (scanRows?.length) {
-    type ScanRow = {
-      user_id: string | null;
-      points: number | null;
-      scan_date: string;
-      source: string | null;
-    };
+  const rows = (scanRows ?? []) as ScanRow[];
 
-    const rows = scanRows as ScanRow[];
-
+  if (rows.length) {
     const checkinRows = rows.filter(
       (row) => (row.source ?? "").toLowerCase() === "qr-checkin"
     );
 
     checkinsToday = checkinRows.length;
-    uniqueVipsToday = new Set(
-      checkinRows.map((row) => row.user_id ?? "__none__")
-    ).size;
+
+    // Avoid counting "__none__" as a unique VIP if user_id is null
+    const uniqueIds = new Set(
+      checkinRows
+        .map((row) => row.user_id)
+        .filter((id): id is string => Boolean(id))
+    );
+    uniqueVipsToday = uniqueIds.size;
 
     for (const row of rows) {
       const pts = Number(row.points ?? 0);
@@ -117,6 +144,25 @@ export default async function DashboardPage() {
   }
 
   const netPointsToday = pointsAwardedToday - pointsRedeemedToday;
+
+  // -----------------------------
+  // 1b) Tonight Snapshot (recent activity)
+  // -----------------------------
+  const sortedByCreated = [...rows].sort((a, b) => {
+    const at = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return bt - at;
+  });
+
+  const recentCheckins = sortedByCreated
+    .filter((r) => (r.source ?? "").toLowerCase() === "qr-checkin")
+    .slice(0, 10);
+
+  // If your redemption system records negative points in rewards_scans, this shows them.
+  // If redemptions live in rewards_redemptions instead, we’ll switch in Sprint 1 Run 2.
+  const recentRedemptions = sortedByCreated
+    .filter((r) => Number(r.points ?? 0) < 0)
+    .slice(0, 10);
 
   // -----------------------------
   // 2) VIP overview via rewards_user_overview
@@ -168,9 +214,7 @@ export default async function DashboardPage() {
       .from("fan_wall_posts")
       .select("id", { count: "exact", head: true })
       .eq("is_hidden", true),
-    supabase
-      .from("fan_wall_posts")
-      .select("id", { count: "exact", head: true }),
+    supabase.from("fan_wall_posts").select("id", { count: "exact", head: true }),
   ]);
 
   const fanPending = pendingCount ?? 0;
@@ -237,6 +281,125 @@ export default async function DashboardPage() {
             value={netPointsToday}
           />
         </div>
+
+        {/* NEW: Tonight snapshot (incorporates key value of Tonight Board) */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div>
+              <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
+                Tonight snapshot
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Recent activity feed for today ({today}, Eastern).
+              </p>
+            </div>
+
+            <Link
+              href="/dashboard/tonight"
+              className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
+            >
+              Open full Tonight Board
+            </Link>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Recent check-ins
+              </p>
+
+              {recentCheckins.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-400">
+                  No check-ins yet today.
+                </p>
+              ) : (
+                <div className="mt-2 overflow-x-auto">
+                  <table className="min-w-full text-xs">
+                    <thead>
+                      <tr className="text-[11px] uppercase tracking-[0.12em] text-slate-500 border-b border-slate-100">
+                        <th className="py-2 pr-3 text-left font-semibold">
+                          Time (ET)
+                        </th>
+                        <th className="py-2 pr-3 text-left font-semibold">
+                          User
+                        </th>
+                        <th className="py-2 text-right font-semibold">Points</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentCheckins.map((r, idx) => (
+                        <tr
+                          key={`checkin-${r.user_id ?? "na"}-${idx}`}
+                          className="border-b border-slate-50 last:border-0"
+                        >
+                          <td className="py-2 pr-3 text-[13px] text-slate-700">
+                            {formatTimeOnlyET(r.created_at) || "—"}
+                          </td>
+                          <td className="py-2 pr-3 text-[13px] text-slate-900">
+                            {r.user_id ? r.user_id.slice(0, 8) : "Guest"}
+                          </td>
+                          <td className="py-2 text-right text-[13px] text-slate-900">
+                            {Number(r.points ?? 0)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Recent redemptions
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                If redemptions are stored in a dedicated table, we’ll switch this
+                to it next run.
+              </p>
+
+              {recentRedemptions.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-400">
+                  No redemptions recorded in scans today.
+                </p>
+              ) : (
+                <div className="mt-2 overflow-x-auto">
+                  <table className="min-w-full text-xs">
+                    <thead>
+                      <tr className="text-[11px] uppercase tracking-[0.12em] text-slate-500 border-b border-slate-100">
+                        <th className="py-2 pr-3 text-left font-semibold">
+                          Time (ET)
+                        </th>
+                        <th className="py-2 pr-3 text-left font-semibold">
+                          User
+                        </th>
+                        <th className="py-2 text-right font-semibold">Points</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentRedemptions.map((r, idx) => (
+                        <tr
+                          key={`redeem-${r.user_id ?? "na"}-${idx}`}
+                          className="border-b border-slate-50 last:border-0"
+                        >
+                          <td className="py-2 pr-3 text-[13px] text-slate-700">
+                            {formatTimeOnlyET(r.created_at) || "—"}
+                          </td>
+                          <td className="py-2 pr-3 text-[13px] text-slate-900">
+                            {r.user_id ? r.user_id.slice(0, 8) : "Guest"}
+                          </td>
+                          <td className="py-2 text-right text-[13px] text-slate-900">
+                            {Math.abs(Number(r.points ?? 0))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
 
         {/* VIP base + active percentage */}
         <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
@@ -326,7 +489,6 @@ export default async function DashboardPage() {
             </p>
 
             <div className="space-y-2 text-xs">
-              {/* NEW: Tonight live board quick action */}
               <Link
                 href="/dashboard/tonight"
                 className="block w-full rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 hover:bg-amber-100"
