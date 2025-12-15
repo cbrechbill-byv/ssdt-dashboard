@@ -2,10 +2,15 @@
 // VIP Insights dashboard for a single Sugarshack Downtown rewards user.
 
 import React from "react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
+import { getDashboardSession } from "@/lib/dashboardAuth";
 
 export const revalidate = 0;
+
+const ET_TZ = "America/New_York";
 
 type VipOverviewRow = {
   user_id: string;
@@ -56,13 +61,26 @@ type FeedbackRow = {
   contact_email: string | null;
   contact_phone: string | null;
   submitted_at: string | null;
-  created_at: string | null; // keep this
+  created_at: string | null;
 };
+
+function formatPhone(phone: string | null): string {
+  if (!phone) return "Unknown";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11 && digits.startsWith("1")) {
+    const d = digits.slice(1);
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return phone;
+}
 
 function formatDate(iso: string | null | undefined) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-US", {
-    timeZone: "America/New_York",
+    timeZone: ET_TZ,
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -74,6 +92,7 @@ function formatDate(iso: string | null | undefined) {
 function formatShortDate(iso: string | null | undefined) {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-US", {
+    timeZone: ET_TZ,
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -129,10 +148,37 @@ type ActivityItem =
       avg_rating: number | null;
     };
 
+function VipSubnav({ userId }: { userId: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Link
+        href="/rewards/vips"
+        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+      >
+        ← Back to VIP users
+      </Link>
+
+      <span className="inline-flex items-center rounded-full border border-slate-900 bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white">
+        Insights
+      </span>
+
+      <Link
+        href={`/rewards/vips/${userId}`}
+        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+      >
+        Edit profile
+      </Link>
+    </div>
+  );
+}
+
 // Next 16: params is a Promise; we must await it.
 export default async function VipInsightsPage(props: {
   params: Promise<{ userId: string }>;
 }) {
+  const session = await getDashboardSession();
+  if (!session) redirect("/login");
+
   const { userId } = await props.params;
   const supabase = supabaseServer;
 
@@ -175,19 +221,14 @@ export default async function VipInsightsPage(props: {
   let totalSpent = 0;
 
   for (const scan of scans) {
-    if (scan.points > 0) {
-      totalEarned += scan.points;
-    } else if (scan.points < 0) {
-      totalSpent += Math.abs(scan.points);
-    }
+    if (scan.points > 0) totalEarned += scan.points;
+    else if (scan.points < 0) totalSpent += Math.abs(scan.points);
   }
 
   // 3) Load redemptions
   const { data: redemptionsData, error: redemptionsError } = await supabase
     .from("rewards_redemptions")
-    .select(
-      "id, reward_name, points_spent, staff_label, staff_last4, created_at"
-    )
+    .select("id, reward_name, points_spent, staff_label, staff_last4, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -294,31 +335,30 @@ export default async function VipInsightsPage(props: {
 
   const vipName =
     overview?.full_name ||
-    overview?.phone ||
+    (overview?.phone ? formatPhone(overview.phone) : null) ||
     overview?.email ||
     "Unknown rewards user";
 
   const headerSubtitle = overview
-    ? `${overview.phone ?? "No phone on file"}${
+    ? `${overview.phone ? formatPhone(overview.phone) : "No phone on file"}${
         overview.email ? ` · ${overview.email}` : ""
-      }`
-    : "This rewards user has limited activity on file.";
+      } (Timezone: ${ET_TZ})`
+    : `This rewards user has limited activity on file. (Timezone: ${ET_TZ})`;
 
   return (
-    <DashboardShell
-      title={`VIP Insights`}
-      subtitle={headerSubtitle}
-      activeTab="rewards"
-    >
+    <DashboardShell title="VIP Insights" subtitle={headerSubtitle} activeTab="rewards">
       <div className="space-y-6">
+        {/* Subnav */}
+        <VipSubnav userId={userId} />
+
         {/* Top identity + core stats */}
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                 VIP profile
               </p>
-              <h1 className="text-base font-semibold text-slate-900">
+              <h1 className="text-base font-semibold text-slate-900 truncate">
                 {vipName}
               </h1>
               <p className="text-xs text-slate-500">
@@ -326,9 +366,10 @@ export default async function VipInsightsPage(props: {
                 {overview?.zip ? ` · ZIP ${overview.zip}` : ""}
               </p>
               <p className="text-[11px] text-slate-400">
-                First visit: {formatShortDate(overview?.first_scan_at)} · Last
-                visit: {formatShortDate(overview?.last_scan_at)}
+                First visit: {formatShortDate(overview?.first_scan_at)} · Last visit:{" "}
+                {formatShortDate(overview?.last_scan_at)}
               </p>
+              <p className="text-[11px] font-mono text-slate-400">user_id: {userId}</p>
             </div>
 
             <div className="grid grid-cols-3 gap-3 text-xs">
@@ -338,8 +379,7 @@ export default async function VipInsightsPage(props: {
                 </p>
                 <p className="mt-1 text-lg font-semibold text-slate-900">
                   {formatPoints(
-                    overview?.total_points !== null &&
-                      overview?.total_points !== undefined
+                    overview?.total_points !== null && overview?.total_points !== undefined
                       ? Number(overview.total_points)
                       : 0
                   )}
@@ -351,8 +391,7 @@ export default async function VipInsightsPage(props: {
                 </p>
                 <p className="mt-1 text-lg font-semibold text-slate-900">
                   {formatPoints(
-                    overview?.total_visits !== null &&
-                      overview?.total_visits !== undefined
+                    overview?.total_visits !== null && overview?.total_visits !== undefined
                       ? Number(overview.total_visits)
                       : 0
                   )}
@@ -368,6 +407,22 @@ export default async function VipInsightsPage(props: {
               </div>
             </div>
           </div>
+
+          {/* Quick actions */}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href={`/rewards/vips/${userId}`}
+              className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Edit profile
+            </Link>
+            <Link
+              href="/rewards/vips"
+              className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Back to list
+            </Link>
+          </div>
         </section>
 
         {/* Earned vs spent + totals */}
@@ -380,8 +435,7 @@ export default async function VipInsightsPage(props: {
               {formatPoints(totalEarned)}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              Sum of all positive point entries from check-ins and manual
-              adjustments.
+              Sum of all positive point entries from check-ins and manual adjustments.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -403,8 +457,7 @@ export default async function VipInsightsPage(props: {
               {formatPoints(totalEarned - totalSpent)}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              Earned minus spent. Should roughly align with current points
-              balance.
+              Earned minus spent. Should roughly align with current points balance.
             </p>
           </div>
         </section>
@@ -486,7 +539,7 @@ export default async function VipInsightsPage(props: {
             )}
           </div>
 
-          {/* Right-hand side panels: redemptions, fan wall, feedback */}
+          {/* Right-hand side panels */}
           <div className="space-y-4">
             {/* Recent redemptions */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -494,9 +547,7 @@ export default async function VipInsightsPage(props: {
                 Recent redemptions
               </h2>
               {redemptions.length === 0 ? (
-                <p className="text-xs text-slate-500">
-                  No rewards redeemed yet.
-                </p>
+                <p className="text-xs text-slate-500">No rewards redeemed yet.</p>
               ) : (
                 <ul className="space-y-2 text-xs text-slate-700">
                   {redemptions.slice(0, 5).map((red) => (
@@ -509,8 +560,7 @@ export default async function VipInsightsPage(props: {
                           {red.reward_name}
                         </p>
                         <p className="text-[11px] text-slate-500">
-                          {formatDate(red.created_at)} · Approved by{" "}
-                          {red.staff_label}
+                          {formatDate(red.created_at)} · Approved by {red.staff_label}
                         </p>
                       </div>
                       <span className="ml-2 rounded-full bg-slate-900 px-2.5 py-0.5 text-[11px] font-semibold text-white">
@@ -528,9 +578,7 @@ export default async function VipInsightsPage(props: {
                 Fan Wall posts
               </h2>
               {fanPosts.length === 0 ? (
-                <p className="text-xs text-slate-500">
-                  No Fan Wall activity yet.
-                </p>
+                <p className="text-xs text-slate-500">No Fan Wall activity yet.</p>
               ) : (
                 <ul className="space-y-2 text-xs text-slate-700">
                   {fanPosts.slice(0, 5).map((post) => (
@@ -559,8 +607,7 @@ export default async function VipInsightsPage(props: {
               </h2>
               {feedbackRows.length === 0 ? (
                 <p className="text-xs text-slate-500">
-                  No feedback matched yet. Feedback is linked by phone or email
-                  when provided.
+                  No feedback matched yet. Feedback is linked by phone or email when provided.
                 </p>
               ) : (
                 <ul className="space-y-2 text-xs text-slate-700">

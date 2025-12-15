@@ -1,9 +1,14 @@
 // app/menu/bar-bites/page.tsx
+// Path: /menu/bar-bites
+// Sugarshack Downtown - Bar & Bites Dashboard
+// Upgraded: summary + quick reorder arrows (no nested forms) + safer price parsing + better vote insights.
 
 import React from "react";
 import { revalidatePath } from "next/cache";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
+
+export const revalidate = 0;
 
 type MenuItem = {
   id: string;
@@ -20,6 +25,67 @@ type MenuItem = {
 };
 
 /* ------------------------------------------------------------------ */
+/*  HELPERS                                                            */
+/* ------------------------------------------------------------------ */
+
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
+function normalizePriceInput(raw: string | null): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // Allow "12", "$12", "12.00", "$12.00"
+  const cleaned = trimmed.replace(/[^0-9.]/g, "");
+  if (!cleaned) return null;
+
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n <= 0) return null;
+
+  // If they typed decimals, keep decimals; otherwise whole dollars
+  const hasDecimal = cleaned.includes(".");
+  return hasDecimal ? `$${n.toFixed(2)}` : `$${Math.round(n)}`;
+}
+
+function formatCreatedLabel(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Unknown";
+  return d.toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function safeNum(v: any, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function SummaryCard({
+  label,
+  helper,
+  value,
+}: {
+  label: string;
+  helper: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{helper}</p>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  DATA LOAD                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -31,7 +97,8 @@ async function getMenuItems(): Promise<MenuItem[]> {
     )
     .order("category", { ascending: true })
     .order("is_featured", { ascending: false })
-    .order("sort_order", { ascending: true });
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
 
   if (itemsError) {
     console.error("[Dashboard] Failed to load bar_bites_items:", itemsError);
@@ -66,25 +133,6 @@ async function getMenuItems(): Promise<MenuItem[]> {
 }
 
 /* ------------------------------------------------------------------ */
-/*  HELPERS                                                            */
-/* ------------------------------------------------------------------ */
-
-function normalizePriceInput(raw: string | null): string | null {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-
-  // If they already typed a $, just keep it.
-  if (trimmed.startsWith("$")) return trimmed;
-
-  // Otherwise treat it as whole dollars and prefix $.
-  const numeric = trimmed.replace(/[^\d]/g, "");
-  if (!numeric) return null;
-
-  return `$${numeric}`;
-}
-
-/* ------------------------------------------------------------------ */
 /*  SERVER ACTIONS                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -98,15 +146,13 @@ export async function createMenuItem(formData: FormData) {
   const tag = (formData.get("tag") as string)?.trim();
   const sortOrderRaw = (formData.get("sort_order") as string) || "0";
 
-  if (!name || !category) {
-    console.error("[Dashboard] Missing name or category for bar-bites item");
+  if (!name || (category !== "drink" && category !== "bite")) {
+    console.error("[Dashboard] Missing name or invalid category for bar-bites item");
     return;
   }
 
   const price = normalizePriceInput(priceRaw);
-  const sort_order = Number.isNaN(Number(sortOrderRaw))
-    ? 0
-    : Number(sortOrderRaw);
+  const sort_order = safeNum(sortOrderRaw, 0);
 
   const { error } = await supabaseServer.from("bar_bites_items").insert({
     name,
@@ -119,9 +165,7 @@ export async function createMenuItem(formData: FormData) {
     sort_order,
   });
 
-  if (error) {
-    console.error("[Dashboard] Failed to create bar_bites_item:", error);
-  }
+  if (error) console.error("[Dashboard] Failed to create bar_bites_item:", error);
 
   revalidatePath("/menu/bar-bites");
 }
@@ -137,15 +181,13 @@ export async function updateMenuItem(formData: FormData) {
   const tag = (formData.get("tag") as string)?.trim();
   const sortOrderRaw = (formData.get("sort_order") as string) || "0";
 
-  if (!id || !name || !category) {
-    console.error("[Dashboard] Missing id, name, or category for update");
+  if (!id || !name || (category !== "drink" && category !== "bite")) {
+    console.error("[Dashboard] Missing id, name, or invalid category for update");
     return;
   }
 
   const price = normalizePriceInput(priceRaw);
-  const sort_order = Number.isNaN(Number(sortOrderRaw))
-    ? 0
-    : Number(sortOrderRaw);
+  const sort_order = safeNum(sortOrderRaw, 0);
 
   const { error } = await supabaseServer
     .from("bar_bites_items")
@@ -159,9 +201,7 @@ export async function updateMenuItem(formData: FormData) {
     })
     .eq("id", id);
 
-  if (error) {
-    console.error("[Dashboard] Failed to update bar_bites_item:", error);
-  }
+  if (error) console.error("[Dashboard] Failed to update bar_bites_item:", error);
 
   revalidatePath("/menu/bar-bites");
 }
@@ -180,18 +220,14 @@ export async function deleteMenuItem(formData: FormData) {
     .delete()
     .eq("item_id", id);
 
-  if (votesError) {
-    console.error("[Dashboard] Failed to delete bar_bites_votes:", votesError);
-  }
+  if (votesError) console.error("[Dashboard] Failed to delete bar_bites_votes:", votesError);
 
   const { error: itemError } = await supabaseServer
     .from("bar_bites_items")
     .delete()
     .eq("id", id);
 
-  if (itemError) {
-    console.error("[Dashboard] Failed to delete bar_bites_item:", itemError);
-  }
+  if (itemError) console.error("[Dashboard] Failed to delete bar_bites_item:", itemError);
 
   revalidatePath("/menu/bar-bites");
 }
@@ -202,6 +238,8 @@ export async function toggleActiveItem(formData: FormData) {
   const id = formData.get("id") as string;
   const value = formData.get("value") as string;
 
+  if (!id) return;
+
   const isActive = value === "true";
 
   const { error } = await supabaseServer
@@ -209,9 +247,7 @@ export async function toggleActiveItem(formData: FormData) {
     .update({ is_active: !isActive })
     .eq("id", id);
 
-  if (error) {
-    console.error("[Dashboard] Failed to toggle is_active:", error);
-  }
+  if (error) console.error("[Dashboard] Failed to toggle is_active:", error);
 
   revalidatePath("/menu/bar-bites");
 }
@@ -222,6 +258,8 @@ export async function toggleFeaturedItem(formData: FormData) {
   const id = formData.get("id") as string;
   const value = formData.get("value") as string;
 
+  if (!id) return;
+
   const isFeatured = value === "true";
 
   const { error } = await supabaseServer
@@ -229,8 +267,79 @@ export async function toggleFeaturedItem(formData: FormData) {
     .update({ is_featured: !isFeatured })
     .eq("id", id);
 
-  if (error) {
-    console.error("[Dashboard] Failed to toggle is_featured:", error);
+  if (error) console.error("[Dashboard] Failed to toggle is_featured:", error);
+
+  revalidatePath("/menu/bar-bites");
+}
+
+export async function bumpItemOrder(formData: FormData) {
+  "use server";
+
+  const id = (formData.get("id") as string) || "";
+  const direction = (formData.get("direction") as string) || "";
+  const category = (formData.get("category") as string) as "drink" | "bite";
+
+  if (!id || (direction !== "up" && direction !== "down")) return;
+  if (category !== "drink" && category !== "bite") return;
+
+  // IMPORTANT: forms cannot be nested. This action swaps sort_order with neighbor.
+  const supabase = supabaseServer;
+
+  const { data: all, error } = await supabase
+    .from("bar_bites_items")
+    .select("id, sort_order, created_at, category, is_featured")
+    .eq("category", category)
+    .order("is_featured", { ascending: false })
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error || !all) {
+    console.error("[Dashboard] bumpItemOrder load error:", error);
+    revalidatePath("/menu/bar-bites");
+    return;
+  }
+
+  const list = (all as Array<{
+    id: string;
+    sort_order: number;
+    created_at: string;
+    category: "drink" | "bite";
+    is_featured: boolean;
+  }>).map((r) => ({
+    ...r,
+    sort_order: safeNum(r.sort_order, 0),
+  }));
+
+  const idx = list.findIndex((x) => x.id === id);
+  if (idx === -1) return;
+
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= list.length) return;
+
+  const a = list[idx];
+  const b = list[swapIdx];
+
+  // Swap sort_order. If equal, create a stable nudge.
+  let aOrder = safeNum(a.sort_order, 0);
+  let bOrder = safeNum(b.sort_order, 0);
+
+  if (aOrder === bOrder) {
+    // create space
+    aOrder = aOrder + (direction === "up" ? -1 : 1);
+  }
+
+  const { error: errA } = await supabase
+    .from("bar_bites_items")
+    .update({ sort_order: bOrder })
+    .eq("id", a.id);
+
+  const { error: errB } = await supabase
+    .from("bar_bites_items")
+    .update({ sort_order: aOrder })
+    .eq("id", b.id);
+
+  if (errA || errB) {
+    console.error("[Dashboard] bumpItemOrder swap error:", errA || errB);
   }
 
   revalidatePath("/menu/bar-bites");
@@ -240,17 +349,24 @@ export async function toggleFeaturedItem(formData: FormData) {
 /*  UI COMPONENTS                                                      */
 /* ------------------------------------------------------------------ */
 
-function ItemCard({ item }: { item: MenuItem }) {
-  const createdDate = new Date(item.created_at);
-  const createdLabel = createdDate.toLocaleDateString();
+function ItemCard({
+  item,
+  canMoveUp,
+  canMoveDown,
+}: {
+  item: MenuItem;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+}) {
+  const createdLabel = formatCreatedLabel(item.created_at);
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
       {/* Top row: title + chips + vote count */}
       <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
+        <div className="space-y-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-slate-900">
+            <h3 className="text-sm font-semibold text-slate-900 truncate">
               {item.name}
             </h3>
             {item.is_featured && (
@@ -259,21 +375,21 @@ function ItemCard({ item }: { item: MenuItem }) {
               </span>
             )}
             <span
-              className={[
+              className={cn(
                 "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium",
                 item.is_active
                   ? "bg-emerald-100 text-emerald-800"
-                  : "bg-slate-100 text-slate-700",
-              ].join(" ")}
+                  : "bg-slate-100 text-slate-700"
+              )}
             >
               {item.is_active ? "Active" : "Hidden"}
             </span>
           </div>
           <p className="text-xs text-slate-500">
-            {item.category === "drink" ? "Drink" : "Bite"} · Added{" "}
-            {createdLabel}
+            {item.category === "drink" ? "Drink" : "Bite"} · Added {createdLabel}
           </p>
         </div>
+
         <div className="text-xs text-right text-slate-500">
           <div>
             Votes:{" "}
@@ -281,11 +397,40 @@ function ItemCard({ item }: { item: MenuItem }) {
               {item.votes_count ?? 0}
             </span>
           </div>
-          {typeof item.sort_order === "number" && (
-            <div className="mt-0.5 text-[11px] text-slate-400">
-              Sort: {item.sort_order}
-            </div>
-          )}
+          <div className="mt-0.5 text-[11px] text-slate-400">
+            Sort: {item.sort_order ?? 0}
+          </div>
+
+          {/* Quick reorder buttons (server action swap) */}
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <form action={bumpItemOrder}>
+              <input type="hidden" name="id" value={item.id} />
+              <input type="hidden" name="direction" value="up" />
+              <input type="hidden" name="category" value={item.category} />
+              <button
+                type="submit"
+                disabled={!canMoveUp}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                title="Move up"
+              >
+                ↑
+              </button>
+            </form>
+
+            <form action={bumpItemOrder}>
+              <input type="hidden" name="id" value={item.id} />
+              <input type="hidden" name="direction" value="down" />
+              <input type="hidden" name="category" value={item.category} />
+              <button
+                type="submit"
+                disabled={!canMoveDown}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                title="Move down"
+              >
+                ↓
+              </button>
+            </form>
+          </div>
         </div>
       </div>
 
@@ -295,7 +440,10 @@ function ItemCard({ item }: { item: MenuItem }) {
 
       <div className="mt-4 border-t border-slate-200 pt-4">
         {/* MAIN EDIT FORM (Save changes) */}
-        <form action={updateMenuItem} className="grid gap-3 text-xs md:grid-cols-2">
+        <form
+          action={updateMenuItem}
+          className="grid gap-3 text-xs md:grid-cols-2"
+        >
           <input type="hidden" name="id" value={item.id} />
 
           <div className="space-y-1">
@@ -324,6 +472,7 @@ function ItemCard({ item }: { item: MenuItem }) {
               placeholder="$12"
               className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
             />
+            <p className="text-[11px] text-slate-400">Accepts 12, 12.00, $12, $12.00</p>
           </div>
 
           <div className="space-y-1">
@@ -356,6 +505,9 @@ function ItemCard({ item }: { item: MenuItem }) {
               defaultValue={item.sort_order ?? 0}
               className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
             />
+            <p className="text-[11px] text-slate-400">
+              Tip: use arrows above for quick reordering.
+            </p>
           </div>
 
           <div className="md:col-span-2 mt-2 flex justify-end">
@@ -381,12 +533,12 @@ function ItemCard({ item }: { item: MenuItem }) {
               />
               <button
                 type="submit"
-                className={[
+                className={cn(
                   "inline-flex items-center rounded-full border px-3 py-1.5 text-[11px] font-medium",
                   item.is_active
                     ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                    : "border-slate-900 bg-slate-900 text-slate-50 hover:bg-black",
-                ].join(" ")}
+                    : "border-slate-900 bg-slate-900 text-slate-50 hover:bg-black"
+                )}
               >
                 {item.is_active ? "Hide item" : "Make active"}
               </button>
@@ -432,8 +584,28 @@ function ItemCard({ item }: { item: MenuItem }) {
 export default async function BarBitesPage() {
   const items = await getMenuItems();
 
-  const drinks = items.filter((i) => i.category === "drink");
-  const bites = items.filter((i) => i.category === "bite");
+  const drinksAll = items.filter((i) => i.category === "drink");
+  const bitesAll = items.filter((i) => i.category === "bite");
+
+  const activeCount = items.filter((i) => i.is_active).length;
+  const featuredCount = items.filter((i) => i.is_featured).length;
+
+  const totalVotes = items.reduce((acc, i) => acc + (i.votes_count ?? 0), 0);
+  const topVoted = [...items].sort(
+    (a, b) => (b.votes_count ?? 0) - (a.votes_count ?? 0)
+  )[0];
+
+  // For reordering, we need stable lists matching bumpItemOrder ordering
+  const sortForReorder = (list: MenuItem[]) =>
+    [...list].sort(
+      (a, b) =>
+        Number(b.is_featured) - Number(a.is_featured) ||
+        safeNum(a.sort_order, 0) - safeNum(b.sort_order, 0) ||
+        a.created_at.localeCompare(b.created_at)
+    );
+
+  const drinks = sortForReorder(drinksAll);
+  const bites = sortForReorder(bitesAll);
 
   return (
     <DashboardShell
@@ -442,6 +614,30 @@ export default async function BarBitesPage() {
       activeTab="bar-bites"
     >
       <div className="space-y-6">
+        {/* Summary */}
+        <section className="grid gap-4 md:grid-cols-4">
+          <SummaryCard
+            label="Active items"
+            helper="Currently visible in the app."
+            value={activeCount}
+          />
+          <SummaryCard
+            label="Featured items"
+            helper="Pinned to the top within category."
+            value={featuredCount}
+          />
+          <SummaryCard
+            label="Total votes"
+            helper="All votes across items."
+            value={totalVotes}
+          />
+          <SummaryCard
+            label="Top voted"
+            helper={topVoted ? topVoted.name : "No votes yet"}
+            value={topVoted ? (topVoted.votes_count ?? 0) : "—"}
+          />
+        </section>
+
         {/* Top intro card */}
         <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -455,9 +651,7 @@ export default async function BarBitesPage() {
               </p>
             </div>
             <div className="flex flex-col items-start text-[11px] text-slate-500 sm:items-end">
-              <span>
-                {items.filter((i) => i.is_active).length} active items
-              </span>
+              <span>{activeCount} active items</span>
               <span>{items.length} total items</span>
             </div>
           </div>
@@ -472,8 +666,8 @@ export default async function BarBitesPage() {
                   Existing items
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Edit copy, prices, tags, or visibility. Changes sync instantly
-                  to the app.
+                  Edit copy, prices, tags, or visibility. Use arrows on each
+                  card to reorder within a category.
                 </p>
               </div>
               <div className="space-y-6 p-4 sm:p-5">
@@ -490,8 +684,13 @@ export default async function BarBitesPage() {
                       Drinks
                     </h3>
                     <div className="space-y-3">
-                      {drinks.map((item) => (
-                        <ItemCard key={item.id} item={item} />
+                      {drinks.map((item, idx) => (
+                        <ItemCard
+                          key={item.id}
+                          item={item}
+                          canMoveUp={idx > 0}
+                          canMoveDown={idx < drinks.length - 1}
+                        />
                       ))}
                     </div>
                   </div>
@@ -503,8 +702,13 @@ export default async function BarBitesPage() {
                       Bites
                     </h3>
                     <div className="space-y-3">
-                      {bites.map((item) => (
-                        <ItemCard key={item.id} item={item} />
+                      {bites.map((item, idx) => (
+                        <ItemCard
+                          key={item.id}
+                          item={item}
+                          canMoveUp={idx > 0}
+                          canMoveDown={idx < bites.length - 1}
+                        />
                       ))}
                     </div>
                   </div>
@@ -522,7 +726,7 @@ export default async function BarBitesPage() {
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
                   Use this for new bites, cocktails, or specials. You can
-                  re-order items later using the sort order field.
+                  reorder later using arrows or sort_order.
                 </p>
               </div>
               <div className="p-4 sm:p-5">
@@ -561,6 +765,9 @@ export default async function BarBitesPage() {
                         placeholder="$12"
                         className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
                       />
+                      <p className="text-[11px] text-slate-400">
+                        Accepts 12, 12.00, $12, $12.00
+                      </p>
                     </div>
 
                     <div className="space-y-1.5">
@@ -613,6 +820,22 @@ export default async function BarBitesPage() {
                   </div>
                 </form>
               </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-xs text-slate-600">
+              <p className="font-semibold text-slate-900">How ordering works</p>
+              <ul className="mt-2 list-disc pl-5 space-y-1">
+                <li>
+                  Items are grouped by <span className="font-semibold">category</span> (Drink / Bite).
+                </li>
+                <li>
+                  Within each category: <span className="font-semibold">Featured</span> items are shown first.
+                </li>
+                <li>
+                  Then items sort by <span className="font-semibold">sort_order</span> ascending.
+                </li>
+                <li>Use the ↑ / ↓ buttons on each card for quick swaps.</li>
+              </ul>
             </div>
           </div>
         </div>

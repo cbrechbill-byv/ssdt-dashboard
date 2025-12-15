@@ -7,6 +7,8 @@ import DashboardShell from "@/components/layout/DashboardShell";
 import { getDashboardSession } from "@/lib/dashboardAuth";
 import Link from "next/link";
 
+const ET_TZ = "America/New_York";
+
 type VipUserRow = {
   user_id: string;
   phone: string | null;
@@ -21,11 +23,25 @@ type VipUserRow = {
   last_scan_at: string | null;
 };
 
+function formatPhone(phone: string | null): string {
+  if (!phone) return "Unknown";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11 && digits.startsWith("1")) {
+    const d = digits.slice(1);
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return phone;
+}
+
 function formatDateTime(value: string | null): string {
   if (!value) return "—";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString("en-US", {
+    timeZone: ET_TZ,
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -39,7 +55,8 @@ export async function updateVipProfile(formData: FormData) {
   "use server";
 
   const userId = String(formData.get("user_id") || "");
-  const full_name = ((formData.get("full_name") as string) || "").trim() || null;
+  const full_name =
+    ((formData.get("full_name") as string) || "").trim() || null;
   const email = ((formData.get("email") as string) || "").trim() || null;
   const zip = ((formData.get("zip") as string) || "").trim() || null;
 
@@ -47,9 +64,7 @@ export async function updateVipProfile(formData: FormData) {
   const notify_specials = formData.get("notify_specials") === "on";
   const notify_vip_only = formData.get("notify_vip_only") === "on";
 
-  if (!userId) {
-    return;
-  }
+  if (!userId) return;
 
   const supabase = supabaseServer;
   const session = await getDashboardSession();
@@ -111,9 +126,7 @@ async function loadVip(userId: string): Promise<VipUserRow> {
     throw error;
   }
 
-  if (!data) {
-    notFound();
-  }
+  if (!data) notFound();
 
   const row = data as any;
 
@@ -132,39 +145,104 @@ async function loadVip(userId: string): Promise<VipUserRow> {
   };
 }
 
-export default async function VipEditPage({
-  params,
-}: {
-  params: { userId: string };
+function VipSubnav({ userId }: { userId: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Link
+        href="/rewards/vips"
+        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+      >
+        ← Back to VIP users
+      </Link>
+
+      <Link
+        href={`/rewards/vips/${userId}/insights`}
+        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+      >
+        Insights
+      </Link>
+
+      <span className="inline-flex items-center rounded-full border border-slate-900 bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white">
+        Edit profile
+      </span>
+    </div>
+  );
+}
+
+// ✅ FIX: In your Next setup, params is a Promise. Await it.
+export default async function VipEditPage(props: {
+  params: Promise<{ userId: string }>;
 }) {
-  const vip = await loadVip(params.userId);
+  const session = await getDashboardSession();
+  if (!session) redirect("/login");
+
+  const { userId } = await props.params;
+  if (!userId) notFound();
+
+  const vip = await loadVip(userId);
 
   return (
     <DashboardShell
       activeTab="rewards"
-      title="Edit VIP user"
-      subtitle="Update contact details and notification preferences for this VIP guest."
+      title="VIP user"
+      subtitle={`Edit profile details and notification preferences. (Timezone: ${ET_TZ})`}
     >
       <div className="space-y-6">
-        {/* Back link */}
-        <div>
-          <Link
-            href="/rewards/vips"
-            className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
-          >
-            ← Back to VIP users
-          </Link>
-        </div>
+        <VipSubnav userId={vip.user_id} />
+
+        <section className="rounded-3xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                VIP identity
+              </p>
+              <p className="mt-1 truncate text-base font-semibold text-slate-900">
+                {vip.full_name || "VIP Guest"}
+              </p>
+              <p className="mt-1 text-xs text-slate-600">
+                {formatPhone(vip.phone)}{" "}
+                <span className="text-slate-300">·</span>{" "}
+                <span className="font-mono text-[11px] text-slate-500">
+                  {vip.user_id}
+                </span>
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 text-xs">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                  Points
+                </p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">
+                  {vip.total_points}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                  Last check-in
+                </p>
+                <p className="mt-1 text-[11px] font-medium text-slate-900">
+                  {formatDateTime(vip.last_scan_at)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                  Status
+                </p>
+                <p className="mt-1 text-[11px] font-semibold text-slate-900">
+                  {vip.is_vip ? "VIP active" : "Not marked VIP"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
-          {/* Edit form */}
           <section className="rounded-3xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
-            <h1 className="text-lg font-semibold text-slate-900">
-              VIP profile
-            </h1>
+            <h1 className="text-lg font-semibold text-slate-900">VIP profile</h1>
             <p className="mt-1 text-xs text-slate-600">
-              Use this form to correct names, email addresses, ZIP codes, and
-              notification settings.
+              Correct names, email addresses, ZIP codes, and notification
+              settings.
             </p>
 
             <form action={updateVipProfile} className="mt-5 space-y-4 text-xs">
@@ -176,7 +254,7 @@ export default async function VipEditPage({
                     Phone
                   </label>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-[11px] text-slate-700">
-                    {vip.phone || "Unknown"}
+                    {formatPhone(vip.phone)}
                   </div>
                 </div>
 
@@ -261,10 +339,10 @@ export default async function VipEditPage({
 
               <div className="flex justify-end gap-2 pt-2">
                 <Link
-                  href="/rewards/vips"
+                  href={`/rewards/vips/${vip.user_id}/insights`}
                   className="rounded-full border border-slate-300 px-4 py-2 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
                 >
-                  Cancel
+                  View insights
                 </Link>
                 <button
                   type="submit"
@@ -276,7 +354,6 @@ export default async function VipEditPage({
             </form>
           </section>
 
-          {/* Context card */}
           <aside className="space-y-4">
             <section className="rounded-3xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -293,9 +370,7 @@ export default async function VipEditPage({
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-slate-500">Last check-in</dt>
-                  <dd className="font-medium">
-                    {formatDateTime(vip.last_scan_at)}
-                  </dd>
+                  <dd className="font-medium">{formatDateTime(vip.last_scan_at)}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-slate-500">VIP status</dt>

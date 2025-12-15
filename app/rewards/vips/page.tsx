@@ -1,7 +1,7 @@
 // app/rewards/vips/page.tsx
 // Path: /rewards/vips
-// VIP guests & activity – show balances, visits, and allow manual point adjustments.
-// Also provides a VIP profiles section for editing contact info.
+// VIP guests & activity – show balances, visits, redemptions, and allow manual point adjustments.
+// Sprint: Remove redundant "VIP profiles (edit contact info)" section; improve navigation + data density.
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -41,8 +41,7 @@ async function fetchVipOverview(): Promise<VipOverviewRow[]> {
     .from("rewards_user_overview")
     .select(
       "user_id, phone, full_name, email, zip, is_vip, total_points, total_visits, first_scan_at, last_scan_at"
-    )
-    .order("total_points", { ascending: false });
+    );
 
   if (error) {
     console.error("[vips] fetchVipOverview error", error);
@@ -147,9 +146,7 @@ export async function adjustVipPoints(formData: FormData) {
   }
 
   const delta = targetPoints - currentPoints;
-  if (delta === 0) {
-    return;
-  }
+  if (delta === 0) return;
 
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
@@ -180,48 +177,6 @@ export async function adjustVipPoints(formData: FormData) {
   revalidatePath("/rewards/vips");
 }
 
-// --- Server action: update VIP profile --------------------------------------
-
-export async function updateVipProfile(formData: FormData) {
-  "use server";
-
-  await requireDashboardSession();
-
-  const userId = (formData.get("user_id") as string)?.trim();
-  if (!userId) {
-    console.error("[vips] updateVipProfile missing user_id");
-    return;
-  }
-
-  const full_name = (formData.get("full_name") as string)?.trim() || null;
-  const email = (formData.get("email") as string)?.trim() || null;
-  const zip = (formData.get("zip") as string)?.trim() || null;
-  const isVipRaw = formData.get("is_vip") as string | null;
-  const is_vip = isVipRaw === "on";
-
-  const { error } = await supabaseServer
-    .from("rewards_users")
-    .update({
-      full_name,
-      email,
-      zip,
-      is_vip,
-    })
-    .eq("user_id", userId);
-
-  if (error) {
-    console.error("[vips] updateVipProfile error", error);
-  } else {
-    await logVipAction({
-      action: "vip:update_profile",
-      entityId: userId,
-      details: { full_name, email, zip, is_vip },
-    });
-  }
-
-  revalidatePath("/rewards/vips");
-}
-
 // --- Helpers -----------------------------------------------------------------
 
 function formatDate(dateString: string | null): string {
@@ -235,15 +190,92 @@ function formatDate(dateString: string | null): string {
   });
 }
 
+function safeStr(v: string | null | undefined) {
+  return (v ?? "").toString();
+}
+
+function includesCI(haystack: string, needle: string) {
+  if (!needle) return true;
+  return haystack.toLowerCase().includes(needle.toLowerCase());
+}
+
+// 10-digit phone display, no +1
+function formatPhone10(phone: string | null | undefined): string {
+  if (!phone) return "—";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  if (digits.length === 10) return digits;
+  return digits.length ? digits : "—";
+}
+
+type SortKey = "points" | "visits" | "last_checkin" | "last_redeem" | "name";
+
 // --- Page --------------------------------------------------------------------
 
-export default async function VipUsersPage() {
+export default async function VipUsersPage(props: {
+  searchParams?: Promise<{ q?: string; sort?: SortKey }>;
+}) {
   await requireDashboardSession();
 
-  const [rows, redemptionMap] = await Promise.all([
+  const sp = (await props.searchParams) ?? {};
+  const q = (sp.q ?? "").trim();
+  const sort: SortKey = sp.sort ?? "points";
+
+  const [rowsRaw, redemptionMap] = await Promise.all([
     fetchVipOverview(),
     fetchRedemptionAggregates(),
   ]);
+
+  // Filter (name/phone/email/zip/user_id)
+  const rows = rowsRaw.filter((r) => {
+    if (!q) return true;
+    const blob = [
+      safeStr(r.full_name),
+      safeStr(r.phone),
+      safeStr(r.email),
+      safeStr(r.zip),
+      safeStr(r.user_id),
+    ].join(" ");
+    return includesCI(blob, q);
+  });
+
+  // Sort
+  const sorted = [...rows].sort((a, b) => {
+    const aId = a.user_id ?? "";
+    const bId = b.user_id ?? "";
+
+    const aPoints = Number(a.total_points ?? 0) || 0;
+    const bPoints = Number(b.total_points ?? 0) || 0;
+
+    const aVisits = Number(a.total_visits ?? 0) || 0;
+    const bVisits = Number(b.total_visits ?? 0) || 0;
+
+    const aLast = a.last_scan_at ? new Date(a.last_scan_at).getTime() : 0;
+    const bLast = b.last_scan_at ? new Date(b.last_scan_at).getTime() : 0;
+
+    const aRedeemIso = aId ? redemptionMap.get(aId)?.last_redeem_at : null;
+    const bRedeemIso = bId ? redemptionMap.get(bId)?.last_redeem_at : null;
+
+    const aRedeem = aRedeemIso ? new Date(aRedeemIso).getTime() : 0;
+    const bRedeem = bRedeemIso ? new Date(bRedeemIso).getTime() : 0;
+
+    const aName = (a.full_name ?? "").toLowerCase();
+    const bName = (b.full_name ?? "").toLowerCase();
+
+    switch (sort) {
+      case "visits":
+        return bVisits - aVisits;
+      case "last_checkin":
+        return bLast - aLast;
+      case "last_redeem":
+        return bRedeem - aRedeem;
+      case "name":
+        return aName.localeCompare(bName);
+      case "points":
+      default:
+        return bPoints - aPoints;
+    }
+  });
 
   const totalVips = rows.length;
   const totalPoints = rows.reduce(
@@ -272,7 +304,7 @@ export default async function VipUsersPage() {
               {totalVips}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              Total unique VIPs with a verified phone number.
+              Filtered by current search.
             </p>
           </div>
 
@@ -284,7 +316,7 @@ export default async function VipUsersPage() {
               {totalPoints}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              Total points currently on the books.
+              Total points currently on the books (filtered).
             </p>
           </div>
 
@@ -296,58 +328,86 @@ export default async function VipUsersPage() {
               {totalVisits}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              Lifetime visits across all VIPs.
+              Lifetime visits across filtered VIPs.
             </p>
           </div>
         </section>
 
         {/* VIP guests & activity table */}
         <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
-          <div className="flex items-baseline justify-between gap-3">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-base font-semibold text-slate-900">
                 VIP guests &amp; activity
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Points are calculated from check-ins and redemptions. Adjust
-                totals if you need to fix an account.
+                Click a guest to open insights. Use <span className="font-semibold text-slate-700">Point adjustment</span>{" "}
+                to correct totals.
               </p>
             </div>
-            {rows.length > 0 && (
-              <p className="text-xs text-slate-500">
-                {rows.length} VIP{rows.length === 1 ? "" : "s"}
-              </p>
-            )}
+
+            {/* Search + sort */}
+            <form method="get" className="flex flex-wrap items-center gap-2">
+              <input
+                name="q"
+                defaultValue={q}
+                placeholder="Search name, phone, email, zip…"
+                className="w-64 max-w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
+              />
+              <select
+                name="sort"
+                defaultValue={sort}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
+              >
+                <option value="points">Sort: Points</option>
+                <option value="visits">Sort: Visits</option>
+                <option value="last_checkin">Sort: Last check-in</option>
+                <option value="last_redeem">Sort: Last redeem</option>
+                <option value="name">Sort: Name</option>
+              </select>
+              <button
+                type="submit"
+                className="inline-flex items-center rounded-full bg-amber-400 px-5 py-2 text-xs font-semibold text-slate-900 shadow-sm hover:bg-amber-500"
+              >
+                Apply
+              </button>
+              {(q || sort !== "points") && (
+                <Link
+                  href="/rewards/vips"
+                  className="text-xs font-semibold text-slate-600 hover:text-slate-900"
+                >
+                  Clear
+                </Link>
+              )}
+            </form>
           </div>
 
-          {rows.length === 0 ? (
+          {sorted.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">
-              No VIPs yet. Once guests join from the app you&apos;ll see them
-              here.
+              No VIPs match this search.
             </p>
           ) : (
             <>
               {/* Header row */}
-              <div className="mt-5 grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1.6fr)]">
+              <div className="mt-6 grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,2.1fr)]">
                 <span>Guest</span>
                 <span>Contact</span>
                 <span>Points</span>
                 <span>Visits</span>
                 <span>Last check-in</span>
                 <span>Last redeem</span>
-                <span>Redemptions</span>
-                <span className="text-right">Adjust</span>
+                <span>Redeems</span>
+                <span className="text-right">Point adjustment</span>
               </div>
 
               {/* Rows */}
               <div className="mt-1 space-y-3">
-                {rows.map((row) => {
+                {sorted.map((row) => {
                   const userId = row.user_id ?? "";
                   const points = Number(row.total_points ?? 0);
                   const visits = Number(row.total_visits ?? 0);
-                  const redStats = userId
-                    ? redemptionMap.get(userId)
-                    : undefined;
+
+                  const redStats = userId ? redemptionMap.get(userId) : undefined;
                   const lastRedeem = redStats?.last_redeem_at ?? null;
                   const totalRedemptions = redStats?.total_redemptions ?? 0;
                   const lastRewardName = redStats?.last_reward_name ?? null;
@@ -357,13 +417,13 @@ export default async function VipUsersPage() {
                       ? row.full_name
                       : "Unknown guest";
 
-                  const displayPhone = row.phone ?? "";
+                  const displayPhone10 = formatPhone10(row.phone);
 
                   return (
                     <form
-                      key={userId || displayPhone}
+                      key={userId || displayPhone10}
                       action={adjustVipPoints}
-                      className="grid gap-3 border-b border-slate-100 py-3 text-sm last:border-b-0 md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1.6fr)] md:items-center"
+                      className="grid gap-3 border-b border-slate-100 py-3 text-sm last:border-b-0 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,2.1fr)] md:items-center"
                     >
                       <input type="hidden" name="user_id" value={userId} />
                       <input
@@ -372,27 +432,32 @@ export default async function VipUsersPage() {
                         value={points}
                       />
 
-                      {/* Guest (clickable to open Insights) */}
-                      <div className="font-semibold text-slate-900">
-                        {userId ? (
-                          <Link
-                            href={`/rewards/vips/${userId}/insights`}
-                            className="hover:underline hover:text-slate-700"
-                          >
-                            {displayName}
-                          </Link>
-                        ) : (
-                          displayName
-                        )}
+                      {/* Guest */}
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-slate-900">
+                          {userId ? (
+                            <Link
+                              href={`/rewards/vips/${userId}/insights`}
+                              className="hover:underline hover:text-slate-700"
+                            >
+                              {displayName}
+                            </Link>
+                          ) : (
+                            displayName
+                          )}
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-slate-500">
+                          {row.is_vip ? "VIP" : "Not VIP"}
+                        </div>
                       </div>
 
-                      {/* Contact */}
-                      <div className="text-slate-700">{displayPhone}</div>
+                      {/* Contact (phone only, 10-digit) */}
+                      <div className="min-w-0 truncate font-mono text-slate-700">
+                        {displayPhone10}
+                      </div>
 
                       {/* Points */}
-                      <div className="font-semibold text-slate-900">
-                        {points}
-                      </div>
+                      <div className="font-semibold text-slate-900">{points}</div>
 
                       {/* Visits */}
                       <div className="text-slate-800">{visits}</div>
@@ -403,11 +468,18 @@ export default async function VipUsersPage() {
                       </div>
 
                       {/* Last redeem */}
-                      <div className="text-xs text-slate-600">
+                      <div
+                        className="text-xs text-slate-600"
+                        title={
+                          lastRewardName
+                            ? `Last reward: ${lastRewardName}`
+                            : "No redemptions yet"
+                        }
+                      >
                         {formatDate(lastRedeem)}
                       </div>
 
-                      {/* Redemptions – just the number; hover shows last reward */}
+                      {/* Redeems */}
                       <div
                         className="text-xs text-slate-700"
                         title={
@@ -419,20 +491,22 @@ export default async function VipUsersPage() {
                         {Number(totalRedemptions)}
                       </div>
 
-                      {/* Adjust – Set to [points] Save */}
-                      <div className="flex items-center justify-end gap-2 text-xs text-slate-600">
-                        <span className="whitespace-nowrap">Set to</span>
+                      {/* Point adjustment (no redundant buttons) */}
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Set total to
+                        </span>
                         <input
                           type="number"
                           name="target_points"
                           defaultValue={points}
-                          className="w-20 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                          className="w-28 rounded-full border-2 border-amber-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
                         />
                         <button
                           type="submit"
-                          className="inline-flex items-center rounded-full bg-amber-400 px-5 py-1.5 text-xs font-semibold text-slate-900 shadow-sm hover:bg-amber-500"
+                          className="inline-flex items-center rounded-full bg-amber-400 px-4 py-1.5 text-[11px] font-semibold text-slate-900 shadow-sm hover:bg-amber-500"
                         >
-                          Save
+                          Save points
                         </button>
                       </div>
                     </form>
@@ -443,124 +517,7 @@ export default async function VipUsersPage() {
           )}
         </section>
 
-        {/* VIP profiles – edit contact info */}
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
-          <div className="flex items-baseline justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">
-                VIP profiles (edit contact info)
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Update names, email addresses, ZIP codes, or VIP status. Phone
-                numbers come from the app and are read-only here.
-              </p>
-            </div>
-          </div>
-
-          {rows.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">
-              No VIPs yet. Once guests join from the app you&apos;ll see them
-              here.
-            </p>
-          ) : (
-            <>
-              {/* Header row */}
-              <div className="mt-5 grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,1.7fr)_minmax(0,1.5fr)_minmax(0,2.1fr)_minmax(0,1.1fr)_minmax(0,0.7fr)_minmax(0,1.2fr)]">
-                <span>Name</span>
-                <span>Phone</span>
-                <span>Email</span>
-                <span>ZIP</span>
-                <span className="text-center">VIP</span>
-                <span className="text-right">Actions</span>
-              </div>
-
-              <div className="mt-1 space-y-3">
-                {rows.map((row) => {
-                  const userId = row.user_id ?? "";
-                  const displayPhone = row.phone ?? "";
-                  const displayName =
-                    row.full_name && row.full_name.trim().length > 0
-                      ? row.full_name
-                      : "Unknown guest";
-
-                  return (
-                    <form
-                      key={`profile-${userId || displayPhone}`}
-                      action={updateVipProfile}
-                      className="grid gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-sm shadow-sm md:grid-cols-[minmax(0,1.7fr)_minmax(0,1.5fr)_minmax(0,2.1fr)_minmax(0,1.1fr)_minmax(0,0.7fr)_minmax(0,1.2fr)] md:items-center"
-                    >
-                      <input type="hidden" name="user_id" value={userId} />
-
-                      {/* Name */}
-                      <div>
-                        <input
-                          type="text"
-                          name="full_name"
-                          defaultValue={displayName}
-                          placeholder="VIP Music Lover"
-                          className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
-                        />
-                      </div>
-
-                      {/* Phone (read-only) */}
-                      <div>
-                        <input
-                          type="text"
-                          defaultValue={displayPhone}
-                          readOnly
-                          className="w-full cursor-not-allowed rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-500"
-                        />
-                      </div>
-
-                      {/* Email */}
-                      <div>
-                        <input
-                          type="email"
-                          name="email"
-                          defaultValue={row.email ?? ""}
-                          placeholder="vip@example.com"
-                          className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
-                        />
-                      </div>
-
-                      {/* ZIP */}
-                      <div>
-                        <input
-                          type="text"
-                          name="zip"
-                          defaultValue={row.zip ?? ""}
-                          className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
-                        />
-                      </div>
-
-                      {/* VIP toggle */}
-                      <div className="flex items-center justify-center">
-                        <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700">
-                          <input
-                            type="checkbox"
-                            name="is_vip"
-                            defaultChecked={!!row.is_vip}
-                            className="h-4 w-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500"
-                          />
-                        </label>
-                      </div>
-
-                      {/* Save */}
-                      <div className="flex items-center justify-end">
-                        <button
-                          type="submit"
-                          className="inline-flex items-center rounded-full bg-emerald-500 px-4 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:bg-emerald-600"
-                        >
-                          Save
-                        </button>
-                      </div>
-                    </form>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </section>
+        {/* NOTE: The old "VIP profiles (edit contact info)" section was removed on purpose. */}
       </div>
     </DashboardShell>
   );
