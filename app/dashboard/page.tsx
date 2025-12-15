@@ -1,9 +1,12 @@
 // app/dashboard/page.tsx
 // Path: /dashboard
-// Purpose: Main Sugarshack Downtown overview (today KPIs, VIP health, events readiness, content readiness, fan wall, Top VIPs).
+// Purpose: Main Sugarshack Downtown overview (today KPIs, VIP health, content readiness, fan wall, quick actions, Top VIPs).
+// Sprint 3: Add "Content readiness" -> Artists data quality card (missing images/bios/socials) with Edit links.
+// Sprint 4 (Run 1): Add Sponsors data quality card (missing logo/website) with link to Sponsors manager.
+// Sprint 5 (Run 1): Add Rewards menu readiness card (missing names/invalid point costs/inactive count) with link to /rewards.
+// Sprint 5 (Run 2): Add Redemption Health card (today + last 7 days, data quality flags, orphan signal).
 // Sprint 8: Timezone alignment (America/New_York) for ALL "today" date filters + display labels.
-// Sprint 9: Add Events readiness card (Tonight + next 7 days).
-// Sprint 10: Bold BLACK readiness titles, format YYYY-MM-DD as MM-DD-YYYY, move Sponsors to its own full-width row.
+// Sprint 9: Add Events readiness card (Tonight + next 7 days) and bold section titles (no UI redesign).
 
 import { redirect } from "next/navigation";
 import { getDashboardSession } from "@/lib/dashboardAuth";
@@ -31,12 +34,19 @@ function getEtYmd(now = new Date()): string {
   });
 }
 
-function ymdToMdy(ymd: string | null): string {
-  // Convert "YYYY-MM-DD" -> "MM-DD-YYYY" (no Date parsing, avoids UTC shift)
+// Date-only strings MUST NOT be parsed as Date("YYYY-MM-DD") (UTC midnight).
+// Use a noon-UTC anchor so it formats safely in ET.
+function formatDateEt(ymd: string | null): string {
   if (!ymd) return "—";
-  const [y, m, d] = ymd.split("-");
+  const [y, m, d] = ymd.split("-").map((n) => Number(n));
   if (!y || !m || !d) return ymd;
-  return `${m}-${d}-${y}`;
+
+  const safeUtc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: ET_TZ,
+    month: "short",
+    day: "numeric",
+  }).format(safeUtc);
 }
 
 function addDaysEtYmd(ymd: string, days: number): string {
@@ -138,6 +148,13 @@ export default async function DashboardPage() {
     updated_at: string | null;
   };
 
+  // ✅ FIX: Supabase embed often comes back as an array (PostgREST embed)
+  type EmbeddedArtist = {
+    id: string;
+    name: string | null;
+    image_path: string | null;
+  };
+
   type EventCheckRow = {
     id: string;
     event_date: string;
@@ -146,12 +163,13 @@ export default async function DashboardPage() {
     is_cancelled: boolean;
     title: string | null;
     artist_id: string | null;
-    artist: {
-      id: string;
-      name: string | null;
-      image_path: string | null;
-    } | null;
+    artist: EmbeddedArtist[] | null;
   };
+
+  function getArtistObj(e: EventCheckRow): EmbeddedArtist | null {
+    if (!e.artist) return null;
+    return Array.isArray(e.artist) ? e.artist[0] ?? null : null;
+  }
 
   function formatPhone(phone?: string | null): string {
     if (!phone) return "Unknown";
@@ -176,9 +194,8 @@ export default async function DashboardPage() {
     if (Number.isNaN(d.getTime())) return "No visits yet";
     return d.toLocaleString("en-US", {
       timeZone: ET_TZ,
-      month: "2-digit",
-      day: "2-digit",
-      year: "numeric",
+      month: "short",
+      day: "numeric",
       hour: "numeric",
       minute: "2-digit",
     });
@@ -344,15 +361,17 @@ export default async function DashboardPage() {
     console.error("[dashboard] events readiness error:", eventsError);
   }
 
-  const upcomingEvents = (upcomingEventsData ?? []) as EventCheckRow[];
+  const upcomingEvents = (upcomingEventsData ?? []) as unknown as EventCheckRow[];
   const tonightEvents = upcomingEvents.filter((e) => e.event_date === today);
   const nextWeekEvents = upcomingEvents.filter((e) => e.event_date !== today);
 
   const eventsMissingArtist = upcomingEvents.filter((e) => !e.artist_id).length;
   const eventsMissingTime = upcomingEvents.filter((e) => !e.start_time).length;
-  const eventsMissingArtistImage = upcomingEvents.filter(
-    (e) => !!e.artist_id && !e.artist?.image_path
-  ).length;
+  const eventsMissingArtistImage = upcomingEvents.filter((e) => {
+    if (!e.artist_id) return false;
+    const artistObj = getArtistObj(e);
+    return !artistObj?.image_path;
+  }).length;
 
   // -----------------------------
   // 6) Artists readiness summary (dashboard only)
@@ -569,16 +588,15 @@ export default async function DashboardPage() {
           />
         </div>
 
-        {/* 3) Events readiness */}
+        {/* 3) Content readiness */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
-              <p className="text-[11px] font-bold text-slate-900 tracking-[0.12em] uppercase">
-                Events readiness
+              <p className="text-[11px] font-bold text-slate-500 tracking-[0.12em] uppercase">
+                Content readiness
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Tonight + next 7 days. Check the artist, times, and at least an
-                artist image for the app calendar.
+                Launch-facing data checks to keep the mobile app high quality.
               </p>
             </div>
 
@@ -589,34 +607,99 @@ export default async function DashboardPage() {
               >
                 Open Events
               </Link>
+              <Link
+                href="/artists"
+                className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
+              >
+                Open Artists
+              </Link>
+              <Link
+                href="/photo-booth/sponsors"
+                className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
+              >
+                Open Sponsors
+              </Link>
+              <Link
+                href="/rewards"
+                className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
+              >
+                Open Rewards
+              </Link>
             </div>
           </div>
 
-          {eventsError && (
-            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-              <p className="text-xs text-rose-700">
-                Events readiness failed:{" "}
-                <span className="font-mono">{eventsError.message}</span>
-              </p>
+          {(eventsError || artistsError || sponsorsError || rewardsMenuError) && (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {eventsError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                  <p className="text-xs text-rose-700">
+                    Events readiness failed:{" "}
+                    <span className="font-mono">{eventsError.message}</span>
+                  </p>
+                </div>
+              )}
+              {artistsError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                  <p className="text-xs text-rose-700">
+                    Artists readiness failed:{" "}
+                    <span className="font-mono">{artistsError.message}</span>
+                  </p>
+                </div>
+              )}
+              {sponsorsError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                  <p className="text-xs text-rose-700">
+                    Sponsors readiness failed:{" "}
+                    <span className="font-mono">{sponsorsError.message}</span>
+                  </p>
+                </div>
+              )}
+              {rewardsMenuError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                  <p className="text-xs text-rose-700">
+                    Rewards readiness failed:{" "}
+                    <span className="font-mono">{rewardsMenuError.message}</span>
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
+          {/* Events readiness card */}
           <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <div className="mt-1 grid gap-3 sm:grid-cols-4 text-xs">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                  Events readiness (Tonight + next 7 days)
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Check the artist, times, and at least an artist image for the
+                  app calendar.
+                </p>
+              </div>
+              <Link
+                href="/events"
+                className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-amber-50"
+              >
+                Open Events editor
+              </Link>
+            </div>
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-4 text-xs">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                   Shows (window)
                 </p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">
                   {upcomingEvents.length}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  {ymdToMdy(today)} → {ymdToMdy(weekEnd)}
+                  {formatDateEt(today)} → {formatDateEt(weekEnd)}
                 </p>
               </div>
 
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                   Missing artist link
                 </p>
                 <p className="mt-1 text-xl font-semibold text-amber-600">
@@ -626,7 +709,7 @@ export default async function DashboardPage() {
               </div>
 
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                   Missing start time
                 </p>
                 <p className="mt-1 text-xl font-semibold text-amber-600">
@@ -636,7 +719,7 @@ export default async function DashboardPage() {
               </div>
 
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                   Missing artist image
                 </p>
                 <p className="mt-1 text-xl font-semibold text-amber-600">
@@ -652,11 +735,11 @@ export default async function DashboardPage() {
               {/* Tonight */}
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
                     Tonight
                   </p>
                   <span className="text-[11px] text-slate-500">
-                    {ymdToMdy(today)}
+                    {formatDateEt(today)}
                   </span>
                 </div>
 
@@ -667,10 +750,11 @@ export default async function DashboardPage() {
                 ) : (
                   <div className="mt-3 space-y-2">
                     {tonightEvents.map((e) => {
+                      const artistObj = getArtistObj(e);
                       const artistName =
-                        e.artist?.name?.trim() ||
+                        artistObj?.name?.trim() ||
                         (e.artist_id ? "Untitled artist" : "No artist linked");
-                      const hasImage = !!e.artist?.image_path;
+                      const hasImage = !!artistObj?.image_path;
                       const timeLabel = formatTimeRangeEt(
                         e.start_time,
                         e.end_time
@@ -731,7 +815,7 @@ export default async function DashboardPage() {
               {/* Next 7 days */}
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
                     Next 7 days
                   </p>
                   <span className="text-[11px] text-slate-500">Upcoming</span>
@@ -744,10 +828,11 @@ export default async function DashboardPage() {
                 ) : (
                   <div className="mt-3 space-y-2">
                     {nextWeekEvents.slice(0, 8).map((e) => {
+                      const artistObj = getArtistObj(e);
                       const artistName =
-                        e.artist?.name?.trim() ||
+                        artistObj?.name?.trim() ||
                         (e.artist_id ? "Untitled artist" : "No artist linked");
-                      const hasImage = !!e.artist?.image_path;
+                      const hasImage = !!artistObj?.image_path;
                       const timeLabel = formatTimeRangeEt(
                         e.start_time,
                         e.end_time
@@ -760,7 +845,7 @@ export default async function DashboardPage() {
                         >
                           <div className="min-w-0">
                             <p className="truncate text-xs font-semibold text-slate-900">
-                              {ymdToMdy(e.event_date)}{" "}
+                              {formatDateEt(e.event_date)}{" "}
                               <span className="text-slate-400 font-normal">
                                 ·
                               </span>{" "}
@@ -800,286 +885,225 @@ export default async function DashboardPage() {
               </div>
             </div>
           </div>
-        </section>
 
-        {/* 4) Content readiness */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div>
-              <p className="text-[11px] font-bold text-slate-900 tracking-[0.12em] uppercase">
-                Content readiness
+          {/* Artists + Sponsors grid */}
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            {/* Artists card */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                Artists data quality (active only)
               </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Launch-facing data checks to keep the mobile app high quality.
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-3 text-xs">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                    Active artists
+                  </p>
+                  <p className="mt-1 text-xl font-semibold text-slate-900">
+                    {artistsActive}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    {artistsTotal} total in directory
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                    Missing image
+                  </p>
+                  <p className="mt-1 text-xl font-semibold text-amber-600">
+                    {missingArtistImage}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Needed for Artist + Events pages
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                    Missing bio
+                  </p>
+                  <p className="mt-1 text-xl font-semibold text-amber-600">
+                    {missingArtistBio}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Improves app engagement
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3 text-xs">
+                <span className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                  Missing any social link
+                </span>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-xl font-semibold text-amber-600">
+                    {missingArtistAnySocial}
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Website / IG / FB / TikTok / Spotify all blank
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Needs attention
+                  </p>
+                  <Link
+                    href="/artists"
+                    className="text-[11px] font-semibold text-slate-700 hover:text-amber-600"
+                  >
+                    View all
+                  </Link>
+                </div>
+
+                {artistsNeedingAttention.length === 0 ? (
+                  <p className="mt-3 text-xs text-emerald-700">
+                    ✅ All active artists have image, bio, and at least one link.
+                  </p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {artistsNeedingAttention.map((a) => (
+                      <div
+                        key={a.id}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-slate-900">
+                            {a.name}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">
+                            {!a.hasImage ? "Missing image" : null}
+                            {!a.hasImage && (!a.hasBio || !a.hasAnySocial)
+                              ? " · "
+                              : null}
+                            {!a.hasBio ? "Missing bio" : null}
+                            {!a.hasBio && !a.hasAnySocial ? " · " : null}
+                            {!a.hasAnySocial ? "No links" : null}
+                          </p>
+                        </div>
+
+                        <Link
+                          href={`/artists/edit?id=${a.id}`}
+                          className="inline-flex flex-shrink-0 items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
+                        >
+                          Edit
+                        </Link>
+                      </div>
+                    ))}
+                    <p className="pt-1 text-[11px] text-slate-400">
+                      Tip: prioritize adding the main image first (most visible
+                      in the app).
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Sponsors card */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                Sponsors data quality (active only)
               </p>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <Link
-                href="/artists"
-                className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
-              >
-                Open Artists
-              </Link>
-              <Link
-                href="/photo-booth/sponsors"
-                className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
-              >
-                Open Sponsors
-              </Link>
-              <Link
-                href="/rewards"
-                className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
-              >
-                Open Rewards
-              </Link>
-            </div>
-          </div>
-
-          {(artistsError || sponsorsError || rewardsMenuError) && (
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {artistsError && (
-                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-                  <p className="text-xs text-rose-700">
-                    Artists readiness failed:{" "}
-                    <span className="font-mono">{artistsError.message}</span>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3 text-xs">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                    Active sponsors
+                  </p>
+                  <p className="mt-1 text-xl font-semibold text-slate-900">
+                    {sponsorsActive}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    {sponsorsTotal} total in list
                   </p>
                 </div>
-              )}
-              {sponsorsError && (
-                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-                  <p className="text-xs text-rose-700">
-                    Sponsors readiness failed:{" "}
-                    <span className="font-mono">{sponsorsError.message}</span>
+
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                    Missing logo
+                  </p>
+                  <p className="mt-1 text-xl font-semibold text-amber-600">
+                    {missingSponsorLogo}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Needed for Sponsors + Photo Booth
                   </p>
                 </div>
-              )}
-              {rewardsMenuError && (
-                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-                  <p className="text-xs text-rose-700">
-                    Rewards readiness failed:{" "}
-                    <span className="font-mono">{rewardsMenuError.message}</span>
+
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                    Missing website
+                  </p>
+                  <p className="mt-1 text-xl font-semibold text-amber-600">
+                    {missingSponsorWebsite}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Optional, but improves sponsor value
                   </p>
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* Artists (full-width) */}
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">
-              Artists data quality (active only)
-            </p>
-
-            <div className="mt-3 grid gap-3 sm:grid-cols-3 text-xs">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Active artists
-                </p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">
-                  {artistsActive}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {artistsTotal} total in directory
-                </p>
               </div>
 
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing image
-                </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {missingArtistImage}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Needed for Artist + Events pages
-                </p>
-              </div>
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Needs attention
+                  </p>
+                  <Link
+                    href="/photo-booth/sponsors"
+                    className="text-[11px] font-semibold text-slate-700 hover:text-amber-600"
+                  >
+                    Open manager
+                  </Link>
+                </div>
 
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing bio
-                </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {missingArtistBio}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Improves app engagement
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-3 text-xs">
-              <span className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                Missing any social link
-              </span>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-xl font-semibold text-amber-600">
-                  {missingArtistAnySocial}
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  Website / IG / FB / TikTok / Spotify all blank
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Needs attention
-                </p>
-                <Link
-                  href="/artists"
-                  className="text-[11px] font-semibold text-slate-700 hover:text-amber-600"
-                >
-                  View all
-                </Link>
-              </div>
-
-              {artistsNeedingAttention.length === 0 ? (
-                <p className="mt-3 text-xs text-emerald-700">
-                  ✅ All active artists have image, bio, and at least one link.
-                </p>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {artistsNeedingAttention.map((a) => (
-                    <div
-                      key={a.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-slate-900">
-                          {a.name}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-500">
-                          {!a.hasImage ? "Missing image" : null}
-                          {!a.hasImage && (!a.hasBio || !a.hasAnySocial)
-                            ? " · "
-                            : null}
-                          {!a.hasBio ? "Missing bio" : null}
-                          {!a.hasBio && !a.hasAnySocial ? " · " : null}
-                          {!a.hasAnySocial ? "No links" : null}
-                        </p>
-                      </div>
-
-                      <Link
-                        href={`/artists/edit?id=${a.id}`}
-                        className="inline-flex flex-shrink-0 items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
+                {sponsorsNeedingAttention.length === 0 ? (
+                  <p className="mt-3 text-xs text-emerald-700">
+                    ✅ All active sponsors have a logo and a website link (or
+                    intentionally blank).
+                  </p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {sponsorsNeedingAttention.map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
                       >
-                        Edit
-                      </Link>
-                    </div>
-                  ))}
-                  <p className="pt-1 text-[11px] text-slate-400">
-                    Tip: prioritize adding the main image first (most visible in
-                    the app).
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-slate-900">
+                            {s.name}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">
+                            {!s.hasLogo ? "Missing logo" : null}
+                            {!s.hasLogo && !s.hasWebsite ? " · " : null}
+                            {!s.hasWebsite ? "Missing website" : null}
+                          </p>
+                        </div>
 
-          {/* Sponsors (lower-tier: its own full-width row) */}
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">
-              Sponsors data quality (active only)
-            </p>
-
-            <div className="mt-3 grid gap-3 sm:grid-cols-3 text-xs">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Active sponsors
-                </p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">
-                  {sponsorsActive}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {sponsorsTotal} total in list
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing logo
-                </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {missingSponsorLogo}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Needed for Sponsors + Photo Booth
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing website
-                </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {missingSponsorWebsite}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Optional, but improves sponsor value
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Needs attention
-                </p>
-                <Link
-                  href="/photo-booth/sponsors"
-                  className="text-[11px] font-semibold text-slate-700 hover:text-amber-600"
-                >
-                  Open manager
-                </Link>
-              </div>
-
-              {sponsorsNeedingAttention.length === 0 ? (
-                <p className="mt-3 text-xs text-emerald-700">
-                  ✅ All active sponsors have a logo and a website link (or
-                  intentionally blank).
-                </p>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {sponsorsNeedingAttention.map((s) => (
-                    <div
-                      key={s.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-slate-900">
-                          {s.name}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-500">
-                          {!s.hasLogo ? "Missing logo" : null}
-                          {!s.hasLogo && !s.hasWebsite ? " · " : null}
-                          {!s.hasWebsite ? "Missing website" : null}
-                        </p>
+                        <Link
+                          href="/photo-booth/sponsors"
+                          className="inline-flex flex-shrink-0 items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
+                        >
+                          Fix
+                        </Link>
                       </div>
-
-                      <Link
-                        href="/photo-booth/sponsors"
-                        className="inline-flex flex-shrink-0 items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
-                      >
-                        Fix
-                      </Link>
-                    </div>
-                  ))}
-                  <p className="pt-1 text-[11px] text-slate-400">
-                    Tip: upload square-ish PNG/JPG logos for best results.
-                  </p>
-                </div>
-              )}
+                    ))}
+                    <p className="pt-1 text-[11px] text-slate-400">
+                      Tip: upload square-ish PNG/JPG logos for best results.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Rewards (full-width) */}
+          {/* Rewards readiness card */}
           <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
                   Rewards menu data quality (active only)
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
@@ -1198,74 +1222,129 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          {/* Redemption Health (date formatting is controlled inside that component) */}
+          {/* Redemption Health */}
           <RedemptionHealth />
         </section>
 
-        {/* 5) Fan wall */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div>
-              <p className="text-[11px] font-bold text-slate-900 tracking-[0.12em] uppercase">
-                Fan Wall moderation
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                High-level view of what’s waiting on the Fan Wall.
-              </p>
+        {/* Fan wall + Quick actions */}
+        <div className="grid gap-4 lg:grid-cols-3">
+          <section className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <p className="text-[11px] font-bold text-slate-500 tracking-[0.12em] uppercase">
+                  Fan Wall moderation
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  High-level view of what’s waiting on the Fan Wall.
+                </p>
+              </div>
+
+              <Link
+                href="/fan-wall"
+                className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
+              >
+                Open Fan Wall
+              </Link>
             </div>
 
-            <Link
-              href="/fan-wall"
-              className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
-            >
-              Open Fan Wall
-            </Link>
-          </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-4 text-xs">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Pending
+                </p>
+                <p className="mt-1 text-xl font-semibold text-amber-600">
+                  {fanPending}
+                </p>
+                <p className="text-[11px] text-slate-500">Awaiting approval</p>
+              </div>
 
-          <div className="mt-4 grid gap-4 sm:grid-cols-4 text-xs">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Pending
-              </p>
-              <p className="mt-1 text-xl font-semibold text-amber-600">
-                {fanPending}
-              </p>
-              <p className="text-[11px] text-slate-500">Awaiting approval</p>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Live
+                </p>
+                <p className="mt-1 text-xl font-semibold text-emerald-600">
+                  {fanLive}
+                </p>
+                <p className="text-[11px] text-slate-500">Showing in the app</p>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Hidden
+                </p>
+                <p className="mt-1 text-xl font-semibold text-slate-700">
+                  {fanHidden}
+                </p>
+                <p className="text-[11px] text-slate-500">Removed/hidden</p>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Total submissions
+                </p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">
+                  {fanTotal}
+                </p>
+                <p className="text-[11px] text-slate-500">All-time photos</p>
+              </div>
             </div>
+          </section>
 
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Live
-              </p>
-              <p className="mt-1 text-xl font-semibold text-emerald-600">
-                {fanLive}
-              </p>
-              <p className="text-[11px] text-slate-500">Showing in the app</p>
+          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
+            <p className="text-[11px] font-bold text-slate-500 tracking-[0.12em] uppercase">
+              Quick actions
+            </p>
+            <p className="mt-1 mb-3 text-xs text-slate-500">
+              Jump to common Sugarshack Downtown controls.
+            </p>
+
+            <div className="space-y-2 text-xs">
+              <Link
+                href="/dashboard/tonight"
+                className="block w-full rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 hover:bg-amber-100"
+              >
+                <p className="font-medium text-slate-900">
+                  Tonight&apos;s live board
+                </p>
+                <p className="text-[11px] text-slate-600">
+                  See today&apos;s check-ins, points, and redemptions in real
+                  time.
+                </p>
+              </Link>
+
+              <Link
+                href="/events"
+                className="block w-full rounded-xl border border-slate-200 px-3 py-2 hover:bg-slate-50"
+              >
+                <p className="font-medium text-slate-900">Tonight’s show editor</p>
+                <p className="text-[11px] text-slate-500">
+                  Edit tonight’s performers & times.
+                </p>
+              </Link>
+
+              <Link
+                href="/fan-wall"
+                className="block w-full rounded-xl border border-slate-200 px-3 py-2 hover:bg-slate-50"
+              >
+                <p className="font-medium text-slate-900">Open full Fan Wall</p>
+                <p className="text-[11px] text-slate-500">
+                  Moderate & approve Photo Booth shots.
+                </p>
+              </Link>
+
+              <Link
+                href="/notifications"
+                className="block w-full rounded-xl border border-slate-200 px-3 py-2 hover:bg-slate-50"
+              >
+                <p className="font-medium text-slate-900">Send push notification</p>
+                <p className="text-[11px] text-slate-500">
+                  Reach VIPs and guests instantly.
+                </p>
+              </Link>
             </div>
+          </section>
+        </div>
 
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Hidden
-              </p>
-              <p className="mt-1 text-xl font-semibold text-slate-700">
-                {fanHidden}
-              </p>
-              <p className="text-[11px] text-slate-500">Removed/hidden</p>
-            </div>
-
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Total submissions
-              </p>
-              <p className="mt-1 text-xl font-semibold text-slate-900">
-                {fanTotal}
-              </p>
-              <p className="text-[11px] text-slate-500">All-time photos</p>
-            </div>
-          </div>
-        </section>
-
-        {/* 6) Top VIPs */}
         <TopVipsTableClient vipList={vipList} totalVipCount={totalVipCount} />
       </div>
     </DashboardShell>
@@ -1285,7 +1364,7 @@ type StatCardProps = {
 function StatCard({ label, helper, value }: StatCardProps) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-      <p className="text-[11px] font-bold text-slate-900 tracking-[0.12em] uppercase">
+      <p className="text-[11px] font-bold text-slate-500 tracking-[0.12em] uppercase">
         {label}
       </p>
       <p className="mt-2 text-3xl font-semibold text-slate-900">{value}</p>
@@ -1303,13 +1382,11 @@ function PercentCard({
   helper: string;
   value: number;
 }) {
-  const clamped = Number.isFinite(value)
-    ? Math.max(0, Math.min(100, value))
-    : 0;
+  const clamped = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-      <p className="text-[11px] font-bold text-slate-900 tracking-[0.12em] uppercase">
+      <p className="text-[11px] font-bold text-slate-500 tracking-[0.12em] uppercase">
         {label}
       </p>
       <p className="mt-2 text-3xl font-semibold text-slate-900">
