@@ -1,7 +1,15 @@
 // app/dashboard/tonight/page.tsx
 // Path: /dashboard/tonight
-// Live "Tonight's Check-Ins" board for Sugarshack Downtown.
+// Purpose: Live "Tonight's Check-Ins" board for Sugarshack Downtown.
 // Shows who checked in today, their lifetime points/visits, and any redemptions today.
+// Sprint 8: Fix “off by a day” + time drift by making ALL “today” logic America/New_York,
+//          and rendering timestamptz timestamps in America/New_York.
+//
+// Why you were seeing issues:
+// - You were doing `new Date().toISOString().slice(0,10)` which is a UTC day.
+//   After ~7pm–8pm ET (depending on DST), UTC is already “tomorrow”, so your “today” filters shift.
+// - You also filtered redemptions by UTC dayStart/dayEnd which can exclude/include the wrong rows for ET “today”.
+// Fix: compute ET date, convert ET day boundaries to UTC ISO strings for timestamptz filtering, and display with timeZone.
 
 import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
@@ -9,6 +17,8 @@ import { supabaseServer } from "@/lib/supabaseServer";
 import { TonightAutoRefresh } from "./AutoRefreshClient";
 
 export const revalidate = 0; // always fresh when requested
+
+const ET_TZ = "America/New_York";
 
 type ScanRow = {
   id: string;
@@ -58,21 +68,72 @@ type TonightRow = {
   lastRedemptionAt: string | null;
 };
 
-function formatTime(iso: string | null | undefined) {
+function getEtYmd(now = new Date()): string {
+  return now.toLocaleDateString("en-CA", {
+    timeZone: ET_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+/**
+ * Convert an ET-local wall-clock time into an absolute UTC ISO string.
+ * Uses Intl timeZoneName: 'shortOffset' (e.g. "GMT-5") when available.
+ * This is robust across DST because the offset comes from the target date.
+ */
+function etWallClockToUtcIso(ymd: string, hmss: string): string {
+  // ymd: "YYYY-MM-DD", hmss: "HH:MM:SS"
+  const [Y, M, D] = ymd.split("-").map((x) => Number(x));
+  const [h, m, s] = hmss.split(":").map((x) => Number(x));
+
+  // Start with a UTC timestamp with the same wall-clock components.
+  // We'll then adjust it by the ET offset for that moment.
+  const approxUtcMs = Date.UTC(Y, M - 1, D, h, m, s);
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ET_TZ,
+    timeZoneName: "shortOffset",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(approxUtcMs));
+
+  const tzPart = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
+  // tzPart looks like "GMT-5" or "GMT-4" (DST)
+  const match = tzPart.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+  const sign = match?.[1] === "-" ? -1 : 1;
+  const offH = match ? Number(match[2]) : 0;
+  const offM = match?.[3] ? Number(match[3]) : 0;
+  const offsetMinutes = sign * (offH * 60 + offM);
+
+  // ET local time = UTC + offsetMinutes
+  // => UTC = local - offsetMinutes
+  const utcMs = approxUtcMs - offsetMinutes * 60_000;
+  return new Date(utcMs).toISOString();
+}
+
+function formatTimeEt(iso: string | null | undefined) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleTimeString("en-US", {
+    timeZone: ET_TZ,
     hour: "numeric",
     minute: "2-digit",
   });
 }
 
-function formatShortDateTime(iso: string | null | undefined) {
+function formatShortDateTimeEt(iso: string | null | undefined) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString("en-US", {
+    timeZone: ET_TZ,
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -91,14 +152,14 @@ function formatPhoneLocal(raw: string | null): string {
 export default async function TonightDashboardPage() {
   const supabase = supabaseServer;
 
-  // --- 1) Figure out "today" (YYYY-MM-DD) for scan_date filter ----------------
-  const todayDate = new Date().toISOString().slice(0, 10); // simple UTC date; matches how scan_date is stored
+  // ✅ 1) "Today" in Florida time (matches your intended business day)
+  const todayEt = getEtYmd();
 
-  // --- 2) Pull today's scans --------------------------------------------------
+  // ✅ 2) Pull today's scans (scan_date is DATE, so compare with ET YYYY-MM-DD)
   const { data: scansData, error: scansError } = await supabase
     .from("rewards_scans")
     .select("id, user_id, points, scanned_at, source, note")
-    .eq("scan_date", todayDate)
+    .eq("scan_date", todayEt)
     .order("scanned_at", { ascending: false });
 
   if (scansError) {
@@ -107,11 +168,9 @@ export default async function TonightDashboardPage() {
 
   const scans: ScanRow[] = (scansData ?? []) as ScanRow[];
 
-  const userIds = Array.from(
-    new Set(scans.map((s) => s.user_id).filter(Boolean))
-  );
+  const userIds = Array.from(new Set(scans.map((s) => s.user_id).filter(Boolean)));
 
-  // --- 3) Pull VIP overview rows for those users ------------------------------
+  // ✅ 3) VIP overview rows for those users
   let vipOverviewRows: VipOverviewRow[] = [];
   if (userIds.length > 0) {
     const { data, error } = await supabase
@@ -128,15 +187,15 @@ export default async function TonightDashboardPage() {
     }
   }
 
-  // --- 4) Pull today's redemptions -------------------------------------------
-  const dayStart = `${todayDate}T00:00:00+00:00`;
-  const dayEnd = `${todayDate}T23:59:59+00:00`;
+  // ✅ 4) Pull today's redemptions using ET-day boundaries converted to UTC ISO (created_at is timestamptz)
+  const dayStartUtc = etWallClockToUtcIso(todayEt, "00:00:00");
+  const dayEndUtc = etWallClockToUtcIso(todayEt, "23:59:59");
 
   const { data: redemptionsData, error: redemptionsError } = await supabase
     .from("rewards_redemptions")
     .select("user_id, reward_name, points_spent, created_at")
-    .gte("created_at", dayStart)
-    .lte("created_at", dayEnd)
+    .gte("created_at", dayStartUtc)
+    .lte("created_at", dayEndUtc)
     .order("created_at", { ascending: false });
 
   if (redemptionsError) {
@@ -145,7 +204,7 @@ export default async function TonightDashboardPage() {
 
   const redemptions: RedemptionRow[] = (redemptionsData ?? []) as RedemptionRow[];
 
-  // --- 5) Aggregate per user --------------------------------------------------
+  // 5) Aggregate per user
   const userAgg = new Map<string, TonightRow>();
 
   for (const scan of scans) {
@@ -248,7 +307,7 @@ export default async function TonightDashboardPage() {
   return (
     <DashboardShell
       title="Tonight at Sugarshack"
-      subtitle="Live VIP check-ins, points and redemptions for tonight only."
+      subtitle={`Live VIP check-ins, points and redemptions for tonight only. (Timezone: ${ET_TZ})`}
       activeTab="dashboard"
     >
       {/* Auto-refresh this board every ~20 seconds */}
@@ -317,10 +376,13 @@ export default async function TonightDashboardPage() {
                 Use this as a live board at the host stand or bar to recognize
                 frequent visitors and watch points &amp; redemptions roll in.
               </p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Timezone: {ET_TZ} (Florida time)
+              </p>
             </div>
             {tonightRows.length > 0 && (
               <p className="text-xs text-slate-500">
-                Last update: {formatShortDateTime(new Date().toISOString())}
+                Last update: {formatShortDateTimeEt(new Date().toISOString())}
               </p>
             )}
           </div>
@@ -348,17 +410,14 @@ export default async function TonightDashboardPage() {
               <div className="mt-1 space-y-2">
                 {tonightRows.map((row) => {
                   const lastActivity =
-                    row.lastRedemptionAt ??
-                    row.lastScanToday ??
-                    row.lastScan ??
-                    null;
+                    row.lastRedemptionAt ?? row.lastScanToday ?? row.lastScan ?? null;
 
                   return (
                     <div
                       key={row.userId}
                       className="grid items-center gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-xs shadow-sm md:grid-cols-[minmax(0,2.1fr)_minmax(0,1.6fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,1.6fr)]"
                     >
-                      {/* Guest name / VIP badge – NOW CLICKABLE */}
+                      {/* Guest name / VIP badge – clickable */}
                       <div className="flex flex-col gap-0.5">
                         <Link
                           href={`/rewards/vips/${row.userId}/insights`}
@@ -372,43 +431,26 @@ export default async function TonightDashboardPage() {
                           )}
                         </Link>
                         {row.email && (
-                          <span className="text-[11px] text-slate-500">
-                            {row.email}
-                          </span>
+                          <span className="text-[11px] text-slate-500">{row.email}</span>
                         )}
                       </div>
 
-                      {/* Phone */}
-                      <div className="text-[13px] text-slate-900">
-                        {row.phone || "—"}
-                      </div>
+                      <div className="text-[13px] text-slate-900">{row.phone || "—"}</div>
 
-                      {/* Lifetime points */}
                       <div className="text-right font-semibold text-slate-900">
                         {row.lifetimePoints}
                       </div>
 
-                      {/* Lifetime visits */}
-                      <div className="text-right text-slate-900">
-                        {row.lifetimeVisits}
-                      </div>
+                      <div className="text-right text-slate-900">{row.lifetimeVisits}</div>
 
-                      {/* Check-ins today */}
-                      <div className="text-right text-slate-900">
-                        {row.checkinsToday}
-                      </div>
+                      <div className="text-right text-slate-900">{row.checkinsToday}</div>
 
-                      {/* Points today */}
                       <div className="text-right text-slate-900">
                         {row.pointsToday > 0 ? `+${row.pointsToday}` : row.pointsToday}
                       </div>
 
-                      {/* Last activity time */}
-                      <div className="text-slate-900">
-                        {formatTime(lastActivity)}
-                      </div>
+                      <div className="text-slate-900">{formatTimeEt(lastActivity)}</div>
 
-                      {/* Reward today */}
                       <div className="text-slate-900">
                         {row.redemptionsToday > 0
                           ? `${row.redemptionsToday}× ${row.lastRedemptionName ?? "Reward"}`

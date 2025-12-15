@@ -1,3 +1,9 @@
+// app/events/new/page.tsx
+// Path: /events/new
+// Purpose: Create a new Sugarshack Downtown event (date + time + optional artist + notes).
+// Sprint 8: Timezone-safe default date (America/New_York) so new events don’t drift by a day.
+//          Keep HH:MM:SS storage for start_time/end_time.
+
 import { revalidatePath } from "next/cache";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
@@ -5,6 +11,33 @@ import { redirect } from "next/navigation";
 import { logDashboardEventServer } from "@/lib/logDashboardEventServer";
 
 export const dynamic = "force-dynamic";
+
+const ET_TZ = "America/New_York";
+
+function getEtYmd(now = new Date()): string {
+  return now.toLocaleDateString("en-CA", {
+    timeZone: ET_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function toHmsOrNull(hm: string | null): string | null {
+  const v = (hm ?? "").trim();
+  if (!v) return null;
+  return v.includes(":") && v.split(":").length === 2 ? `${v}:00` : v;
+}
+
+function minutesFromHm(hm: string | null): number | null {
+  if (!hm) return null;
+  const parts = hm.split(":");
+  if (parts.length < 2) return null;
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
 
 export default async function NewEventPage() {
   // Fetch artists for dropdown
@@ -22,19 +55,26 @@ export default async function NewEventPage() {
 
     const supabase = supabaseServer;
 
-    // Match the artist_events schema used by the edit page
     const event_date = formData.get("event_date")?.toString() || null;
-    const start_time_raw = formData.get("start_time")?.toString() || "";
-    const end_time_raw = formData.get("end_time")?.toString() || "";
 
-    // Store as HH:MM:SS just like the edit form does
-    const start_time = start_time_raw ? `${start_time_raw}:00` : null;
-    const end_time = end_time_raw ? `${end_time_raw}:00` : null;
+    const start_hm = (formData.get("start_time")?.toString() || "").trim(); // "HH:MM"
+    const end_hm = (formData.get("end_time")?.toString() || "").trim(); // "HH:MM"
+
+    // Optional: ensure end >= start if both provided (assumes same-day show)
+    const startMin = minutesFromHm(start_hm || null);
+    const endMin = minutesFromHm(end_hm || null);
+    if (startMin !== null && endMin !== null && endMin < startMin) {
+      throw new Error("End time cannot be earlier than start time.");
+    }
+
+    const start_time = toHmsOrNull(start_hm || null); // "HH:MM:SS" or null
+    const end_time = toHmsOrNull(end_hm || null); // "HH:MM:SS" or null
 
     const title = formData.get("title")?.toString().trim() || null;
     const genre_override =
       formData.get("genre_override")?.toString().trim() || null;
     const notes = formData.get("notes")?.toString().trim() || null;
+
     const artist_id = formData.get("artist_id")?.toString() || null;
 
     if (!event_date) {
@@ -68,7 +108,6 @@ export default async function NewEventPage() {
 
     const eventId = data.id;
 
-    // 🔐 AUDIT LOG — CREATE EVENT (keep entity name as "events" for consistency)
     await logDashboardEventServer({
       action: "create",
       entity: "events",
@@ -97,6 +136,9 @@ export default async function NewEventPage() {
                 Set the date, time, artist, and notes for this show. These
                 details drive Tonight&apos;s Board and the mobile app.
               </p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Timezone: {ET_TZ} (Florida time)
+              </p>
             </div>
           </div>
 
@@ -114,6 +156,7 @@ export default async function NewEventPage() {
                 name="event_date"
                 type="date"
                 required
+                defaultValue={getEtYmd()}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
             </div>
@@ -185,10 +228,7 @@ export default async function NewEventPage() {
 
           {/* Notes */}
           <div className="space-y-1.5">
-            <label
-              htmlFor="notes"
-              className="text-xs font-medium text-slate-800"
-            >
+            <label htmlFor="notes" className="text-xs font-medium text-slate-800">
               Internal notes
             </label>
             <textarea
