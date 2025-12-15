@@ -6,6 +6,8 @@ import { supabaseServer } from "@/lib/supabaseServer";
 import { revalidatePath } from "next/cache";
 import { logDashboardEventServer } from "@/lib/logDashboardEventServer";
 
+const ET_TZ = "America/New_York";
+
 type EventArtist = {
   name: string | null;
   genre: string | null;
@@ -13,9 +15,9 @@ type EventArtist = {
 
 type EventRow = {
   id: string;
-  event_date: string;
-  start_time: string | null;
-  end_time: string | null;
+  event_date: string; // YYYY-MM-DD
+  start_time: string | null; // HH:MM:SS
+  end_time: string | null; // HH:MM:SS
   is_cancelled: boolean;
   genre_override: string | null;
   title: string | null;
@@ -23,32 +25,47 @@ type EventRow = {
   artist: EventArtist | EventArtist[] | null;
 };
 
-function formatDate(isoDate: string | null): string {
-  if (!isoDate) return "—";
-  const d = new Date(isoDate);
-  if (Number.isNaN(d.getTime())) return isoDate;
-  return d.toLocaleDateString("en-US", {
+function getEtYmd(now = new Date()): string {
+  return now.toLocaleDateString("en-CA", {
+    timeZone: ET_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+// Date-only strings MUST NOT be parsed as Date("YYYY-MM-DD") (UTC midnight).
+// Use a noon-UTC anchor so it formats safely in ET.
+function formatDateEt(ymd: string | null): string {
+  if (!ymd) return "—";
+  const [y, m, d] = ymd.split("-").map((n) => Number(n));
+  if (!y || !m || !d) return ymd;
+
+  const safeUtc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: ET_TZ,
     month: "short",
     day: "numeric",
     year: "numeric",
-  });
+  }).format(safeUtc);
 }
 
-function formatTime(isoTime: string | null): string {
-  if (!isoTime) return "—";
-  const [h, m] = isoTime.split(":");
-  if (!h || !m) return isoTime;
-  const d = new Date();
-  d.setHours(Number(h), Number(m), 0, 0);
-  return d.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+function formatTimeEt(time: string | null): string {
+  if (!time) return "—";
+  const [hhRaw, mmRaw] = time.split(":");
+  const hh = Number(hhRaw);
+  const mm = Number(mmRaw);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return time;
+
+  const suffix = hh >= 12 ? "PM" : "AM";
+  const hour12 = ((hh + 11) % 12) + 1;
+  const mm2 = String(mm).padStart(2, "0");
+  return `${hour12}:${mm2} ${suffix}`;
 }
 
-function formatTimeRange(start: string | null, end: string | null): string {
-  const startLabel = formatTime(start);
-  const endLabel = formatTime(end);
+function formatTimeRangeEt(start: string | null, end: string | null): string {
+  const startLabel = formatTimeEt(start);
+  const endLabel = formatTimeEt(end);
   if (start && end) return `${startLabel}–${endLabel}`;
   if (start) return startLabel;
   return "TBD";
@@ -61,47 +78,31 @@ function getArtistNames(artist: EventRow["artist"]): string {
     const names = artist
       .map((a) => a?.name?.trim())
       .filter((name): name is string => !!name);
-    if (names.length === 0) return "Unknown artist";
-    return names.join(", ");
+    return names.length ? names.join(", ") : "Unknown artist";
   }
 
-  if (artist.name && artist.name.trim().length > 0) {
-    return artist.name;
-  }
-
-  return "Unknown artist";
+  return artist.name?.trim() ? artist.name : "Unknown artist";
 }
 
 function getArtistGenre(evt: EventRow): string {
   if (evt.genre_override) return evt.genre_override;
 
   const { artist } = evt;
-
   if (!artist) return "—";
 
   if (Array.isArray(artist)) {
     const genres = artist
       .map((a) => a?.genre?.trim())
       .filter((g): g is string => !!g);
-    if (genres.length === 0) return "—";
-    return genres.join(", ");
+    return genres.length ? genres.join(", ") : "—";
   }
 
   return artist.genre || "—";
 }
 
-// Treat events on today's date (America/New_York) as "Tonight"
 function isTonight(eventDate: string | null | undefined) {
   if (!eventDate) return false;
-
-  const todayNY = new Date().toLocaleDateString("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }); // e.g. "2025-12-11"
-
-  return eventDate === todayNY;
+  return eventDate === getEtYmd();
 }
 
 // --- Server action: delete event --------------------------------------------
@@ -111,10 +112,7 @@ async function deleteEvent(formData: FormData) {
   const id = formData.get("id")?.toString();
   if (!id) return;
 
-  const { error } = await supabaseServer
-    .from("artist_events")
-    .delete()
-    .eq("id", id);
+  const { error } = await supabaseServer.from("artist_events").delete().eq("id", id);
 
   if (error) {
     console.error("[Events] delete error:", error);
@@ -132,7 +130,8 @@ async function deleteEvent(formData: FormData) {
 }
 
 export default async function EventsPage() {
-  const today = new Date().toISOString().slice(0, 10);
+  // ✅ ET-safe “today” so .gte("event_date", today) works correctly
+  const todayEt = getEtYmd();
 
   const { data, error } = await supabaseServer
     .from("artist_events")
@@ -153,7 +152,7 @@ export default async function EventsPage() {
     `
     )
     .not("start_time", "is", null)
-    .gte("event_date", today)
+    .gte("event_date", todayEt)
     .order("event_date", { ascending: true })
     .order("start_time", { ascending: true });
 
@@ -166,7 +165,7 @@ export default async function EventsPage() {
   return (
     <DashboardShell
       title="Events"
-      subtitle="Manage the Sugarshack Downtown live music calendar."
+      subtitle={`Manage the Sugarshack Downtown live music calendar. (Timezone: ${ET_TZ})`}
       activeTab="events"
     >
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4 space-y-3">
@@ -196,8 +195,7 @@ export default async function EventsPage() {
 
         {events.length === 0 && !error ? (
           <p className="text-xs text-slate-400">
-            No upcoming events with times set. Click &ldquo;Add event&rdquo; to
-            schedule your first show.
+            No upcoming events with times set. Click &ldquo;Add event&rdquo; to schedule your first show.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -210,24 +208,18 @@ export default async function EventsPage() {
                   <th className="py-2 pr-3 text-left font-semibold">Genre</th>
                   <th className="py-2 pr-3 text-left font-semibold">Title</th>
                   <th className="py-2 pr-3 text-left font-semibold">Notes</th>
-                  <th className="py-2 pr-3 text-right font-semibold">
-                    Status
-                  </th>
+                  <th className="py-2 pr-3 text-right font-semibold">Status</th>
                   <th className="py-2 text-right font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {events.map((evt) => {
-                  const dateLabel = formatDate(evt.event_date);
-                  const timeLabel = formatTimeRange(
-                    evt.start_time,
-                    evt.end_time
-                  );
+                  const dateLabel = formatDateEt(evt.event_date);
+                  const timeLabel = formatTimeRangeEt(evt.start_time, evt.end_time);
                   const artistName = getArtistNames(evt.artist);
                   const genre = getArtistGenre(evt);
-                  const statusLabel = evt.is_cancelled
-                    ? "Cancelled"
-                    : "Scheduled";
+
+                  const statusLabel = evt.is_cancelled ? "Cancelled" : "Scheduled";
                   const statusClass = evt.is_cancelled
                     ? "bg-rose-100 text-rose-700"
                     : "bg-emerald-100 text-emerald-700";
@@ -249,21 +241,11 @@ export default async function EventsPage() {
                           )}
                         </div>
                       </td>
-                      <td className="py-2 pr-3 align-top whitespace-nowrap">
-                        {timeLabel}
-                      </td>
-                      <td className="py-2 pr-3 align-top whitespace-nowrap">
-                        {artistName}
-                      </td>
-                      <td className="py-2 pr-3 align-top whitespace-nowrap">
-                        {genre}
-                      </td>
-                      <td className="py-2 pr-3 align-top">
-                        {evt.title || "—"}
-                      </td>
-                      <td className="py-2 pr-3 align-top">
-                        {evt.notes || "—"}
-                      </td>
+                      <td className="py-2 pr-3 align-top whitespace-nowrap">{timeLabel}</td>
+                      <td className="py-2 pr-3 align-top whitespace-nowrap">{artistName}</td>
+                      <td className="py-2 pr-3 align-top whitespace-nowrap">{genre}</td>
+                      <td className="py-2 pr-3 align-top">{evt.title || "—"}</td>
+                      <td className="py-2 pr-3 align-top">{evt.notes || "—"}</td>
                       <td className="py-2 pr-3 align-top text-right whitespace-nowrap">
                         <span
                           className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}

@@ -1,9 +1,16 @@
+// app/events/edit/page.tsx
+// Path: /events/edit?id=...
+// Purpose: Edit a scheduled event (date/time/artist/title/notes/cancelled).
+// Sprint 7: Add ability to change the linked artist on edit.
+// Keeps: Timezone-safe defaults + validate end_time >= start_time (same-day) + store HH:MM:SS.
+
 export const dynamic = "force-dynamic";
 
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { logDashboardEventServer } from "@/lib/logDashboardEventServer";
 
 type EventRow = {
   id: string;
@@ -14,7 +21,15 @@ type EventRow = {
   genre_override: string | null;
   title: string | null;
   notes: string | null;
+  artist_id: string | null; // ✅ needed for edit dropdown
 };
+
+type ArtistOption = {
+  id: string;
+  name: string | null;
+};
+
+const ET_TZ = "America/New_York";
 
 function getIdFromSearchParams(
   searchParams: Record<string, string | string[] | undefined>
@@ -47,7 +62,8 @@ async function fetchEvent(id: string): Promise<{
       is_cancelled,
       genre_override,
       title,
-      notes
+      notes,
+      artist_id
     `
     )
     .eq("id", id)
@@ -65,6 +81,23 @@ async function fetchEvent(id: string): Promise<{
   return { event: data as EventRow, errorMessage: null };
 }
 
+async function fetchArtists(): Promise<{
+  artists: ArtistOption[];
+  errorMessage: string | null;
+}> {
+  const { data, error } = await supabaseServer
+    .from("artists")
+    .select("id, name")
+    .order("name", { ascending: true });
+
+  if (error) {
+    console.error("[Event edit] load artists error:", error);
+    return { artists: [], errorMessage: error.message };
+  }
+
+  return { artists: (data ?? []) as ArtistOption[], errorMessage: null };
+}
+
 function isoDateToInput(value: string | null): string {
   if (!value) return "";
   return value.slice(0, 10);
@@ -72,10 +105,36 @@ function isoDateToInput(value: string | null): string {
 
 function timeToInput(value: string | null): string {
   if (!value) return "";
+  // stored as HH:MM:SS -> input wants HH:MM
   return value.slice(0, 5);
 }
 
-// NOTE: searchParams is a *Promise* in Next 15+ / 16
+function minutesFromHm(hm: string | null): number | null {
+  if (!hm) return null;
+  const parts = hm.split(":");
+  if (parts.length < 2) return null;
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+function toHmsOrNull(hm: string | null): string | null {
+  const v = (hm ?? "").trim();
+  if (!v) return null;
+  return v.includes(":") && v.split(":").length === 2 ? `${v}:00` : v;
+}
+
+function getEtYmd(now = new Date()): string {
+  return now.toLocaleDateString("en-CA", {
+    timeZone: ET_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+// NOTE: searchParams is a Promise in Next 16 app router
 export default async function EventEditPage({
   searchParams,
 }: {
@@ -83,49 +142,72 @@ export default async function EventEditPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const id = getIdFromSearchParams(resolvedSearchParams);
-  const { event, errorMessage } = await fetchEvent(id);
+
+  const [{ event, errorMessage }, { artists, errorMessage: artistsErrorMessage }] =
+    await Promise.all([fetchEvent(id), fetchArtists()]);
 
   async function updateEvent(formData: FormData) {
     "use server";
 
-    const id = formData.get("id")?.toString() ?? "";
+    const eventId = formData.get("id")?.toString() ?? "";
+    if (!eventId) throw new Error("Event id is required.");
 
-    const event_date = formData.get("event_date")?.toString() || null;
-    const start_time_raw = formData.get("start_time")?.toString() || "";
-    const end_time_raw = formData.get("end_time")?.toString() || "";
+    const event_date = (formData.get("event_date")?.toString() || "").trim();
+    if (!event_date) {
+      throw new Error("Event date is required.");
+    }
 
-    const start_time = start_time_raw ? `${start_time_raw}:00` : null;
-    const end_time = end_time_raw ? `${end_time_raw}:00` : null;
+    const start_hm = (formData.get("start_time")?.toString() || "").trim(); // "HH:MM"
+    const end_hm = (formData.get("end_time")?.toString() || "").trim(); // "HH:MM"
+
+    // ensure end >= start if both provided (assumes same-day show)
+    const startMin = minutesFromHm(start_hm || null);
+    const endMin = minutesFromHm(end_hm || null);
+    if (startMin !== null && endMin !== null && endMin < startMin) {
+      throw new Error("End time cannot be earlier than start time.");
+    }
+
+    const start_time = toHmsOrNull(start_hm || null); // HH:MM:SS or null
+    const end_time = toHmsOrNull(end_hm || null); // HH:MM:SS or null
 
     const title = formData.get("title")?.toString().trim() || null;
     const genre_override =
       formData.get("genre_override")?.toString().trim() || null;
     const notes = formData.get("notes")?.toString().trim() || null;
 
-    const is_cancelled_value = formData.get("is_cancelled");
-    const is_cancelled = is_cancelled_value === "on";
+    const is_cancelled = formData.get("is_cancelled") === "on";
 
-    if (!id) {
-      throw new Error("Event id is required.");
-    }
+    // ✅ artist link (allow clearing)
+    const artistRaw = (formData.get("artist_id")?.toString() || "").trim();
+    const artist_id = artistRaw.length > 0 ? artistRaw : null;
+
+    const payload = {
+      event_date, // now guaranteed non-empty
+      start_time,
+      end_time,
+      title,
+      genre_override,
+      notes,
+      is_cancelled,
+      artist_id,
+    };
 
     const { error } = await supabaseServer
       .from("artist_events")
-      .update({
-        event_date,
-        start_time,
-        end_time,
-        title,
-        genre_override,
-        notes,
-        is_cancelled,
-      })
-      .eq("id", id);
+      .update(payload)
+      .eq("id", eventId);
 
     if (error) {
       console.error("[Event edit] update error:", error);
       throw error;
     }
+
+    await logDashboardEventServer({
+      action: "update",
+      entity: "events",
+      entityId: eventId,
+      details: payload,
+    });
 
     revalidatePath("/events");
     redirect("/events");
@@ -154,8 +236,7 @@ export default async function EventEditPage({
           </p>
           {errorMessage && (
             <p className="text-xs">
-              Supabase error:{" "}
-              <span className="font-mono">{errorMessage}</span>
+              Supabase error: <span className="font-mono">{errorMessage}</span>
             </p>
           )}
           <a
@@ -175,17 +256,20 @@ export default async function EventEditPage({
       subtitle={event.title || "Untitled event"}
       activeTab="events"
     >
-      <form action={updateEvent} className="space-y-4">
+      <form action={updateEvent} className="space-y-4 max-w-3xl">
         <input type="hidden" name="id" defaultValue={event.id} />
 
-        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
+        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm space-y-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 Event details
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Update the title, date, time, and notes for this show.
+                Update date, time, artist, and description for tonight&apos;s show.
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Timezone: {ET_TZ} (Florida time)
               </p>
             </div>
           </div>
@@ -202,12 +286,43 @@ export default async function EventEditPage({
                 id="event_date"
                 name="event_date"
                 type="date"
-                defaultValue={isoDateToInput(event.event_date)}
+                required
+                defaultValue={isoDateToInput(event.event_date) || getEtYmd()}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            {/* ✅ Artist picker */}
+            <div className="space-y-1.5">
+              <label
+                htmlFor="artist_id"
+                className="text-xs font-medium text-slate-800"
+              >
+                Artist (optional)
+              </label>
+              <select
+                id="artist_id"
+                name="artist_id"
+                defaultValue={event.artist_id ?? ""}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
+              >
+                <option value="">No artist linked</option>
+                {artists.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name ?? "Untitled artist"}
+                  </option>
+                ))}
+              </select>
+
+              {artistsErrorMessage && (
+                <p className="text-[11px] text-rose-500">
+                  Could not load artists list:{" "}
+                  <span className="font-mono">{artistsErrorMessage}</span>
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 md:col-span-2">
               <div className="space-y-1.5">
                 <label
                   htmlFor="start_time"
@@ -223,6 +338,7 @@ export default async function EventEditPage({
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
                 />
               </div>
+
               <div className="space-y-1.5">
                 <label
                   htmlFor="end_time"
@@ -293,12 +409,10 @@ export default async function EventEditPage({
 
         <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
           <div className="space-y-1">
-            <p className="text-xs font-medium text-slate-800">
-              Event status
-            </p>
+            <p className="text-xs font-medium text-slate-800">Event status</p>
             <p className="text-[11px] text-slate-500">
-              Cancelled shows will still appear in history but flagged as
-              cancelled.
+              Cancelled shows stay in history but are hidden from Tonight&apos;s
+              Board and the app.
             </p>
           </div>
           <div className="flex items-center gap-2">
