@@ -8,6 +8,8 @@
 // Sprint 8: Timezone alignment (America/New_York) for ALL "today" date filters + display labels.
 // Sprint 9: Add Events readiness card (Tonight + next 7 days) and bold section titles (no UI redesign).
 // Sprint 10: Remove Quick Actions, make readiness titles bold black, move Sponsors to full-width lower-priority row.
+// Sprint 11: FIX "Untitled artist" in Events readiness by avoiding embedded join; do 2-step artist lookup.
+// Sprint 12: Add Artist button to "Next 7 days" rows (parity with Tonight).
 
 import { redirect } from "next/navigation";
 import { getDashboardSession } from "@/lib/dashboardAuth";
@@ -149,14 +151,13 @@ export default async function DashboardPage() {
     updated_at: string | null;
   };
 
-  // ✅ FIX: Supabase embed often comes back as an array (PostgREST embed)
-  type EmbeddedArtist = {
+  type ArtistMini = {
     id: string;
     name: string | null;
     image_path: string | null;
   };
 
-  type EventCheckRow = {
+  type EventRowRaw = {
     id: string;
     event_date: string;
     start_time: string | null;
@@ -164,13 +165,11 @@ export default async function DashboardPage() {
     is_cancelled: boolean;
     title: string | null;
     artist_id: string | null;
-    artist: EmbeddedArtist[] | null;
   };
 
-  function getArtistObj(e: EventCheckRow): EmbeddedArtist | null {
-    if (!e.artist) return null;
-    return Array.isArray(e.artist) ? e.artist[0] ?? null : null;
-  }
+  type EventCheckRow = EventRowRaw & {
+    artist: ArtistMini | null;
+  };
 
   function formatPhone(phone?: string | null): string {
     if (!phone) return "Unknown";
@@ -202,7 +201,7 @@ export default async function DashboardPage() {
     });
   }
 
-  // ✅ FIX: today must be Florida time, not UTC/local-server default
+  // ✅ today must be Florida time, not UTC/local-server default
   const today = getEtYmd();
 
   // -----------------------------
@@ -330,27 +329,14 @@ export default async function DashboardPage() {
     }));
 
   // -----------------------------
-  // 5) Events readiness (Tonight + next 7 days)
+  // 5) Events readiness (Tonight + next 7 days) — FIXED (no embed)
   // -----------------------------
   const weekEnd = addDaysEtYmd(today, 7);
 
   const { data: upcomingEventsData, error: eventsError } = await supabase
     .from("artist_events")
     .select(
-      `
-      id,
-      event_date,
-      start_time,
-      end_time,
-      is_cancelled,
-      title,
-      artist_id,
-      artist:artists (
-        id,
-        name,
-        image_path
-      )
-    `
+      "id, event_date, start_time, end_time, is_cancelled, title, artist_id"
     )
     .eq("is_cancelled", false)
     .gte("event_date", today)
@@ -362,8 +348,33 @@ export default async function DashboardPage() {
     console.error("[dashboard] events readiness error:", eventsError);
   }
 
-  const upcomingEvents =
-    (upcomingEventsData ?? []) as unknown as EventCheckRow[];
+  const eventsRaw = (upcomingEventsData ?? []) as EventRowRaw[];
+
+  const artistIds = Array.from(
+    new Set(eventsRaw.map((e) => e.artist_id).filter(Boolean))
+  ) as string[];
+
+  let artistsById = new Map<string, ArtistMini>();
+  if (artistIds.length > 0) {
+    const { data: artistsMini, error: artistsMiniError } = await supabase
+      .from("artists")
+      .select("id, name, image_path")
+      .in("id", artistIds);
+
+    if (artistsMiniError) {
+      console.error("[dashboard] artists mini lookup error:", artistsMiniError);
+    }
+
+    for (const a of (artistsMini ?? []) as ArtistMini[]) {
+      artistsById.set(a.id, a);
+    }
+  }
+
+  const upcomingEvents: EventCheckRow[] = eventsRaw.map((e) => ({
+    ...e,
+    artist: e.artist_id ? artistsById.get(e.artist_id) ?? null : null,
+  }));
+
   const tonightEvents = upcomingEvents.filter((e) => e.event_date === today);
   const nextWeekEvents = upcomingEvents.filter((e) => e.event_date !== today);
 
@@ -371,8 +382,7 @@ export default async function DashboardPage() {
   const eventsMissingTime = upcomingEvents.filter((e) => !e.start_time).length;
   const eventsMissingArtistImage = upcomingEvents.filter((e) => {
     if (!e.artist_id) return false;
-    const artistObj = getArtistObj(e);
-    return !artistObj?.image_path;
+    return !e.artist?.image_path;
   }).length;
 
   // -----------------------------
@@ -752,11 +762,12 @@ export default async function DashboardPage() {
                 ) : (
                   <div className="mt-3 space-y-2">
                     {tonightEvents.map((e) => {
-                      const artistObj = getArtistObj(e);
                       const artistName =
-                        artistObj?.name?.trim() ||
-                        (e.artist_id ? "Untitled artist" : "No artist linked");
-                      const hasImage = !!artistObj?.image_path;
+                        e.artist?.name?.trim() ||
+                        (e.artist_id ? "Artist not found" : "No artist linked");
+
+                      const hasImage = !!e.artist?.image_path;
+
                       const timeLabel = formatTimeRangeEt(
                         e.start_time,
                         e.end_time
@@ -779,10 +790,15 @@ export default async function DashboardPage() {
                             </p>
                             <p className="mt-0.5 text-[11px] text-slate-500">
                               {!e.artist_id ? "⚠️ No artist linked" : null}
+                              {e.artist_id && !e.artist
+                                ? " · ⚠️ Artist not found"
+                                : null}
                               {e.artist_id && !hasImage
                                 ? " · ⚠️ Missing artist image"
                                 : null}
-                              {!e.start_time ? " · ⚠️ Missing start time" : null}
+                              {!e.start_time
+                                ? " · ⚠️ Missing start time"
+                                : null}
                               {e.title ? (
                                 <span className="ml-2 text-slate-400">
                                   ({e.title})
@@ -830,11 +846,12 @@ export default async function DashboardPage() {
                 ) : (
                   <div className="mt-3 space-y-2">
                     {nextWeekEvents.slice(0, 8).map((e) => {
-                      const artistObj = getArtistObj(e);
                       const artistName =
-                        artistObj?.name?.trim() ||
-                        (e.artist_id ? "Untitled artist" : "No artist linked");
-                      const hasImage = !!artistObj?.image_path;
+                        e.artist?.name?.trim() ||
+                        (e.artist_id ? "Artist not found" : "No artist linked");
+
+                      const hasImage = !!e.artist?.image_path;
+
                       const timeLabel = formatTimeRangeEt(
                         e.start_time,
                         e.end_time
@@ -861,19 +878,35 @@ export default async function DashboardPage() {
                             </p>
                             <p className="mt-0.5 text-[11px] text-slate-500">
                               {!e.artist_id ? "⚠️ No artist linked" : null}
+                              {e.artist_id && !e.artist
+                                ? " · ⚠️ Artist not found"
+                                : null}
                               {e.artist_id && !hasImage
                                 ? " · ⚠️ Missing artist image"
                                 : null}
-                              {!e.start_time ? " · ⚠️ Missing start time" : null}
+                              {!e.start_time
+                                ? " · ⚠️ Missing start time"
+                                : null}
                             </p>
                           </div>
 
-                          <Link
-                            href={`/events/edit?id=${e.id}`}
-                            className="inline-flex flex-shrink-0 items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
-                          >
-                            Edit
-                          </Link>
+                          {/* ✅ Sprint 12: Add Artist button (parity with Tonight) */}
+                          <div className="flex flex-shrink-0 items-center gap-2">
+                            {e.artist_id && (
+                              <Link
+                                href={`/artists/edit?id=${e.artist_id}`}
+                                className="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
+                              >
+                                Artist
+                              </Link>
+                            )}
+                            <Link
+                              href={`/events/edit?id=${e.id}`}
+                              className="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-amber-100"
+                            >
+                              Edit
+                            </Link>
+                          </div>
                         </div>
                       );
                     })}
