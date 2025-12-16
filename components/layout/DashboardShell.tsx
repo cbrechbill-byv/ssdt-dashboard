@@ -2,7 +2,7 @@
 // Path: /components/layout/DashboardShell.tsx
 // Purpose: Top-level dashboard shell (header, auth status, primary nav pills, and optional dropdown submenus).
 //
-// Change: For tabs that have submenus (Rewards, Notifications), the top pill is now a PLACEHOLDER ONLY.
+// Change: For tabs that have submenus (Rewards, Notifications, Admin Users), the top pill is now a PLACEHOLDER ONLY.
 //         The parent page link is included as the first item in the dropdown so users discover it.
 
 "use client";
@@ -25,7 +25,8 @@ type DashboardTab =
   | "feedback"
   | "notifications"
   | "activity"
-  | "admin-users";
+  | "admin-users"
+  | "help";
 
 interface DashboardShellProps {
   title: string;
@@ -58,8 +59,11 @@ const tabsBase: { key: DashboardTab; label: string; href: string }[] = [
 
   { key: "activity", label: "Activity log", href: "/activity-log" },
 
-  // Admin-only
-  { key: "admin-users", label: "Admin Users", href: "/admin-users" },
+  // Admin-only group container (placeholder)
+  { key: "admin-users", label: "Admin", href: "/admin-users" },
+
+  // Help is accessed via Admin dropdown (also reachable directly)
+  { key: "help", label: "Help", href: "/help" },
 ];
 
 type SubMenuItem = {
@@ -70,7 +74,6 @@ type SubMenuItem = {
 
 const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
   rewards: [
-    // First item is the parent page, so users discover it.
     {
       label: "Rewards",
       href: "/rewards",
@@ -93,7 +96,6 @@ const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
     },
   ],
   notifications: [
-    // First item is the parent page, so users discover it.
     {
       label: "Notifications",
       href: "/notifications",
@@ -103,6 +105,20 @@ const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
       label: "Analytics",
       href: "/notifications/analytics",
       description: "Delivery stats and platform breakdown.",
+    },
+  ],
+
+  // Admin pill is a placeholder; dropdown contains Admin Users + Help
+  "admin-users": [
+    {
+      label: "Admin Users",
+      href: "/admin-users",
+      description: "Manage dashboard access and roles.",
+    },
+    {
+      label: "Help",
+      href: "/help",
+      description: "Dashboard user manual and how-to guides.",
     },
   ],
 };
@@ -124,12 +140,25 @@ export default function DashboardShell({
   const [openMenu, setOpenMenu] = React.useState<DashboardTab | null>(null);
 
   const tabs = React.useMemo(() => {
-    // Only admins should see Admin Users
+    // Only admins should see Admin Users and Help (grouped under Admin)
     if (role === "admin") return tabsBase;
-    return tabsBase.filter((t) => t.key !== "admin-users");
+
+    // Staff should not see admin tools or help (per your request grouping)
+    // If you want Help visible to staff too, remove "help" from this filter.
+    return tabsBase.filter((t) => t.key !== "admin-users" && t.key !== "help");
   }, [role]);
 
   function isTabActive(tab: (typeof tabs)[number]) {
+    // Make Admin pill appear active when on /admin-users OR /help
+    if (tab.key === "admin-users") {
+      return (
+        activeTab === "admin-users" ||
+        activeTab === "help" ||
+        (pathname ?? "").startsWith("/admin-users") ||
+        (pathname ?? "").startsWith("/help")
+      );
+    }
+
     return activeTab === tab.key || (pathname ?? "").startsWith(tab.href);
   }
 
@@ -214,6 +243,9 @@ export default function DashboardShell({
           {/* Navigation pills with dropdown submenus */}
           <nav className="flex flex-wrap gap-1.5 text-xs">
             {tabs.map((tab) => {
+              // We do NOT show a separate "Help" pill; Help is inside Admin dropdown.
+              if (tab.key === "help") return null;
+
               const isActive = isTabActive(tab);
               const menuItems = subMenus[tab.key];
               const hasMenu = !!menuItems && menuItems.length > 0;
