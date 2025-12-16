@@ -1,9 +1,6 @@
 // components/layout/DashboardShell.tsx
+// Path: /components/layout/DashboardShell.tsx
 // Purpose: Top-level dashboard shell (header, auth status, primary nav pills, and optional dropdown submenus).
-// Notes (Nav fix):
-// - Sponsors tab correctly routes to /photo-booth/sponsors (app/photo-booth/sponsors/page.tsx).
-// - Photo booth tab routes to /photo-booth/frames (app/photo-booth/frames/page.tsx).
-// - Dashboard submenu "Tonight board" removed (Tonight should be surfaced inside /dashboard).
 
 "use client";
 
@@ -24,7 +21,8 @@ type DashboardTab =
   | "rewards"
   | "feedback"
   | "notifications"
-  | "activity";
+  | "activity"
+  | "admin-users";
 
 interface DashboardShellProps {
   title: string;
@@ -33,7 +31,7 @@ interface DashboardShellProps {
   children: React.ReactNode;
 }
 
-const tabs: { key: DashboardTab; label: string; href: string }[] = [
+const tabsBase: { key: DashboardTab; label: string; href: string }[] = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
   { key: "artists", label: "Artists", href: "/artists" },
   { key: "events", label: "Events", href: "/events" },
@@ -50,6 +48,9 @@ const tabs: { key: DashboardTab; label: string; href: string }[] = [
   { key: "feedback", label: "Feedback", href: "/feedback" },
   { key: "notifications", label: "Notifications", href: "/notifications" },
   { key: "activity", label: "Activity log", href: "/activity-log" },
+
+  // Admin-only
+  { key: "admin-users", label: "Admin Users", href: "/admin-users" },
 ];
 
 type SubMenuItem = {
@@ -59,9 +60,6 @@ type SubMenuItem = {
 };
 
 const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
-  // Removed: dashboard submenu "Tonight board"
-  // Tonight should be surfaced inside /dashboard and optionally linked via Quick Actions.
-
   rewards: [
     {
       label: "Overview",
@@ -99,6 +97,12 @@ export default function DashboardShell({
   const { user, loading, role } = useDashboardUser();
 
   const [openMenu, setOpenMenu] = React.useState<DashboardTab | null>(null);
+
+  const tabs = React.useMemo(() => {
+    // Only admins should see Admin Users
+    if (role === "admin") return tabsBase;
+    return tabsBase.filter((t) => t.key !== "admin-users");
+  }, [role]);
 
   function isTabActive(tab: (typeof tabs)[number]) {
     return activeTab === tab.key || (pathname ?? "").startsWith(tab.href);

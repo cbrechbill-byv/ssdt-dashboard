@@ -1,6 +1,10 @@
 // app/dashboard/RedemptionHealth.tsx
 // Path: /dashboard (component used on /dashboard)
-// Purpose: Redemption Health card (EST day), showing today + last 7 days stats + data quality flags.
+// Purpose: Redemption Health card (ET day), showing today + last 7 days stats + data quality flags.
+// Fixes:
+// - Correct ET midnight → UTC conversion (DST-safe) so “today” is truly today in America/New_York.
+// - Correct 7-day window end boundary.
+// - Fix scans query ordering by selecting scanned_at.
 
 import React from "react";
 import Link from "next/link";
@@ -21,13 +25,27 @@ type RedemptionRow = {
 type ScanRow = {
   id: string;
   user_id: string | null;
-  scan_date: string; // YYYY-MM-DD
+  scan_date: string; // YYYY-MM-DD (ET)
+  scanned_at: string | null;
   source: string | null;
   points: number | null;
 };
 
 function getEasternYMD(d: Date) {
-  return d.toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d); // YYYY-MM-DD
+}
+
+function addDaysET(ymd: string, days: number) {
+  // Use UTC noon to avoid DST edge weirdness when formatting back to ET date.
+  const [y, m, d] = ymd.split("-").map((x) => Number(x));
+  const base = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  base.setUTCDate(base.getUTCDate() + days);
+  return getEasternYMD(base);
 }
 
 function ymdToMdy(ymd: string | null): string {
@@ -46,7 +64,7 @@ function estDayStartIso(ymd: string) {
 function formatShortEt(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  // MM-DD-YYYY h:mm AM/PM
+  // MM/DD/YYYY h:mm AM/PM in ET
   return d.toLocaleString("en-US", {
     timeZone: "America/New_York",
     month: "2-digit",
@@ -57,55 +75,63 @@ function formatShortEt(iso: string) {
   });
 }
 
+/**
+ * Convert an ET calendar date (YYYY-MM-DD) at 00:00 ET to a UTC ISO timestamp.
+ * DST-safe by reading the actual GMT offset for America/New_York at that moment.
+ */
+function etMidnightToUtcIso(ymd: string) {
+  const [y, m, d] = ymd.split("-").map((x) => Number(x));
+
+  // We create a UTC date at 00:00 *on that calendar day* just to ask Intl what NY's offset is.
+  const probeUtc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
+
+  // Read the NY offset like "GMT-5" / "GMT-4" (Node supports shortOffset)
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    timeZoneName: "shortOffset",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(probeUtc);
+
+  const tzName = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT-5";
+
+  // Parse "GMT-5" or "GMT-4" or "GMT-05:00" / "GMT-04:00"
+  // Convert to minutes offset from UTC (NY is negative).
+  let offsetMinutes = -5 * 60;
+  const m1 = tzName.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/i);
+  if (m1) {
+    const sign = m1[1] === "-" ? -1 : 1;
+    const hours = Number(m1[2] ?? 0);
+    const mins = Number(m1[3] ?? 0);
+    offsetMinutes = sign * (hours * 60 + mins);
+  }
+
+  // ET midnight in UTC = UTC midnight - (NY offset)
+  // Example: offsetMinutes = -300 (GMT-5) => UTC = 00:00 - (-300min) = 05:00Z
+  const utcMillis = Date.UTC(y, m - 1, d, 0, 0, 0) - offsetMinutes * 60 * 1000;
+  return new Date(utcMillis).toISOString();
+}
+
 export default async function RedemptionHealth() {
   const supabase = supabaseServer;
 
   const now = new Date();
   const todayET = getEasternYMD(now);
 
-  const sevenDaysAgo = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000); // inclusive window: today + previous 6 days
-  const windowStartET = getEasternYMD(sevenDaysAgo);
+  // inclusive window: today + previous 6 days
+  const windowStartET = addDaysET(todayET, -6);
 
-  // Build an ET-based time window for redemptions using “local midnight ET” boundaries.
-  // For Supabase filtering, we use >= dayStart AND < nextDayStart based on ET date strings.
-  function etMidnightToUtcIso(ymd: string) {
-    const [y, m, d] = ymd.split("-").map((x) => Number(x));
-    const approxUtc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
-    const etOffsetMinutes = (() => {
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: "America/New_York",
-        hour12: false,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).formatToParts(approxUtc);
-
-      const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-      const dispY = Number(get("year"));
-      const dispM = Number(get("month"));
-      const dispD = Number(get("day"));
-      const dispH = Number(get("hour"));
-      const dispMin = Number(get("minute"));
-      const displayedAsMinutes =
-        Date.UTC(dispY, dispM - 1, dispD, dispH, dispMin, 0) -
-        Date.UTC(dispY, dispM - 1, dispD, 0, 0, 0);
-
-      return displayedAsMinutes / 60000;
-    })();
-
-    const corrected = new Date(approxUtc.getTime() - etOffsetMinutes * 60 * 1000);
-    return corrected.toISOString();
-  }
-
+  // Correct ET boundaries
   const todayStartUtcIso = etMidnightToUtcIso(todayET);
-  const tomorrowET = getEasternYMD(new Date(now.getTime() + 24 * 60 * 60 * 1000));
+  const tomorrowET = addDaysET(todayET, 1);
   const tomorrowStartUtcIso = etMidnightToUtcIso(tomorrowET);
 
   const windowStartUtcIso = etMidnightToUtcIso(windowStartET);
-  const afterWindowEndET = getEasternYMD(new Date(now.getTime() + 24 * 60 * 60 * 1000));
-  const windowEndUtcIso = etMidnightToUtcIso(afterWindowEndET);
+  const windowEndUtcIso = tomorrowStartUtcIso; // end is start of tomorrow ET (exclusive)
 
   const [
     { data: todaysRedemptions, error: todaysRedemptionsError },
@@ -190,12 +216,13 @@ export default async function RedemptionHealth() {
     const name = (r.reward_name ?? "").trim() || "Unknown reward";
     rewardCounts.set(name, (rewardCounts.get(name) ?? 0) + 1);
   }
-  const topReward = [...rewardCounts.entries()].sort((a, b) => b[1] - a[1])[0] ?? null;
+  const topReward =
+    [...rewardCounts.entries()].sort((a, b) => b[1] - a[1])[0] ?? null;
 
   // --- “Orphan” redemptions today (no scan record for user today) ---
   const todayScansRes = await supabase
     .from("rewards_scans")
-    .select("id, user_id, scan_date, source, points")
+    .select("id, user_id, scan_date, scanned_at, source, points")
     .eq("scan_date", todayET)
     .order("scanned_at", { ascending: false });
 
@@ -211,14 +238,15 @@ export default async function RedemptionHealth() {
     if (r.user_id && !scannedUsersToday.has(r.user_id)) orphanRedemptionsToday += 1;
   }
 
-  const hasIssuesToday = missingStaffToday + missingRewardNameToday + invalidPointsToday > 0;
+  const hasIssuesToday =
+    missingStaffToday + missingRewardNameToday + invalidPointsToday > 0;
 
   return (
     <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">
-            Redemption health (EST)
+            Redemption health (ET)
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {ymdToMdy(todayET)} · Tracks reward redemptions and data completeness
