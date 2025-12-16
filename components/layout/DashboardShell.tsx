@@ -1,6 +1,9 @@
 // components/layout/DashboardShell.tsx
 // Path: /components/layout/DashboardShell.tsx
 // Purpose: Top-level dashboard shell (header, auth status, primary nav pills, and optional dropdown submenus).
+//
+// Change: For tabs that have submenus (Rewards, Notifications), the top pill is now a PLACEHOLDER ONLY.
+//         The parent page link is included as the first item in the dropdown so users discover it.
 
 "use client";
 
@@ -44,9 +47,15 @@ const tabsBase: { key: DashboardTab; label: string; href: string }[] = [
   { key: "sponsors", label: "Sponsors", href: "/photo-booth/sponsors" },
 
   { key: "bar-bites", label: "Bar & Bites", href: "/menu/bar-bites" },
+
+  // Parent pages exist, but the NAV pill should behave as a placeholder when a submenu exists.
   { key: "rewards", label: "Rewards", href: "/rewards" },
+
   { key: "feedback", label: "Feedback", href: "/feedback" },
+
+  // Parent pages exist, but the NAV pill should behave as a placeholder when a submenu exists.
   { key: "notifications", label: "Notifications", href: "/notifications" },
+
   { key: "activity", label: "Activity log", href: "/activity-log" },
 
   // Admin-only
@@ -61,6 +70,12 @@ type SubMenuItem = {
 
 const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
   rewards: [
+    // First item is the parent page, so users discover it.
+    {
+      label: "Rewards",
+      href: "/rewards",
+      description: "Main rewards dashboard.",
+    },
     {
       label: "Overview",
       href: "/rewards/overview",
@@ -78,6 +93,12 @@ const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
     },
   ],
   notifications: [
+    // First item is the parent page, so users discover it.
+    {
+      label: "Notifications",
+      href: "/notifications",
+      description: "Send and manage notifications.",
+    },
     {
       label: "Analytics",
       href: "/notifications/analytics",
@@ -85,6 +106,10 @@ const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
     },
   ],
 };
+
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
 
 export default function DashboardShell({
   title,
@@ -118,16 +143,8 @@ export default function DashboardShell({
     }
   }
 
-  function handleMenuTabClick(tabKey: DashboardTab, href: string) {
-    // Mobile + click behavior:
-    // - First click: open submenu
-    // - Second click (while open): navigate to main tab page
-    if (openMenu === tabKey) {
-      setOpenMenu(null);
-      router.push(href);
-    } else {
-      setOpenMenu(tabKey);
-    }
+  function openOrToggleMenu(tabKey: DashboardTab) {
+    setOpenMenu((prev) => (prev === tabKey ? null : tabKey));
   }
 
   return (
@@ -223,7 +240,7 @@ export default function DashboardShell({
                 );
               }
 
-              // Tabs with submenu: traditional dropdown
+              // Tabs WITH submenu: pill is a placeholder ONLY (no navigation)
               const isMenuOpen = openMenu === tab.key;
 
               return (
@@ -231,7 +248,7 @@ export default function DashboardShell({
                   <button
                     type="button"
                     onMouseEnter={() => setOpenMenu(tab.key)}
-                    onClick={() => handleMenuTabClick(tab.key, tab.href)}
+                    onClick={() => openOrToggleMenu(tab.key)}
                     className={`${baseClasses} ${
                       isActive ? activeClasses : inactiveClasses
                     } flex items-center gap-1`}
@@ -253,7 +270,9 @@ export default function DashboardShell({
                           key={item.href}
                           href={item.href}
                           onClick={() => setOpenMenu(null)}
-                          className="block px-3 py-1.5 text-[11px] text-slate-700 hover:bg-amber-50"
+                          className={cn(
+                            "block px-3 py-1.5 text-[11px] text-slate-700 hover:bg-amber-50"
+                          )}
                         >
                           <div className="font-medium">{item.label}</div>
                           {item.description && (
