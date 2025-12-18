@@ -58,6 +58,11 @@ const LOGO_SIZE_IN_APP = 64;
 const MIN_LOGO_PX = LOGO_SIZE_IN_APP * 3; // 192
 const RECOMMENDED_LOGO_PX = 256;
 
+// ✅ New: normalized upload output (no UI change)
+const OUTPUT_PNG_SIZE = 512;
+// How much of the square the logo should occupy (adds breathing room; prevents tiny-looking wide/tall logos)
+const FIT_PADDING = 0.88;
+
 function getLogoPublicUrl(logo_path: string | null | undefined) {
   if (!logo_path) return null;
   const { data } = supabase.storage.from(SPONSOR_BUCKET).getPublicUrl(logo_path);
@@ -101,6 +106,73 @@ function normalizeSponsors(list: Sponsor[]): Sponsor[] {
     ...s,
     sort_order: idx,
   }));
+}
+
+// ✅ New: process logo into a 512x512 transparent PNG (aspect-fit, centered, no distortion)
+async function processLogoToSquarePng(
+  originalFile: File,
+  size = OUTPUT_PNG_SIZE,
+  padding = FIT_PADDING
+): Promise<File> {
+  const url = URL.createObjectURL(originalFile);
+  try {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Failed to load image for processing"));
+      img.src = url;
+    });
+
+    const srcW = img.naturalWidth || 0;
+    const srcH = img.naturalHeight || 0;
+    if (!srcW || !srcH) throw new Error("Invalid image dimensions.");
+
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas not supported");
+
+    // transparent background
+    ctx.clearRect(0, 0, size, size);
+
+    // fit inside padded box
+    const maxW = size * padding;
+    const maxH = size * padding;
+    const scale = Math.min(maxW / srcW, maxH / srcH);
+
+    const drawW = Math.round(srcW * scale);
+    const drawH = Math.round(srcH * scale);
+    const dx = Math.round((size - drawW) / 2);
+    const dy = Math.round((size - drawH) / 2);
+
+    ctx.imageSmoothingEnabled = true;
+    // @ts-ignore
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, dx, dy, drawW, drawH);
+
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("Failed to create PNG blob"))),
+        "image/png",
+        1.0
+      );
+    });
+
+    const base = (originalFile.name || "logo")
+      .replace(/\.[^/.]+$/, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .toLowerCase();
+
+    const fileName = `${base}-${Date.now()}-512.png`;
+    return new File([blob], fileName, { type: "image/png" });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export default function SponsorsPage() {
@@ -245,22 +317,17 @@ export default function SponsorsPage() {
   ): Promise<string | null | undefined> {
     if (!file) return form.logo_path ?? null;
 
-    const originalName = file.name || "logo.png";
-    const ext = originalName.includes(".")
-      ? originalName.split(".").pop() || "png"
-      : "png";
-    const base = originalName
-      .replace(/\.[^/.]+$/, "")
-      .trim()
-      .replace(/\s+/g, "-")
-      .toLowerCase();
+    // ✅ Process into a consistent 512x512 transparent PNG (no distortion)
+    const processed = await processLogoToSquarePng(file, OUTPUT_PNG_SIZE, FIT_PADDING);
 
-    const fileName = `${base}-${Date.now()}.${ext}`;
+    // Use processed name (always .png)
+    const fileName = processed.name;
 
     const { error: uploadError } = await supabase.storage
       .from(SPONSOR_BUCKET)
-      .upload(fileName, file, {
+      .upload(fileName, processed, {
         upsert: true,
+        contentType: "image/png",
       });
 
     if (uploadError) {
@@ -336,6 +403,8 @@ export default function SponsorsPage() {
           start_date: form.start_date || null,
           end_date: form.end_date || null,
           logo_path: logo_path ?? null,
+          // ✅ Optional detail breadcrumb for audits
+          logo_normalized: form.logoFile ? { size: OUTPUT_PNG_SIZE, padding: FIT_PADDING } : null,
         },
       });
 
