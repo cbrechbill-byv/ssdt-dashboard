@@ -553,10 +553,10 @@ export default function PhotoBoothFramesPage() {
           .eq("id", frame.id);
       }
 
+      // ✅ FIX: do not pass null for entityId (type expects string | undefined)
       void logDashboardEvent({
         action: "update",
         entity: "photo_booth_frames",
-        entityId: null,
         details: {
           bulkReprocess: true,
           count: withPaths.length,
