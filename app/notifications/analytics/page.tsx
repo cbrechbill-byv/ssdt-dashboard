@@ -2,13 +2,27 @@
 // Path: /notifications/analytics
 // Sugarshack Downtown - Push Notification & Device Analytics
 // Uses vip_devices to show device counts, platform breakdown, and recent activity.
+//
+// Update (minimal UI change):
+// - VIP name is pulled from rewards_users by phone match (vip_devices.phone -> rewards_users.phone)
+// - VIP name is clickable -> /rewards/vips/{user_id}/insights
+// - Phone displays as 10 digits (no +1)
+// - Phone is also clickable -> /rewards/vips/{user_id}/insights
 
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { getDashboardSession } from "@/lib/dashboardAuth";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
+
+type VipUserMini = {
+  user_id: string;
+  phone: string | null;
+  full_name?: string | null;
+  display_name?: string | null;
+} | null;
 
 type DeviceRow = {
   id: string;
@@ -18,6 +32,35 @@ type DeviceRow = {
   last_seen_at: string;
   created_at: string | null;
 };
+
+function digitsOnly(input: string) {
+  return (input || "").replace(/\D/g, "");
+}
+
+function phone10(input: string | null): string | null {
+  if (!input) return null;
+  const d = digitsOnly(input);
+  // +1########## or 1##########
+  if (d.length === 11 && d.startsWith("1")) return d.slice(1);
+  if (d.length === 10) return d;
+  // best-effort (last 10 digits)
+  if (d.length > 10) return d.slice(-10);
+  return null;
+}
+
+function expandPhoneVariants(raw: string): string[] {
+  const v = new Set<string>();
+  v.add(raw);
+
+  const d10 = phone10(raw);
+  if (d10) {
+    v.add(d10); // ##########
+    v.add("1" + d10); // 1##########
+    v.add("+1" + d10); // +1##########
+  }
+
+  return Array.from(v);
+}
 
 function formatRelativeTime(iso: string | null): string {
   if (!iso) return "Unknown";
@@ -52,6 +95,13 @@ function formatPlatform(raw: string | null): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function formatVipName(vip: VipUserMini): string {
+  if (!vip) return "Unknown";
+  const full =
+    (vip.full_name ?? "").trim() || (vip.display_name ?? "").trim();
+  return full || "Unknown";
+}
+
 export default async function NotificationAnalyticsPage() {
   const session = await getDashboardSession();
   if (!session) {
@@ -63,7 +113,16 @@ export default async function NotificationAnalyticsPage() {
   // --- 1) Load all devices (for totals + platform breakdown) -------------
   const { data: allDevicesRaw, error: allDevicesError } = await supabase
     .from("vip_devices")
-    .select("id, platform, phone, expo_push_token, last_seen_at, created_at");
+    .select(
+      `
+      id,
+      platform,
+      phone,
+      expo_push_token,
+      last_seen_at,
+      created_at
+    `
+    );
 
   if (allDevicesError) {
     console.error(
@@ -74,6 +133,42 @@ export default async function NotificationAnalyticsPage() {
 
   const allDevices: DeviceRow[] = (allDevicesRaw ?? []) as DeviceRow[];
   const total = allDevices.length;
+
+  // --- 1b) Build VIP lookup by phone (rewards_users) ---------------------
+  const phoneVariantsSet = new Set<string>();
+  for (const d of allDevices) {
+    if (d.phone) {
+      expandPhoneVariants(d.phone).forEach((p) => phoneVariantsSet.add(p));
+    }
+  }
+
+  const phoneVariants = Array.from(phoneVariantsSet);
+
+  const { data: usersRaw, error: usersErr } = phoneVariants.length
+    ? await supabase
+        .from("rewards_users")
+        .select("user_id, phone, full_name, display_name")
+        .in("phone", phoneVariants)
+    : { data: [], error: null as any };
+
+  if (usersErr) {
+    console.error("[notifications analytics] rewards_users lookup error", usersErr);
+  }
+
+  // Map by normalized 10-digit phone
+  const usersByPhone10 = new Map<string, Exclude<VipUserMini, null>>();
+  for (const u of (usersRaw ?? []) as any[]) {
+    const p10 = phone10(u.phone ?? null);
+    if (!p10) continue;
+    if (!usersByPhone10.has(p10)) {
+      usersByPhone10.set(p10, {
+        user_id: u.user_id,
+        phone: u.phone ?? null,
+        full_name: u.full_name ?? null,
+        display_name: u.display_name ?? null,
+      });
+    }
+  }
 
   // Platform counts (JS aggregation instead of SQL GROUP BY)
   let iosCount = 0;
@@ -90,7 +185,6 @@ export default async function NotificationAnalyticsPage() {
   // --- 2) Recent activity (7 days) --------------------------------------
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const sevenDaysAgoIso = sevenDaysAgo.toISOString();
 
   const activeLast7Days = allDevices.filter((d) => {
     if (!d.last_seen_at) return false;
@@ -216,6 +310,10 @@ export default async function NotificationAnalyticsPage() {
                 <thead>
                   <tr className="border-b border-slate-100 text-[11px] uppercase tracking-[0.12em] text-slate-500">
                     <th className="py-2 pr-3 text-left font-semibold">
+                      VIP name
+                    </th>
+
+                    <th className="py-2 pr-3 text-left font-semibold">
                       Phone
                     </th>
                     <th className="py-2 pr-3 text-left font-semibold">
@@ -235,16 +333,52 @@ export default async function NotificationAnalyticsPage() {
                 <tbody>
                   {recentDevices.map((d) => {
                     const platformLabel = formatPlatform(d.platform);
-                    const phoneLabel = d.phone?.trim() || "Unknown";
+
+                    const p10 = phone10(d.phone);
+                    const vip = p10 ? usersByPhone10.get(p10) ?? null : null;
+
+                    const vipName = formatVipName(vip);
+                    const phoneLabel = p10 || "Unknown";
+
+                    const insightsHref = vip?.user_id
+                      ? `/rewards/vips/${vip.user_id}/insights`
+                      : null;
 
                     return (
                       <tr
                         key={d.id}
                         className="border-b border-slate-50 last:border-0 align-top"
                       >
+                        {/* VIP NAME (clickable if matched) */}
                         <td className="py-2 pr-3 text-[11px] text-slate-800 whitespace-nowrap">
-                          {phoneLabel}
+                          {insightsHref ? (
+                            <Link
+                              href={insightsHref}
+                              className="hover:underline"
+                              title="Open VIP user details"
+                            >
+                              {vipName}
+                            </Link>
+                          ) : (
+                            vipName
+                          )}
                         </td>
+
+                        {/* PHONE (10 digits only, clickable if matched) */}
+                        <td className="py-2 pr-3 text-[11px] text-slate-800 whitespace-nowrap">
+                          {insightsHref && p10 ? (
+                            <Link
+                              href={insightsHref}
+                              className="hover:underline"
+                              title="Open VIP user details"
+                            >
+                              {phoneLabel}
+                            </Link>
+                          ) : (
+                            phoneLabel
+                          )}
+                        </td>
+
                         <td className="py-2 pr-3 text-[11px] text-slate-800 whitespace-nowrap">
                           {platformLabel}
                         </td>
