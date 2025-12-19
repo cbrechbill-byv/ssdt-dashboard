@@ -6,23 +6,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-const FROM =
-  process.env.DASHBOARD_FROM_EMAIL ||
-  "no-reply@ssdtapp.byvenuecreative.com";
-
-const PUBLIC_URL =
-  process.env.DASHBOARD_PUBLIC_URL ||
-  "https://ssdtapp.byvenuecreative.com";
-
-const LOGO_URL =
-  process.env.DASHBOARD_LOGO_URL ||
-  `${PUBLIC_URL}/ssdt-logo.png`;
-
-const FAN_WALL_WEBHOOK_SECRET =
-  process.env.FAN_WALL_WEBHOOK_SECRET;
-
 const ADMIN_EMAIL = "colin@byvenuecreative.com";
 const FAN_WALL_BUCKET = "fan-wall-photos";
+
+function requireEnv(name: string, fallback?: string) {
+  const v = process.env[name];
+  if (v && v.trim()) return v.trim();
+  if (fallback !== undefined) return fallback;
+  throw new Error(`Missing required env: ${name}`);
+}
 
 function getResendClient(): Resend | null {
   const key = process.env.RESEND_API_KEY;
@@ -44,59 +36,86 @@ function escapeHtml(input: string) {
     .replaceAll("'", "&#039;");
 }
 
+function readWebhookSecret(req: NextRequest) {
+  // Support BOTH names to prevent mismatches between SQL + test scripts.
+  // Next headers are case-insensitive.
+  return (
+    req.headers.get("x-fan-wall-webhook-secret") ||
+    req.headers.get("x-webhook-secret") ||
+    ""
+  ).trim();
+}
+
 export async function POST(req: NextRequest) {
   try {
     /* -----------------------------------------------------------
        Security: webhook secret
     ------------------------------------------------------------ */
-    const secret = req.headers.get("x-webhook-secret");
-    if (!FAN_WALL_WEBHOOK_SECRET || secret !== FAN_WALL_WEBHOOK_SECRET) {
-      console.error("[fan-wall pending] unauthorized webhook call", {
-        hasSecret: !!secret,
-      });
-      return NextResponse.json({ ok: false }, { status: 401 });
+    const expected = requireEnv("FAN_WALL_WEBHOOK_SECRET");
+    const received = readWebhookSecret(req);
+
+    if (!received) {
+      console.error("[fan-wall pending] unauthorized webhook call", { hasSecret: false });
+      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    }
+
+    if (received !== expected) {
+      console.error("[fan-wall pending] unauthorized webhook call", { hasSecret: true });
+      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }
 
     /* -----------------------------------------------------------
-       Parse body
+       Parse body (support both shapes)
     ------------------------------------------------------------ */
     const body = (await req.json().catch(() => null)) as
-      | { post_id?: string }
+      | { post_id?: string; record?: { id?: string } }
       | null;
 
-    const postId = body?.post_id;
+    const postId = (body?.post_id || body?.record?.id || "").trim();
     if (!postId) {
-      return NextResponse.json(
-        { ok: false, error: "Missing post_id" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Missing post_id" }, { status: 400 });
     }
 
     /* -----------------------------------------------------------
-       Fetch fan wall post
+       Fetch fan wall post (only email if pending + visible)
     ------------------------------------------------------------ */
     const { data: post, error } = await supabaseAdmin
       .from("fan_wall_posts")
-      .select("id, image_path, caption, created_at")
+      .select("id, image_path, caption, created_at, is_approved, is_hidden")
       .eq("id", postId)
       .maybeSingle();
 
     if (error || !post) {
       console.error("[fan-wall pending] post lookup failed", error);
-      return NextResponse.json({ ok: false }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "post not found" }, { status: 404 });
     }
 
-    const caption = post.caption || "New fan submission";
-    const safeCaption = escapeHtml(caption);
-
-    const imageUrl = supabaseAdmin.storage
-      .from(FAN_WALL_BUCKET)
-      .getPublicUrl(post.image_path).data.publicUrl;
-
-    const reviewUrl = `${PUBLIC_URL}/fan-wall`;
+    if (post.is_hidden || post.is_approved) {
+      // Not pending/visible anymore — don’t spam.
+      return NextResponse.json({ ok: true, skipped: true });
+    }
 
     /* -----------------------------------------------------------
-       Build email (MATCHES PASSWORD RESET TEMPLATE)
+       Env / URLs
+    ------------------------------------------------------------ */
+    // Use RESEND_FROM if you set it; fallback to DASHBOARD_FROM_EMAIL; final fallback to your no-reply.
+    const FROM =
+      process.env.RESEND_FROM?.trim() ||
+      process.env.DASHBOARD_FROM_EMAIL?.trim() ||
+      "no-reply@ssdtapp.byvenuecreative.com";
+
+    const PUBLIC_URL = requireEnv("DASHBOARD_PUBLIC_URL", "https://ssdtapp.byvenuecreative.com");
+    const LOGO_URL = (process.env.DASHBOARD_LOGO_URL || `${PUBLIC_URL}/ssdt-logo.png`).trim();
+    const reviewUrl = `${PUBLIC_URL}/fan-wall`;
+
+    const caption = (post.caption || "New fan submission").trim();
+    const safeCaption = escapeHtml(caption);
+
+    const imageUrl =
+      supabaseAdmin.storage.from(FAN_WALL_BUCKET).getPublicUrl(post.image_path).data.publicUrl;
+
+    /* -----------------------------------------------------------
+       Build email (matches password reset template style)
     ------------------------------------------------------------ */
     const subject = "Fan Wall approval needed — Sugarshack Downtown";
 
@@ -128,18 +147,18 @@ export async function POST(req: NextRequest) {
             </p>
 
             <div style="margin:16px 0;">
-              <a href="${imageUrl}" target="_blank" rel="noreferrer">
+              <a href="${escapeHtml(imageUrl)}" target="_blank" rel="noreferrer">
                 <img
-                  src="${imageUrl}"
+                  src="${escapeHtml(imageUrl)}"
                   alt="Fan wall submission"
-                  style="width:100%;border-radius:12px;border:1px solid #e5e7eb;"
+                  style="width:100%;border-radius:12px;border:1px solid #e5e7eb;display:block;"
                 />
               </a>
             </div>
 
             <p style="margin:0 0 18px;">
               <a
-                href="${reviewUrl}"
+                href="${escapeHtml(reviewUrl)}"
                 style="display:inline-block;background:#0ea5e9;color:#ffffff;padding:12px 16px;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;"
               >
                 Review in Dashboard
@@ -148,6 +167,10 @@ export async function POST(req: NextRequest) {
 
             <p style="margin:0;color:#64748b;font-size:12px;">
               This image is awaiting approval and is not visible in the app yet.
+            </p>
+
+            <p style="margin:14px 0 0;color:#94a3b8;font-size:11px;">
+              Post ID: ${escapeHtml(post.id)}
             </p>
           </div>
 
@@ -163,8 +186,8 @@ export async function POST(req: NextRequest) {
     ------------------------------------------------------------ */
     const resend = getResendClient();
     if (!resend) {
-      console.error("[fan-wall pending] Missing RESEND_API_KEY");
-      return NextResponse.json({ ok: true });
+      console.error("[fan-wall pending] Missing RESEND_API_KEY (email not sent).");
+      return NextResponse.json({ ok: true, warning: "missing resend api key" });
     }
 
     await resend.emails.send({
@@ -175,8 +198,8 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ ok: true });
-  } catch (err) {
+  } catch (err: any) {
     console.error("[fan-wall pending] unexpected error", err);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: false, error: err?.message || "server error" }, { status: 500 });
   }
 }
