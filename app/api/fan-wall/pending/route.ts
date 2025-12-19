@@ -1,111 +1,182 @@
 // app/api/fan-wall/pending/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { Resend } from "resend";
+// Notifies admin when a Fan Wall image is pending approval
+// Triggered via Supabase pg_net webhook
 
-function mustEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing required env: ${name}`);
-  return v;
-}
+import { NextRequest, NextResponse } from "next/server";
+import { Resend } from "resend";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+
+const FROM =
+  process.env.DASHBOARD_FROM_EMAIL ||
+  "no-reply@ssdtapp.byvenuecreative.com";
+
+const PUBLIC_URL =
+  process.env.DASHBOARD_PUBLIC_URL ||
+  "https://ssdtapp.byvenuecreative.com";
+
+const LOGO_URL =
+  process.env.DASHBOARD_LOGO_URL ||
+  `${PUBLIC_URL}/ssdt-logo.png`;
+
+const FAN_WALL_WEBHOOK_SECRET =
+  process.env.FAN_WALL_WEBHOOK_SECRET;
 
 const ADMIN_EMAIL = "colin@byvenuecreative.com";
-const FROM_EMAIL = "no-reply@ssdtapp.byvenuecreative.com";
-const MODERATION_URL = "https://ssdtapp.byvenuecreative.com/fan-wall";
-const BUCKET = "fan-wall-photos";
+const FAN_WALL_BUCKET = "fan-wall-photos";
 
-export async function POST(req: NextRequest) {
+function getResendClient(): Resend | null {
+  const key = process.env.RESEND_API_KEY;
+  if (!key || !key.trim()) return null;
   try {
-    // Auth
-    const expected = mustEnv("FAN_WALL_WEBHOOK_SECRET");
-    const secret =
-      req.headers.get("x-fan-wall-webhook-secret") ??
-      req.headers.get("x-fanwall-secret") ??
-      "";
-
-    if (!secret || secret !== expected) {
-      console.error("[fan-wall pending] unauthorized webhook call", {
-        hasSecret: !!secret,
-      });
-      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-    }
-
-    // Body
-    const body = await req.json().catch(() => ({} as any));
-    const postId = String(body?.record?.id || body?.post_id || "").trim();
-    if (!postId) {
-      return NextResponse.json(
-        { ok: false, error: "missing post id (expected body.record.id or body.post_id)" },
-        { status: 400 }
-      );
-    }
-
-    // Supabase admin
-    const supabaseUrl = mustEnv("NEXT_PUBLIC_SUPABASE_URL");
-    const serviceRole = mustEnv("SUPABASE_SERVICE_ROLE_KEY");
-
-    const supabase = createClient(supabaseUrl, serviceRole, {
-      auth: { persistSession: false },
-    });
-
-    const { data: post, error: postErr } = await supabase
-      .from("fan_wall_posts")
-      .select("id,image_path,caption,created_at,is_approved,is_hidden")
-      .eq("id", postId)
-      .maybeSingle();
-
-    if (postErr) throw new Error(postErr.message || "Failed to fetch post");
-    if (!post) return NextResponse.json({ ok: false, error: "post not found" }, { status: 404 });
-
-    if (post.is_approved || post.is_hidden) {
-      return NextResponse.json({ ok: true, skipped: true, reason: "not pending" });
-    }
-
-    const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(post.image_path);
-    const imageUrl = pub?.publicUrl || "";
-
-    // Resend
-    const resend = new Resend(mustEnv("RESEND_API_KEY"));
-
-    const caption = post.caption ? String(post.caption) : "(no caption)";
-    const createdAt = post.created_at ? new Date(post.created_at).toLocaleString("en-US") : "";
-
-    const html = `
-      <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto;">
-        <h2 style="margin:0 0 8px 0;">New Fan Wall post pending approval</h2>
-        <p style="margin:0 0 8px 0;"><b>Caption:</b> ${escapeHtml(caption)}</p>
-        <p style="margin:0 0 8px 0;"><b>Created:</b> ${escapeHtml(createdAt)}</p>
-        ${imageUrl ? `<p style="margin:0 0 12px 0;"><a href="${imageUrl}">View image</a></p>` : ""}
-        <p style="margin:0 0 12px 0;">
-          <a href="${MODERATION_URL}" style="display:inline-block;padding:10px 14px;border-radius:10px;background:#0ea5e9;color:#fff;text-decoration:none;font-weight:600;">
-            Open moderation page
-          </a>
-        </p>
-        <p style="color:#6b7280;font-size:12px;margin:0;">Post ID: ${escapeHtml(post.id)}</p>
-      </div>
-    `;
-
-    const { error: emailErr } = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: ADMIN_EMAIL,
-      subject: "New Fan Wall photo pending approval",
-      html,
-    });
-
-    if (emailErr) throw new Error(emailErr.message || "Resend send failed");
-
-    return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    console.error("[fan-wall pending] error:", e);
-    return NextResponse.json({ ok: false, error: e?.message || "server error" }, { status: 500 });
+    return new Resend(key);
+  } catch (e) {
+    console.error("[fan-wall pending] Resend init error", e);
+    return null;
   }
 }
 
-function escapeHtml(s: string) {
-  return s
+function escapeHtml(input: string) {
+  return input
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    /* -----------------------------------------------------------
+       Security: webhook secret
+    ------------------------------------------------------------ */
+    const secret = req.headers.get("x-webhook-secret");
+    if (!FAN_WALL_WEBHOOK_SECRET || secret !== FAN_WALL_WEBHOOK_SECRET) {
+      console.error("[fan-wall pending] unauthorized webhook call", {
+        hasSecret: !!secret,
+      });
+      return NextResponse.json({ ok: false }, { status: 401 });
+    }
+
+    /* -----------------------------------------------------------
+       Parse body
+    ------------------------------------------------------------ */
+    const body = (await req.json().catch(() => null)) as
+      | { post_id?: string }
+      | null;
+
+    const postId = body?.post_id;
+    if (!postId) {
+      return NextResponse.json(
+        { ok: false, error: "Missing post_id" },
+        { status: 400 }
+      );
+    }
+
+    /* -----------------------------------------------------------
+       Fetch fan wall post
+    ------------------------------------------------------------ */
+    const { data: post, error } = await supabaseAdmin
+      .from("fan_wall_posts")
+      .select("id, image_path, caption, created_at")
+      .eq("id", postId)
+      .maybeSingle();
+
+    if (error || !post) {
+      console.error("[fan-wall pending] post lookup failed", error);
+      return NextResponse.json({ ok: false }, { status: 404 });
+    }
+
+    const caption = post.caption || "New fan submission";
+    const safeCaption = escapeHtml(caption);
+
+    const imageUrl = supabaseAdmin.storage
+      .from(FAN_WALL_BUCKET)
+      .getPublicUrl(post.image_path).data.publicUrl;
+
+    const reviewUrl = `${PUBLIC_URL}/fan-wall`;
+
+    /* -----------------------------------------------------------
+       Build email (MATCHES PASSWORD RESET TEMPLATE)
+    ------------------------------------------------------------ */
+    const subject = "Fan Wall approval needed — Sugarshack Downtown";
+
+    const html = `
+      <div style="background:#f1f5f9;padding:24px 0;">
+        <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;">
+          
+          <div style="padding:20px 24px;border-bottom:1px solid #e2e8f0;background:#0f172a;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <img src="${escapeHtml(LOGO_URL)}" alt="Sugarshack Downtown" style="height:40px;width:auto;display:block;" />
+              <div>
+                <div style="color:#ffffff;font-weight:700;font-size:14px;letter-spacing:0.02em;">
+                  Sugarshack Downtown
+                </div>
+                <div style="color:#cbd5e1;font-size:12px;">
+                  Fan Wall Moderation
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding:22px 24px;color:#0f172a;line-height:1.45;">
+            <h2 style="margin:0 0 8px;font-size:18px;">
+              New fan wall image pending approval
+            </h2>
+
+            <p style="margin:0 0 14px;color:#334155;font-size:14px;">
+              ${safeCaption}
+            </p>
+
+            <div style="margin:16px 0;">
+              <a href="${imageUrl}" target="_blank" rel="noreferrer">
+                <img
+                  src="${imageUrl}"
+                  alt="Fan wall submission"
+                  style="width:100%;border-radius:12px;border:1px solid #e5e7eb;"
+                />
+              </a>
+            </div>
+
+            <p style="margin:0 0 18px;">
+              <a
+                href="${reviewUrl}"
+                style="display:inline-block;background:#0ea5e9;color:#ffffff;padding:12px 16px;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;"
+              >
+                Review in Dashboard
+              </a>
+            </p>
+
+            <p style="margin:0;color:#64748b;font-size:12px;">
+              This image is awaiting approval and is not visible in the app yet.
+            </p>
+          </div>
+
+          <div style="padding:14px 24px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px;">
+            Sugarshack Downtown • This message was sent automatically.
+          </div>
+        </div>
+      </div>
+    `;
+
+    /* -----------------------------------------------------------
+       Send email
+    ------------------------------------------------------------ */
+    const resend = getResendClient();
+    if (!resend) {
+      console.error("[fan-wall pending] Missing RESEND_API_KEY");
+      return NextResponse.json({ ok: true });
+    }
+
+    await resend.emails.send({
+      from: FROM,
+      to: ADMIN_EMAIL,
+      subject,
+      html,
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[fan-wall pending] unexpected error", err);
+    return NextResponse.json({ ok: true });
+  }
 }
