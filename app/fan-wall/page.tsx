@@ -21,12 +21,10 @@ type FanWallPost = {
 };
 
 type RewardsUser = {
-  id: string;
-  display_name?: string | null;
-  full_name?: string | null;
-  first_name?: string | null;
-  last_name?: string | null;
-  email?: string | null;
+  user_id: string;
+  display_name: string | null;
+  full_name: string | null;
+  email: string | null;
 };
 
 const FAN_WALL_BUCKET =
@@ -94,12 +92,9 @@ function buildRewardsDisplay(u: RewardsUser | undefined): string | null {
   if (!u) return null;
 
   const name =
-    (u.display_name ?? "").trim() ||
-    (u.full_name ?? "").trim() ||
-    `${(u.first_name ?? "").trim()} ${(u.last_name ?? "").trim()}`.trim();
+    (u.display_name ?? "").trim() || (u.full_name ?? "").trim();
 
   if (name) {
-    // If we have email too, keep it subtle and helpful
     const email = (u.email ?? "").trim();
     return email ? `${name} (${email})` : name;
   }
@@ -110,7 +105,6 @@ function buildRewardsDisplay(u: RewardsUser | undefined): string | null {
 
 function shortId(id: string) {
   if (!id) return "";
-  // show start/end for quick debugging without huge UUID spam
   return `${id.slice(0, 8)}…${id.slice(-6)}`;
 }
 
@@ -179,7 +173,6 @@ async function unhidePost(formData: FormData) {
 
   const supabase = supabaseServer;
 
-  // unhide = visible again, but keep it pending unless explicitly approved
   const { error } = await supabase
     .from("fan_wall_posts")
     .update({
@@ -207,19 +200,14 @@ async function deletePost(formData: FormData) {
 
   const supabase = supabaseServer;
 
-  // Delete DB row first
   const { error } = await supabase.from("fan_wall_posts").delete().eq("id", id);
   if (error) console.error("[FanWall] deletePost error:", error);
 
-  // Best-effort delete from storage too (optional but helpful)
   if (image_path && typeof image_path === "string" && image_path.trim()) {
     const { error: storageErr } = await supabase.storage
       .from(FAN_WALL_BUCKET)
       .remove([image_path.trim()]);
-    if (storageErr) {
-      // Not fatal; row is already deleted
-      console.error("[FanWall] storage remove error:", storageErr);
-    }
+    if (storageErr) console.error("[FanWall] storage remove error:", storageErr);
   }
 
   revalidatePath("/fan-wall");
@@ -242,26 +230,24 @@ export default async function FanWallPage() {
 
   const all: FanWallPost[] = (data ?? []) as FanWallPost[];
 
-  // Lookup rewards users for display names
+  // Lookup rewards users for display names (user_id is the PK in rewards_users)
   const userIds = Array.from(
     new Set(all.map((p) => p.user_id).filter((x): x is string => !!x))
   );
 
-  const rewardsById = new Map<string, RewardsUser>();
+  const rewardsByUserId = new Map<string, RewardsUser>();
 
   if (userIds.length > 0) {
-    // NOTE: If your table is named differently, change "rewards_users" here.
-    // We try several likely name fields defensively.
     const { data: rewardsUsers, error: rewardsErr } = await supabase
       .from("rewards_users")
-      .select("id, display_name, full_name, first_name, last_name, email")
-      .in("id", userIds);
+      .select("user_id, display_name, full_name, email")
+      .in("user_id", userIds);
 
     if (rewardsErr) {
       console.error("[FanWall] rewards_users lookup error:", rewardsErr);
     } else {
       (rewardsUsers ?? []).forEach((u: RewardsUser) => {
-        if (u?.id) rewardsById.set(u.id, u);
+        if (u?.user_id) rewardsByUserId.set(u.user_id, u);
       });
     }
   }
@@ -281,7 +267,10 @@ export default async function FanWallPage() {
         .from(FAN_WALL_BUCKET)
         .getPublicUrl(path);
 
-      const rewardsUser = post.user_id ? rewardsById.get(post.user_id) : undefined;
+      const rewardsUser = post.user_id
+        ? rewardsByUserId.get(post.user_id)
+        : undefined;
+
       const linkedLabel = post.user_id
         ? buildRewardsDisplay(rewardsUser) || `Linked user: ${shortId(post.user_id)}`
         : null;
