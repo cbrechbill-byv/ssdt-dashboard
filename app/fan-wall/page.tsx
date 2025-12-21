@@ -2,6 +2,7 @@
 // Path: /fan-wall
 // Sugarshack Downtown - Fan Wall Moderation
 // Upgraded: summary + queues (Pending / Approved / Hidden) + safer moderation (hide vs delete) + better previews.
+// V2 enhancement: show linked rewards user display name instead of raw UUID.
 
 import { revalidatePath } from "next/cache";
 import DashboardShell from "@/components/layout/DashboardShell";
@@ -17,6 +18,15 @@ type FanWallPost = {
   created_at: string;
   is_approved: boolean;
   is_hidden: boolean;
+};
+
+type RewardsUser = {
+  id: string;
+  display_name?: string | null;
+  full_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
 };
 
 const FAN_WALL_BUCKET =
@@ -78,6 +88,30 @@ function SummaryCard({
       <p className="mt-1 text-xs text-slate-500">{helper}</p>
     </div>
   );
+}
+
+function buildRewardsDisplay(u: RewardsUser | undefined): string | null {
+  if (!u) return null;
+
+  const name =
+    (u.display_name ?? "").trim() ||
+    (u.full_name ?? "").trim() ||
+    `${(u.first_name ?? "").trim()} ${(u.last_name ?? "").trim()}`.trim();
+
+  if (name) {
+    // If we have email too, keep it subtle and helpful
+    const email = (u.email ?? "").trim();
+    return email ? `${name} (${email})` : name;
+  }
+
+  const email = (u.email ?? "").trim();
+  return email || null;
+}
+
+function shortId(id: string) {
+  if (!id) return "";
+  // show start/end for quick debugging without huge UUID spam
+  return `${id.slice(0, 8)}…${id.slice(-6)}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -208,6 +242,30 @@ export default async function FanWallPage() {
 
   const all: FanWallPost[] = (data ?? []) as FanWallPost[];
 
+  // Lookup rewards users for display names
+  const userIds = Array.from(
+    new Set(all.map((p) => p.user_id).filter((x): x is string => !!x))
+  );
+
+  const rewardsById = new Map<string, RewardsUser>();
+
+  if (userIds.length > 0) {
+    // NOTE: If your table is named differently, change "rewards_users" here.
+    // We try several likely name fields defensively.
+    const { data: rewardsUsers, error: rewardsErr } = await supabase
+      .from("rewards_users")
+      .select("id, display_name, full_name, first_name, last_name, email")
+      .in("id", userIds);
+
+    if (rewardsErr) {
+      console.error("[FanWall] rewards_users lookup error:", rewardsErr);
+    } else {
+      (rewardsUsers ?? []).forEach((u: RewardsUser) => {
+        if (u?.id) rewardsById.set(u.id, u);
+      });
+    }
+  }
+
   // Queues
   const pending = all.filter((p) => !p.is_hidden && !p.is_approved);
   const approved = all.filter((p) => !p.is_hidden && p.is_approved);
@@ -223,7 +281,16 @@ export default async function FanWallPage() {
         .from(FAN_WALL_BUCKET)
         .getPublicUrl(path);
 
-      return { ...post, imageUrl: publicData?.publicUrl ?? null };
+      const rewardsUser = post.user_id ? rewardsById.get(post.user_id) : undefined;
+      const linkedLabel = post.user_id
+        ? buildRewardsDisplay(rewardsUser) || `Linked user: ${shortId(post.user_id)}`
+        : null;
+
+      return {
+        ...post,
+        imageUrl: publicData?.publicUrl ?? null,
+        linkedLabel,
+      };
     });
 
   const pendingWithUrls = withUrls(pending);
@@ -336,7 +403,7 @@ function ModerationSection({
   subtitle: string;
   tone: "neutral" | "good" | "warn" | "bad";
   emptyText: string;
-  posts: Array<FanWallPost & { imageUrl: string | null }>;
+  posts: Array<FanWallPost & { imageUrl: string | null; linkedLabel?: string | null }>;
   showApprove?: boolean;
   showHide?: boolean;
   showDelete?: boolean;
@@ -407,23 +474,41 @@ function ModerationSection({
                   <p className="text-[11px] text-slate-500">
                     Created {formatDateEST(post.created_at)}
                   </p>
+
                   <p className="text-[11px] text-slate-400 truncate">
-                    {post.user_id ? `Linked to rewards user: ${post.user_id}` : "Guest submission"}
+                    {post.user_id
+                      ? post.linkedLabel || `Linked user: ${shortId(post.user_id)}`
+                      : "Guest submission"}
                   </p>
 
                   <div className="mt-1 flex flex-wrap gap-2">
                     {!post.is_hidden && post.is_approved ? (
-                      <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", chipClass("good"))}>
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                          chipClass("good")
+                        )}
+                      >
                         Approved
                       </span>
                     ) : null}
                     {!post.is_hidden && !post.is_approved ? (
-                      <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", chipClass("warn"))}>
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                          chipClass("warn")
+                        )}
+                      >
                         Pending
                       </span>
                     ) : null}
                     {post.is_hidden ? (
-                      <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", chipClass("bad"))}>
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                          chipClass("bad")
+                        )}
+                      >
                         Hidden
                       </span>
                     ) : null}
@@ -481,11 +566,7 @@ function ModerationSection({
                 {showDelete && (
                   <form action={deletePost}>
                     <input type="hidden" name="id" value={post.id} />
-                    <input
-                      type="hidden"
-                      name="image_path"
-                      value={post.image_path ?? ""}
-                    />
+                    <input type="hidden" name="image_path" value={post.image_path ?? ""} />
                     <button
                       type="submit"
                       className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 hover:bg-rose-100 text-[11px] font-semibold text-rose-700 px-3 py-1.5"
