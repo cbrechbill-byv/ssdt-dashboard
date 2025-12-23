@@ -2,7 +2,7 @@
 // Path: /components/layout/DashboardShell.tsx
 // Purpose: Top-level dashboard shell (header, auth status, primary nav pills, and optional dropdown submenus).
 //
-// Change: For tabs that have submenus (Rewards, Notifications, Admin Users), the top pill is now a PLACEHOLDER ONLY.
+// Change: For tabs that have submenus (Rewards, Notifications, Admin Users, Sponsors), the top pill is now a PLACEHOLDER ONLY.
 //         The parent page link is included as the first item in the dropdown so users discover it.
 
 "use client";
@@ -44,7 +44,7 @@ const tabsBase: { key: DashboardTab; label: string; href: string }[] = [
   // Photo Booth = overlays/frames
   { key: "photo-booth", label: "Photo booth", href: "/photo-booth/frames" },
 
-  // Sponsors = sponsor list/detail hub inside Photo Booth section
+  // Sponsors = placeholder pill when submenu exists
   { key: "sponsors", label: "Sponsors", href: "/photo-booth/sponsors" },
 
   { key: "bar-bites", label: "Bar & Bites", href: "/menu/bar-bites" },
@@ -73,6 +73,19 @@ type SubMenuItem = {
 };
 
 const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
+  sponsors: [
+    {
+      label: "Sponsors",
+      href: "/photo-booth/sponsors",
+      description: "Add and manage sponsor logos, tiers, and ordering.",
+    },
+    {
+      label: "Preloader",
+      href: "/photo-booth/sponsor-preloader",
+      description: "Configure the premium sponsor preloader messaging + behavior.",
+    },
+  ],
+
   rewards: [
     {
       label: "Rewards",
@@ -95,6 +108,7 @@ const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
       description: "Manage staff PINs for redemptions.",
     },
   ],
+
   notifications: [
     {
       label: "Notifications",
@@ -156,6 +170,14 @@ export default function DashboardShell({
         activeTab === "help" ||
         (pathname ?? "").startsWith("/admin-users") ||
         (pathname ?? "").startsWith("/help")
+      );
+    }
+
+    // Make Sponsors pill appear active when on /photo-booth/sponsors OR /photo-booth/sponsors/preloader
+    if (tab.key === "sponsors") {
+      return (
+        activeTab === "sponsors" ||
+        (pathname ?? "").startsWith("/photo-booth/sponsors")
       );
     }
 

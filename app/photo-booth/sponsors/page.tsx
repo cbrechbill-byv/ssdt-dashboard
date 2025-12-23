@@ -1,21 +1,20 @@
 // app/photo-booth/sponsors/page.tsx
 // Path: /photo-booth/sponsors
-// Dashboard: Sponsors (manage name, tier, order, and logos)
+// Dashboard: Sponsors
 //
-// Goal (no app code changes):
-// - Sponsors list (64x64 circle on black bg) must show black logos
-// - Sponsor detail hero must show a LARGE, clean logo (not tiny)
+// Sponsors management only (Add/Edit/Delete/Order/Logo).
+// Sponsor Preloader settings + sponsor pool selection are managed at:
+//   /photo-booth/sponsor-preloader
 //
-// Fix approach:
-// - Auto-trim whitespace (transparent + near-white)
-// - Normalize to 1024x1024 PNG (crisper for hero)
-// - Scale artwork to fill more of the square (minimal padding; no distortion)
-// - Add a subtle SOLID white rounded-rect "backer" behind the artwork so black logos remain visible on dark backgrounds
-// - Keep UI unchanged; reprocess button re-uploads using same logic
+// V2:
+// - Adds Ultra-Premium Logo Prep (auto-trim, pad to 2000x2000 transparent PNG, optional halo for dark logos)
+// - Adds App-Exact Preview (64x64 list tile + preloader tile on dark background)
+// - Adds "Prefer Light Variant" warning when logo is detected as dark (halo applied)
+// - Keeps sponsor CRUD + list intact; no preloader settings UI here.
 
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase-browser";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { logDashboardEvent } from "@/lib/logDashboardEvent";
@@ -31,6 +30,11 @@ type Sponsor = {
   start_date: string | null;
   end_date: string | null;
   notes: string | null;
+  sponsor_message: string | null;
+
+  // kept for DB compatibility (managed in Preloader page)
+  is_preloader_enabled: boolean;
+
   created_at: string;
   updated_at: string;
 };
@@ -38,7 +42,6 @@ type Sponsor = {
 type FormState = {
   id?: string;
   name: string;
-  logoFile?: File | null;
   logo_path?: string | null;
   website_url: string;
   tier: string;
@@ -47,12 +50,15 @@ type FormState = {
   start_date: string;
   end_date: string;
   notes: string;
+  sponsor_message: string;
+
+  // preserved on edit (not shown/edited here)
+  is_preloader_enabled: boolean;
 };
 
 const EMPTY_FORM: FormState = {
   name: "",
-  logoFile: undefined,
-  logo_path: undefined,
+  logo_path: null,
   website_url: "",
   tier: "",
   is_active: true,
@@ -60,30 +66,38 @@ const EMPTY_FORM: FormState = {
   start_date: "",
   end_date: "",
   notes: "",
+  sponsor_message: "",
+  is_preloader_enabled: false,
 };
 
 const SPONSOR_BUCKET = "sponsor-logos";
 
-// App renders list logos at 64x64.
-const LOGO_SIZE_IN_APP = 64;
-const MIN_LOGO_PX = LOGO_SIZE_IN_APP * 3; // 192 (input sanity check only)
-const RECOMMENDED_LOGO_PX = 256;
+// Upload guardrails
+const MAX_BYTES = 7 * 1024 * 1024;
+const MIN_LOGO_PX = 800; // raw input minimum (before prep); higher than before to avoid soft results
 
-// ✅ Output size (bigger = cleaner hero). No app change required.
-const OUTPUT_PNG_SIZE = 1024;
+// “Ultra premium” output standard
+const PREMIUM_OUT_SIZE = 2000; // upload standard
+const FIT_PADDING = 0.88; // how much of the square the trimmed logo occupies
 
-// ✅ Fill ratio (higher = artwork appears larger). Keep just a tiny safety margin.
-const FIT_PADDING = 0.985;
+// Trim + luminance detection thresholds
+const ALPHA_MIN = 12;
+const WHITE_MIN = 248;
 
-// Trimming thresholds
-const ALPHA_MIN = 12; // ignore near-transparent pixels
-const WHITE_MIN = 248; // treat near-white pixels as background even if opaque
+// Optional “premium halo plate” for dark logos (helps on preloader background)
+const DARK_LUMINANCE_THRESHOLD = 0.44;
+const HALO_ALPHA = 0.16;
+const HALO_RADIUS_MULT = 0.28;
+const HALO_PADDING_MULT = 1.20;
 
-// ✅ Backer (so black logos show on dark UI)
-// - White rounded-rect behind the logo artwork (not full square, so it still feels "logo-like")
-const BACKER_ENABLED = true;
-const BACKER_PADDING_MULT = 1.10; // backer a bit bigger than artwork
-const BACKER_RADIUS_MULT = 0.22; // corner roundness relative to backer min dimension
+// App preview sizes (match mobile feel)
+const APP_TILE_SIZE = 64; // sponsor list tile
+const PRELOADER_TILE_SIZE = 76; // small “glass” logo chip in your preloader
+const PRELOADER_TILE_PAD = 14; // inner padding in chip
+
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
 
 function getLogoPublicUrl(logo_path: string | null | undefined) {
   if (!logo_path) return null;
@@ -106,10 +120,6 @@ async function getImageDimensions(file: File): Promise<{ width: number; height: 
   }
 }
 
-function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
-
 function normalizeSponsors(list: Sponsor[]): Sponsor[] {
   const sorted = [...list].sort((a, b) => {
     const ao = Number(a.sort_order ?? 0);
@@ -124,13 +134,16 @@ function normalizeSponsors(list: Sponsor[]): Sponsor[] {
   }));
 }
 
-function sanitizeBaseName(name: string) {
-  return (name || "logo")
-    .replace(/\.[^/.]+$/, "")
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-zA-Z0-9-_]/g, "")
-    .toLowerCase();
+function slugify(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .replace(/-{2,}/g, "") || "sponsor"
+  );
 }
 
 async function fileToImage(file: File): Promise<HTMLImageElement> {
@@ -158,9 +171,6 @@ function computeTrimBounds(
   let maxX = -1;
   let maxY = -1;
 
-  // A pixel counts as "content" if:
-  // - alpha is meaningfully present, AND
-  // - it's not near-white (trim white backgrounds)
   for (let y = 0; y < height; y++) {
     const row = y * width * 4;
     for (let x = 0; x < width; x++) {
@@ -184,7 +194,6 @@ function computeTrimBounds(
 
   if (maxX < 0 || maxY < 0) return null;
 
-  // small pad so we don't clip strokes
   const pad = 2;
   minX = Math.max(0, minX - pad);
   minY = Math.max(0, minY - pad);
@@ -194,14 +203,36 @@ function computeTrimBounds(
   return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
 }
 
-function drawRoundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
-) {
+function computeAverageLuminance(imageData: ImageData, crop: { x: number; y: number; w: number; h: number }): number {
+  const data = imageData.data;
+  const width = imageData.width;
+
+  let sum = 0;
+  let count = 0;
+
+  for (let y = crop.y; y < crop.y + crop.h; y++) {
+    const row = y * width * 4;
+    for (let x = crop.x; x < crop.x + crop.w; x++) {
+      const i = row + x * 4;
+      const a = data[i + 3];
+      if (a < ALPHA_MIN) continue;
+
+      if (data[i] >= WHITE_MIN && data[i + 1] >= WHITE_MIN && data[i + 2] >= WHITE_MIN) continue;
+
+      const r = data[i] / 255;
+      const g = data[i + 1] / 255;
+      const b = data[i + 2] / 255;
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      sum += lum;
+      count++;
+    }
+  }
+
+  if (count === 0) return 1;
+  return sum / count;
+}
+
+function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   const radius = Math.max(0, Math.min(r, Math.min(w, h) / 2));
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
@@ -216,26 +247,59 @@ function drawRoundedRect(
   ctx.closePath();
 }
 
-async function processLogoToSquarePng(
-  originalFile: File,
-  opts?: {
-    size?: number;
-    padding?: number;
-    trim?: boolean;
-    backer?: boolean;
-  }
-): Promise<File> {
-  const size = opts?.size ?? OUTPUT_PNG_SIZE;
-  const padding = opts?.padding ?? FIT_PADDING;
-  const trim = opts?.trim ?? true;
-  const backer = opts?.backer ?? BACKER_ENABLED;
+function drawPremiumHalo(ctx: CanvasRenderingContext2D, size: number, drawW: number, drawH: number) {
+  const bw = Math.min(size, Math.round(drawW * HALO_PADDING_MULT));
+  const bh = Math.min(size, Math.round(drawH * HALO_PADDING_MULT));
+  const bx = Math.round((size - bw) / 2);
+  const by = Math.round((size - bh) / 2);
+  const br = Math.round(Math.min(bw, bh) * HALO_RADIUS_MULT);
+
+  ctx.save();
+  ctx.fillStyle = `rgba(255,255,255,${HALO_ALPHA})`;
+  drawRoundedRect(ctx, bx, by, bw, bh, br);
+  ctx.fill();
+
+  const grad = ctx.createLinearGradient(bx, by, bx + bw, by + bh);
+  grad.addColorStop(0, "rgba(255,255,255,0.16)");
+  grad.addColorStop(0.55, "rgba(255,255,255,0.06)");
+  grad.addColorStop(1, "rgba(255,255,255,0.12)");
+  ctx.fillStyle = grad;
+  drawRoundedRect(ctx, bx, by, bw, bh, br);
+  ctx.fill();
+  ctx.restore();
+}
+
+function sanitizeBaseName(name: string) {
+  return (name || "logo")
+    .replace(/\.[^/.]+$/, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9-_]/g, "")
+    .toLowerCase();
+}
+
+async function canvasToPngFile(canvas: HTMLCanvasElement, fileName: string): Promise<File> {
+  const blob: Blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Failed to create PNG blob"))), "image/png", 1.0);
+  });
+  return new File([blob], fileName, { type: "image/png" });
+}
+
+async function prepLogoToPremiumSquarePng(
+  originalFile: File
+): Promise<{
+  file: File;
+  avgLuminance: number;
+  haloApplied: boolean;
+  previewDataUrl: string;
+}> {
+  const size = PREMIUM_OUT_SIZE;
 
   const img = await fileToImage(originalFile);
   const srcW = img.naturalWidth || 0;
   const srcH = img.naturalHeight || 0;
   if (!srcW || !srcH) throw new Error("Invalid image dimensions.");
 
-  // Draw source to temp so we can read pixels for trimming
   const temp = document.createElement("canvas");
   temp.width = srcW;
   temp.height = srcH;
@@ -248,14 +312,14 @@ async function processLogoToSquarePng(
   tctx.imageSmoothingQuality = "high";
   tctx.drawImage(img, 0, 0);
 
+  const fullData = tctx.getImageData(0, 0, srcW, srcH);
   let crop = { x: 0, y: 0, w: srcW, h: srcH };
-  if (trim) {
-    const imageData = tctx.getImageData(0, 0, srcW, srcH);
-    const bounds = computeTrimBounds(imageData, srcW, srcH);
-    if (bounds) crop = bounds;
-  }
+  const bounds = computeTrimBounds(fullData, srcW, srcH);
+  if (bounds) crop = bounds;
 
-  // Output canvas
+  const avgLum = computeAverageLuminance(fullData, crop);
+  const needsHalo = avgLum < DARK_LUMINANCE_THRESHOLD;
+
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -264,9 +328,8 @@ async function processLogoToSquarePng(
 
   ctx.clearRect(0, 0, size, size);
 
-  // Fit cropped content inside nearly-full square (minimal padding for larger hero)
-  const maxW = size * padding;
-  const maxH = size * padding;
+  const maxW = size * FIT_PADDING;
+  const maxH = size * FIT_PADDING;
   const scale = Math.min(maxW / crop.w, maxH / crop.h);
 
   const drawW = Math.round(crop.w * scale);
@@ -278,35 +341,270 @@ async function processLogoToSquarePng(
   // @ts-ignore
   ctx.imageSmoothingQuality = "high";
 
-  // ✅ Backer behind artwork (so black logos show on dark backgrounds)
-  if (backer) {
-    const bw = Math.min(size, Math.round(drawW * BACKER_PADDING_MULT));
-    const bh = Math.min(size, Math.round(drawH * BACKER_PADDING_MULT));
-    const bx = Math.round((size - bw) / 2);
-    const by = Math.round((size - bh) / 2);
-    const br = Math.round(Math.min(bw, bh) * BACKER_RADIUS_MULT);
-
-    ctx.save();
-    ctx.fillStyle = "#FFFFFF";
-    drawRoundedRect(ctx, bx, by, bw, bh, br);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  // Artwork on top
+  if (needsHalo) drawPremiumHalo(ctx, size, drawW, drawH);
   ctx.drawImage(temp, crop.x, crop.y, crop.w, crop.h, dx, dy, drawW, drawH);
-
-  const blob: Blob = await new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("Failed to create PNG blob"))),
-      "image/png",
-      1.0
-    );
-  });
 
   const base = sanitizeBaseName(originalFile.name || "logo");
   const fileName = `${base}-${Date.now()}-${size}.png`;
-  return new File([blob], fileName, { type: "image/png" });
+  const file = await canvasToPngFile(canvas, fileName);
+
+  const previewDataUrl = canvas.toDataURL("image/png");
+
+  return { file, avgLuminance: avgLum, haloApplied: needsHalo, previewDataUrl };
+}
+
+function AppExactPreview({
+  sponsorName,
+  tier,
+  logoDataUrlOrPublicUrl,
+  preferLightVariant,
+}: {
+  sponsorName: string;
+  tier: string;
+  logoDataUrlOrPublicUrl: string | null;
+  preferLightVariant?: boolean;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold text-slate-800">App-exact preview</p>
+          <p className="text-[11px] text-slate-500">
+            This matches the dark + glass look like your mobile Sponsors + Preloader screens.
+          </p>
+        </div>
+
+        {preferLightVariant ? (
+          <div className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-800">
+            Prefer Light Variant
+          </div>
+        ) : null}
+      </div>
+
+      {preferLightVariant ? (
+        <div className="rounded-xl border border-amber-300/70 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+          This logo is dark on transparent and may look faint on the preloader background. If possible, request/upload a{" "}
+          <span className="font-semibold">white/light version</span> of the logo (transparent PNG).
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="p-4">
+          <div
+            className="rounded-2xl p-4"
+            style={{
+              background:
+                "radial-gradient(900px 500px at 50% 0%, rgba(56,189,248,0.20), rgba(2,6,23,0.00)), linear-gradient(180deg, #0b1220 0%, #050814 70%, #030615 100%)",
+            }}
+          >
+            <div className="mb-4 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+              <div className="flex items-center gap-3">
+                <div
+                  className="shrink-0 overflow-hidden rounded-2xl border border-white/12 bg-white/6"
+                  style={{ width: APP_TILE_SIZE, height: APP_TILE_SIZE }}
+                >
+                  {logoDataUrlOrPublicUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={logoDataUrlOrPublicUrl} alt="App tile preview" className="h-full w-full object-contain p-2" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[10px] text-white/35">No logo</div>
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="truncate text-sm font-semibold text-white/95">{sponsorName || "Sponsor name"}</div>
+                    {tier ? (
+                      <div className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/75">
+                        {tier}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="text-[11px] text-white/55">Tap for details</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+              <div className="mb-3 text-xs font-semibold text-white/85">Preloader chip</div>
+              <div className="flex items-center justify-center">
+                <div
+                  className="flex items-center justify-center rounded-3xl border border-white/10 bg-white/6 shadow-[0_0_40px_rgba(56,189,248,0.12)]"
+                  style={{ width: PRELOADER_TILE_SIZE, height: PRELOADER_TILE_SIZE }}
+                >
+                  {logoDataUrlOrPublicUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={logoDataUrlOrPublicUrl}
+                      alt="Preloader chip preview"
+                      className="h-full w-full object-contain"
+                      style={{ padding: PRELOADER_TILE_PAD }}
+                    />
+                  ) : (
+                    <div className="text-[10px] text-white/35">No logo</div>
+                  )}
+                </div>
+              </div>
+              <div className="mt-3 text-center text-[11px] text-white/55">
+                This chip preview is the best indicator of readability during your sponsor preloader overlay.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SponsorLogoUltraUploader({
+  sponsorName,
+  tier,
+  currentLogoKey,
+  onChangeLogoKey,
+}: {
+  sponsorName: string;
+  tier: string;
+  currentLogoKey: string | null | undefined;
+  onChangeLogoKey: (next: string | null) => void;
+}) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [status, setStatus] = useState<string>("");
+  const [localPreviewDataUrl, setLocalPreviewDataUrl] = useState<string | null>(null);
+  const [prepMeta, setPrepMeta] = useState<{ avgLuminance: number; haloApplied: boolean } | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const currentPublicUrl = useMemo(() => getLogoPublicUrl(currentLogoKey ?? null), [currentLogoKey]);
+  const effectivePreview = localPreviewDataUrl || currentPublicUrl;
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const inputEl = e.target;
+    const file = inputEl.files?.[0] ?? null;
+    if (!file) return;
+
+    setStatus("");
+    setLocalPreviewDataUrl(null);
+    setPrepMeta(null);
+
+    if (!file.type.startsWith("image/")) {
+      setStatus("Only image uploads are allowed.");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+
+    if (file.size > MAX_BYTES) {
+      setStatus("Image too large. Max size is 7 MB.");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+
+    try {
+      const dims = await getImageDimensions(file);
+      if (dims.width < MIN_LOGO_PX || dims.height < MIN_LOGO_PX) {
+        setStatus(`Image is too small. Please upload at least ${MIN_LOGO_PX}×${MIN_LOGO_PX}px for premium results.`);
+        if (inputRef.current) inputRef.current.value = "";
+        return;
+      }
+    } catch {
+      // allow continuing; prep step may still work
+    }
+
+    setIsUploading(true);
+    setStatus("Preparing ultra-premium logo (trim + pad + 2000×2000 PNG)…");
+
+    try {
+      const prepared = await prepLogoToPremiumSquarePng(file);
+      setLocalPreviewDataUrl(prepared.previewDataUrl);
+      setPrepMeta({ avgLuminance: prepared.avgLuminance, haloApplied: prepared.haloApplied });
+
+      setStatus(
+        `Uploading… (Output: ${PREMIUM_OUT_SIZE}px PNG · ${prepared.haloApplied ? "Dark logo detected" : "Looks good"} · Luminance: ${prepared.avgLuminance.toFixed(
+          2
+        )})`
+      );
+
+      const formData = new FormData();
+      formData.append("file", prepared.file);
+      formData.append("sponsorName", sponsorName || "Sponsor");
+      formData.append("sponsorSlug", slugify(sponsorName || "sponsor"));
+
+      const res = await fetch("/api/sponsors/upload-logo", {
+        method: "POST",
+        body: formData,
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json?.success) {
+        console.error("[SponsorLogoUltraUploader] Upload error:", json);
+        setStatus(json?.error || "Upload failed. Please try another image.");
+        return;
+      }
+
+      onChangeLogoKey((json.key as string) ?? null);
+
+      void logDashboardEvent({
+        action: "update",
+        entity: "sponsors",
+        details: {
+          logo_prep: {
+            output_size: PREMIUM_OUT_SIZE,
+            fit_padding: FIT_PADDING,
+            halo_threshold: DARK_LUMINANCE_THRESHOLD,
+            halo_applied: prepared.haloApplied,
+            avg_luminance: prepared.avgLuminance,
+          },
+        },
+      });
+
+      setStatus("✅ Uploaded. This preview matches what you’ll see in the app. Don’t forget to Save Sponsor.");
+    } catch (err: any) {
+      console.error("[SponsorLogoUltraUploader] error", err);
+      setStatus(err?.message || "Failed to prepare/upload logo.");
+    } finally {
+      setIsUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+      else {
+        try {
+          inputEl.value = "";
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold text-slate-800">Sponsor logo (Ultra-Premium Prep)</p>
+            <p className="text-[11px] text-slate-600">
+              Upload PNG/JPEG/WebP — we auto-prep to a transparent <span className="font-semibold">2000×2000 PNG</span> with trim + padding.
+              Dark logos get a subtle halo only when needed (preloader visibility).
+            </p>
+          </div>
+
+          <label className="inline-flex cursor-pointer items-center rounded-full bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-slate-900 shadow-sm hover:bg-amber-300">
+            <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} disabled={isUploading} />
+            {isUploading ? "Working…" : "Choose logo"}
+          </label>
+        </div>
+
+        {status ? <div className="text-[11px] text-slate-700">{status}</div> : null}
+
+        <div className="text-[11px] text-slate-500">
+          Recommended input: transparent PNG, exported at <span className="font-semibold">2000×2000</span> (or larger).
+        </div>
+      </div>
+
+      <AppExactPreview
+        sponsorName={sponsorName}
+        tier={tier}
+        logoDataUrlOrPublicUrl={effectivePreview}
+        preferLightVariant={prepMeta?.haloApplied ?? false}
+      />
+    </div>
+  );
 }
 
 export default function SponsorsPage() {
@@ -321,24 +619,8 @@ export default function SponsorsPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
-  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
-  const [logoDims, setLogoDims] = useState<{ width: number; height: number } | null>(null);
-
-  const [previewAsMobile, setPreviewAsMobile] = useState<boolean>(true);
-
-  // Reprocess state
-  const [reprocessing, setReprocessing] = useState(false);
-  const [reprocessMsg, setReprocessMsg] = useState<string | null>(null);
-
   useEffect(() => {
     void fetchSponsors();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -363,12 +645,9 @@ export default function SponsorsPage() {
     setSponsors(normalized);
     setLoading(false);
 
-    // Best-effort normalize sort_order in DB
     void (async () => {
       try {
-        const updates = normalized.map((s) =>
-          supabase.from("sponsors").update({ sort_order: s.sort_order }).eq("id", s.id)
-        );
+        const updates = normalized.map((s) => supabase.from("sponsors").update({ sort_order: s.sort_order }).eq("id", s.id));
         await Promise.all(updates);
       } catch {
         // ignore
@@ -381,28 +660,23 @@ export default function SponsorsPage() {
     return Number.isFinite(max) ? max + 1 : 1;
   }, [sponsors]);
 
-  function resetPreviewState() {
-    if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
-    setLogoPreviewUrl(null);
-    setLogoDims(null);
+  function handleInputChange<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   function openCreateModal() {
-    resetPreviewState();
-    setForm({ ...EMPTY_FORM, sort_order: nextSuggestedSortOrder });
+    setForm({ ...EMPTY_FORM, sort_order: nextSuggestedSortOrder, is_preloader_enabled: false });
     setIsEditing(false);
     setError(null);
     setModalOpen(true);
   }
 
   function openEditModal(sponsor: Sponsor) {
-    resetPreviewState();
     setIsEditing(true);
     setError(null);
     setForm({
       id: sponsor.id,
       name: sponsor.name,
-      logoFile: undefined,
       logo_path: sponsor.logo_path,
       website_url: sponsor.website_url || "",
       tier: sponsor.tier || "",
@@ -411,6 +685,8 @@ export default function SponsorsPage() {
       start_date: sponsor.start_date ? sponsor.start_date.substring(0, 10) : "",
       end_date: sponsor.end_date ? sponsor.end_date.substring(0, 10) : "",
       notes: sponsor.notes || "",
+      sponsor_message: sponsor.sponsor_message || "",
+      is_preloader_enabled: !!sponsor.is_preloader_enabled,
     });
     setModalOpen(true);
   }
@@ -419,55 +695,6 @@ export default function SponsorsPage() {
     setModalOpen(false);
     setSaving(false);
     setError(null);
-    resetPreviewState();
-  }
-
-  function handleInputChange<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  async function onPickLogo(file?: File | null) {
-    handleInputChange("logoFile", file ?? undefined);
-
-    resetPreviewState();
-    if (!file) return;
-
-    const preview = URL.createObjectURL(file);
-    setLogoPreviewUrl(preview);
-
-    try {
-      const dims = await getImageDimensions(file);
-      setLogoDims(dims);
-    } catch (e) {
-      console.error(e);
-      setLogoDims(null);
-    }
-  }
-
-  async function uploadLogoIfNeeded(file?: File | null): Promise<string | null | undefined> {
-    if (!file) return form.logo_path ?? null;
-
-    // ✅ Fully automatic: trim + normalize + backer (no UI change)
-    const processed = await processLogoToSquarePng(file, {
-      size: OUTPUT_PNG_SIZE,
-      padding: FIT_PADDING,
-      trim: true,
-      backer: true,
-    });
-
-    const fileName = processed.name;
-
-    const { error: uploadError } = await supabase.storage.from(SPONSOR_BUCKET).upload(fileName, processed, {
-      upsert: true,
-      contentType: "image/png",
-    });
-
-    if (uploadError) {
-      console.error(uploadError);
-      throw new Error(uploadError.message || "Failed to upload logo");
-    }
-
-    return fileName;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -481,20 +708,9 @@ export default function SponsorsPage() {
       const sortOrderNum = Number(form.sort_order);
       if (!Number.isFinite(sortOrderNum)) throw new Error("Sort order must be a number.");
 
-      if (form.logoFile) {
-        const dims = logoDims ?? (await getImageDimensions(form.logoFile));
-        if (dims.width < MIN_LOGO_PX || dims.height < MIN_LOGO_PX) {
-          throw new Error(
-            `Logo image is too small. Please upload at least ${MIN_LOGO_PX}×${MIN_LOGO_PX}px (recommended ${RECOMMENDED_LOGO_PX}×${RECOMMENDED_LOGO_PX}px). Current: ${dims.width}×${dims.height}px.`
-          );
-        }
-      }
-
-      const logo_path = await uploadLogoIfNeeded(form.logoFile);
-
-      const payload = {
+      const payload: any = {
         name: form.name,
-        logo_path: logo_path ?? null,
+        logo_path: form.logo_path ?? null,
         website_url: form.website_url || null,
         tier: form.tier || null,
         is_active: form.is_active,
@@ -502,7 +718,11 @@ export default function SponsorsPage() {
         start_date: form.start_date || null,
         end_date: form.end_date || null,
         notes: form.notes || null,
+        sponsor_message: form.sponsor_message || null,
       };
+
+      if (!form.id) payload.is_preloader_enabled = false;
+      else payload.is_preloader_enabled = !!form.is_preloader_enabled;
 
       let sponsorId: string | undefined;
       const action: "create" | "update" = form.id ? "update" : "create";
@@ -529,10 +749,8 @@ export default function SponsorsPage() {
           website_url: form.website_url || null,
           start_date: form.start_date || null,
           end_date: form.end_date || null,
-          logo_path: logo_path ?? null,
-          logo_normalized: form.logoFile
-            ? { size: OUTPUT_PNG_SIZE, padding: FIT_PADDING, trim: true, backer: true }
-            : null,
+          logo_path: form.logo_path ?? null,
+          sponsor_message: form.sponsor_message || null,
         },
       });
 
@@ -560,15 +778,7 @@ export default function SponsorsPage() {
         action: "delete",
         entity: "sponsors",
         entityId: id,
-        details: sponsor
-          ? {
-              name: sponsor.name,
-              tier: sponsor.tier,
-              is_active: sponsor.is_active,
-              sort_order: sponsor.sort_order,
-              logo_path: sponsor.logo_path,
-            }
-          : { id },
+        details: sponsor ? { name: sponsor.name, logo_path: sponsor.logo_path } : { id },
       });
 
       await fetchSponsors();
@@ -601,106 +811,13 @@ export default function SponsorsPage() {
 
     setReordering(true);
     try {
-      await Promise.all(
-        finalList.map((s) => supabase.from("sponsors").update({ sort_order: s.sort_order }).eq("id", s.id))
-      );
-
-      void logDashboardEvent({
-        action: "update",
-        entity: "sponsors",
-        entityId: id,
-        details: { reorder: true, direction: delta < 0 ? "up" : "down" },
-      });
+      await Promise.all(finalList.map((s) => supabase.from("sponsors").update({ sort_order: s.sort_order }).eq("id", s.id)));
     } catch (e) {
       console.error(e);
       setError("Failed to update sponsor order. Refresh and try again.");
       await fetchSponsors();
     } finally {
       setReordering(false);
-    }
-  }
-
-  async function reprocessExistingLogos() {
-    if (reprocessing) return;
-    if (
-      !confirm(
-        "Reprocess ALL existing sponsor logos? This will re-upload normalized PNGs and update logo_path."
-      )
-    ) {
-      return;
-    }
-
-    setReprocessing(true);
-    setReprocessMsg(null);
-    setError(null);
-
-    try {
-      const withLogos = sponsors.filter((s) => !!s.logo_path);
-
-      if (withLogos.length === 0) {
-        setReprocessMsg("No sponsor logos found to reprocess.");
-        setReprocessing(false);
-        return;
-      }
-
-      let ok = 0;
-      let failed = 0;
-
-      for (const s of withLogos) {
-        try {
-          if (!s.logo_path) continue;
-
-          const { data: blob, error: dlErr } = await supabase.storage.from(SPONSOR_BUCKET).download(s.logo_path);
-          if (dlErr || !blob) throw new Error(dlErr?.message || "Download failed");
-
-          const guessedExt = (s.logo_path.split(".").pop() || "png").toLowerCase();
-          const baseName = sanitizeBaseName(s.name || "logo");
-          const original = new File([blob], `${baseName}.${guessedExt}`, {
-            type: blob.type || "application/octet-stream",
-          });
-
-          const processed = await processLogoToSquarePng(original, {
-            size: OUTPUT_PNG_SIZE,
-            padding: FIT_PADDING,
-            trim: true,
-            backer: true,
-          });
-
-          const fileName = processed.name;
-
-          const { error: upErr } = await supabase.storage.from(SPONSOR_BUCKET).upload(fileName, processed, {
-            upsert: true,
-            contentType: "image/png",
-          });
-          if (upErr) throw new Error(upErr.message || "Upload failed");
-
-          const { error: dbErr } = await supabase.from("sponsors").update({ logo_path: fileName }).eq("id", s.id);
-          if (dbErr) throw new Error(dbErr.message || "DB update failed");
-
-          ok++;
-        } catch (e) {
-          console.error("[reprocess sponsor logo] failed", s.id, e);
-          failed++;
-        }
-      }
-
-      void logDashboardEvent({
-        action: "update",
-        entity: "sponsors",
-        details: {
-          reprocess_existing_logos: true,
-          output: { size: OUTPUT_PNG_SIZE, padding: FIT_PADDING, trim: true, backer: true },
-          results: { ok, failed },
-        },
-      });
-
-      await fetchSponsors();
-      setReprocessMsg(`Reprocess complete: ${ok} updated, ${failed} failed.`);
-    } catch (e: any) {
-      console.error(e);
-      setError(e?.message || "Failed to reprocess logos.");
-    } finally {
-      setReprocessing(false);
     }
   }
 
@@ -711,48 +828,12 @@ export default function SponsorsPage() {
           <div>
             <h2 className="text-xl font-semibold text-slate-900">Sponsors</h2>
             <p className="text-xs text-slate-600">
-              Tip: logos should be at least{" "}
-              <span className="font-semibold">
-                {MIN_LOGO_PX}×{MIN_LOGO_PX}px
-              </span>{" "}
-              (recommended{" "}
-              <span className="font-semibold">
-                {RECOMMENDED_LOGO_PX}×{RECOMMENDED_LOGO_PX}px
-              </span>
-              ) for crisp mobile quality (app renders at {LOGO_SIZE_IN_APP}×{LOGO_SIZE_IN_APP}). Uploads are auto-trimmed and normalized to {OUTPUT_PNG_SIZE}px PNG with a white backer so black logos stay visible.
+              Upload logos with <span className="font-semibold">Ultra-Premium Prep</span> so they remain readable in the app preloader.
             </p>
-
-            <div className="mt-2 flex items-center gap-3">
-              <label className="inline-flex items-center gap-2 text-xs text-slate-700">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 text-sky-500"
-                  checked={previewAsMobile}
-                  onChange={(e) => setPreviewAsMobile(e.target.checked)}
-                />
-                Preview logos as mobile (64×64)
-              </label>
-              <span className="text-[11px] text-slate-500">
-                {previewAsMobile ? "Showing mobile size preview." : "Showing larger dashboard preview."}
-              </span>
-              {reordering && <span className="text-[11px] text-slate-500">Updating order…</span>}
-              {reprocessing && <span className="text-[11px] text-slate-500">Reprocessing logos…</span>}
-            </div>
-
-            {reprocessMsg && <div className="mt-2 text-[11px] text-slate-600">{reprocessMsg}</div>}
+            {reordering && <div className="mt-2 text-[11px] text-slate-500">Updating order…</div>}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 justify-end">
-            <button
-              type="button"
-              onClick={() => void reprocessExistingLogos()}
-              disabled={reprocessing || loading || sponsors.length === 0}
-              className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
-              title="Auto-trim + normalize + backer all existing sponsor logos"
-            >
-              {reprocessing ? "Reprocessing…" : "Reprocess existing logos"}
-            </button>
-
             <button
               type="button"
               onClick={openCreateModal}
@@ -764,9 +845,7 @@ export default function SponsorsPage() {
         </header>
 
         {error && !modalOpen && (
-          <div className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-800">
-            {error}
-          </div>
+          <div className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-800">{error}</div>
         )}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -781,8 +860,6 @@ export default function SponsorsPage() {
             <ul className="space-y-3">
               {sponsors.map((sponsor, i) => {
                 const logoUrl = getLogoPublicUrl(sponsor.logo_path);
-                const logoBoxSize = previewAsMobile ? 64 : 80;
-                const imgPad = previewAsMobile ? "p-2" : "p-3";
 
                 return (
                   <li
@@ -791,72 +868,31 @@ export default function SponsorsPage() {
                   >
                     <div className="flex items-center gap-3">
                       {logoUrl ? (
-                        <div
-                          className="flex items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white"
-                          style={{
-                            width: logoBoxSize,
-                            height: logoBoxSize,
-                            backgroundImage:
-                              "linear-gradient(45deg, #e5e7eb 25%, transparent 25%), linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e7eb 75%), linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)",
-                            backgroundSize: "16px 16px",
-                            backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
-                          }}
-                          title={previewAsMobile ? "Mobile preview (64×64)" : "Dashboard preview"}
-                        >
+                        <div className="flex items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white" style={{ width: 72, height: 72 }}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={logoUrl} alt={sponsor.name} className={cn("h-full w-full object-contain", imgPad)} />
+                          <img src={logoUrl} alt={sponsor.name} className="h-full w-full object-contain p-2" />
                         </div>
                       ) : (
                         <div
                           className="flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white text-[10px] text-slate-400"
-                          style={{ width: logoBoxSize, height: logoBoxSize }}
+                          style={{ width: 72, height: 72 }}
                         >
                           No logo
                         </div>
                       )}
 
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-medium text-slate-900">{sponsor.name}</span>
+
                           {sponsor.tier && (
                             <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
                               {sponsor.tier}
                             </span>
                           )}
-                          {!sponsor.is_active && (
-                            <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700">
-                              Inactive
-                            </span>
-                          )}
                         </div>
 
-                        <p className="text-xs text-slate-600">
-                          Order: {sponsor.sort_order}
-                          {sponsor.website_url && (
-                            <>
-                              {" "}
-                              ·{" "}
-                              <a
-                                href={sponsor.website_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-sky-600 underline-offset-2 hover:underline"
-                              >
-                                {sponsor.website_url}
-                              </a>
-                            </>
-                          )}
-                        </p>
-
-                        {(sponsor.start_date || sponsor.end_date) && (
-                          <p className="mt-0.5 text-[11px] text-slate-500">
-                            {sponsor.start_date && `Start: ${sponsor.start_date.substring(0, 10)}`}
-                            {sponsor.start_date && sponsor.end_date && " · "}
-                            {sponsor.end_date && `End: ${sponsor.end_date.substring(0, 10)}`}
-                          </p>
-                        )}
-
-                        {sponsor.notes && <p className="mt-1 text-xs text-slate-600">{sponsor.notes}</p>}
+                        <p className="text-xs text-slate-600">Order: {sponsor.sort_order}</p>
                       </div>
                     </div>
 
@@ -907,14 +943,11 @@ export default function SponsorsPage() {
 
       {modalOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
-          <div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">{isEditing ? "Edit sponsor" : "Add sponsor"}</h2>
-                <p className="text-xs text-slate-600">
-                  App list uses a 64×64 circle on a dark background. Uploads are auto-trimmed, normalized to {OUTPUT_PNG_SIZE}px PNG,
-                  and get a white backer so black logos stay visible while still looking clean in the sponsor hero.
-                </p>
+                <p className="text-xs text-slate-600">Logos are prepped to a premium standard so they remain readable on the mobile preloader.</p>
               </div>
               <button
                 type="button"
@@ -925,9 +958,7 @@ export default function SponsorsPage() {
               </button>
             </div>
 
-            {error && (
-              <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
-            )}
+            {error && <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
 
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="space-y-1">
@@ -937,7 +968,6 @@ export default function SponsorsPage() {
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                   value={form.name}
                   onChange={(e) => handleInputChange("name", e.target.value)}
-                  placeholder="Bud Light, local brewery, brand partner…"
                 />
               </div>
 
@@ -948,7 +978,6 @@ export default function SponsorsPage() {
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                     value={form.tier}
                     onChange={(e) => handleInputChange("tier", e.target.value)}
-                    placeholder="Stage, Platinum, Gold…"
                   />
                 </div>
 
@@ -958,141 +987,16 @@ export default function SponsorsPage() {
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
                     value={form.website_url}
                     onChange={(e) => handleInputChange("website_url", e.target.value)}
-                    placeholder="https://example.com"
                   />
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-800">Sponsor order (sort_order)</label>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
-                    value={form.sort_order}
-                    onChange={(e) => handleInputChange("sort_order", Number(e.target.value))}
-                    placeholder="0"
-                  />
-                  <p className="text-[11px] text-slate-500">Lower numbers show first in the app.</p>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-800">Status</label>
-                  <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 text-sky-500"
-                      checked={form.is_active}
-                      onChange={(e) => handleInputChange("is_active", e.target.checked)}
-                    />
-                    Active sponsor
-                  </label>
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-800">Start date (optional)</label>
-                  <input
-                    type="date"
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
-                    value={form.start_date}
-                    onChange={(e) => handleInputChange("start_date", e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-800">End date (optional)</label>
-                  <input
-                    type="date"
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
-                    value={form.end_date}
-                    onChange={(e) => handleInputChange("end_date", e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-800">Notes (internal)</label>
-                <textarea
-                  rows={2}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
-                  value={form.notes}
-                  onChange={(e) => handleInputChange("notes", e.target.value)}
-                  placeholder="Anything you want to remember about this sponsor."
-                />
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-[220px]">
-                    <p className="text-xs font-semibold text-slate-800">Logo image (PNG/JPG)</p>
-                    <p className="mt-1 text-[11px] text-slate-600">
-                      Minimum: {MIN_LOGO_PX}×{MIN_LOGO_PX}px (recommended {RECOMMENDED_LOGO_PX}×{RECOMMENDED_LOGO_PX}px). Uploads auto-trim and normalize.
-                    </p>
-
-                    <label className="mt-3 inline-flex cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100">
-                      Choose file…
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => void onPickLogo(e.target.files?.[0] ?? null)} />
-                    </label>
-
-                    <p className="mt-2 text-[11px] text-slate-500">
-                      {form.logoFile ? `Selected: ${form.logoFile.name}` : form.logo_path ? `Current: ${form.logo_path}` : "No file selected yet"}
-                    </p>
-
-                    {logoDims &&
-                      (() => {
-                        const tooSmall = logoDims.width < MIN_LOGO_PX || logoDims.height < MIN_LOGO_PX;
-                        const recommended = logoDims.width >= RECOMMENDED_LOGO_PX && logoDims.height >= RECOMMENDED_LOGO_PX;
-
-                        return (
-                          <p className={cn("mt-1 text-[11px]", tooSmall ? "text-rose-700" : recommended ? "text-emerald-700" : "text-green-700")}>
-                            {logoDims.width}×{logoDims.height}px {tooSmall ? "— too small" : recommended ? "— recommended" : "— OK"}
-                          </p>
-                        );
-                      })()}
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="rounded-2xl border border-slate-200 bg-white p-3"
-                      style={{
-                        width: previewAsMobile ? 96 : 112,
-                        height: previewAsMobile ? 96 : 112,
-                        backgroundImage:
-                          "linear-gradient(45deg, #e5e7eb 25%, transparent 25%), linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e7eb 75%), linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)",
-                        backgroundSize: "18px 18px",
-                        backgroundPosition: "0 0, 0 9px, 9px -9px, -9px 0px",
-                      }}
-                      title="Preview (checkerboard)"
-                    >
-                      {(() => {
-                        const src = logoPreviewUrl ?? getLogoPublicUrl(form.logo_path);
-                        if (!src) return <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-500">No logo</div>;
-                        // eslint-disable-next-line @next/next/no-img-element
-                        return <img src={src} alt="Logo preview" className="h-full w-full object-contain" />;
-                      })()}
-                    </div>
-
-                    <div className="flex flex-col items-center gap-1">
-                      <div
-                        className="rounded-full border border-slate-300 bg-slate-950"
-                        style={{ width: LOGO_SIZE_IN_APP + 12, height: LOGO_SIZE_IN_APP + 12, padding: 6 }}
-                        title="Mobile render (approx)"
-                      >
-                        {(() => {
-                          const src = logoPreviewUrl ?? getLogoPublicUrl(form.logo_path);
-                          if (!src) return null;
-                          // eslint-disable-next-line @next/next/no-img-element
-                          return <img src={src} alt="Mobile preview" className="h-full w-full object-contain" />;
-                        })()}
-                      </div>
-                      <span className="text-[11px] text-slate-500">Mobile (64×64)</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <SponsorLogoUltraUploader
+                sponsorName={form.name}
+                tier={form.tier}
+                currentLogoKey={form.logo_path ?? null}
+                onChangeLogoKey={(next) => handleInputChange("logo_path", next)}
+              />
 
               <div className="mt-3 flex items-center justify-end gap-3">
                 <button
