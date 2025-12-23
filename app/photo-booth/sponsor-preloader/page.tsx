@@ -21,14 +21,12 @@ type SponsorPreloaderConfig = {
   title: string;
   body: string;
   duration_ms: number;
-  starts_on: string | null; // YYYY-MM-DD (ET)
-  ends_on: string | null; // YYYY-MM-DD (ET)
+  starts_on: string | null; // YYYY-MM-DD
+  ends_on: string | null; // YYYY-MM-DD
   max_sponsors: number;
 
-  // ✅ New: VIP frequency cap (dashboard-controlled)
-  // VIP users see the preloader up to this many times (tracked server-side).
-  // Guests (no login) can still be shown every time.
-  vip_max_shows: number;
+  // VIP daily control
+  vip_max_shows?: number; // 0 = never for VIP, N>0 = show up to N times per day (ET)
 };
 
 const PRELOADER_SETTINGS_KEY = "sponsor_preloader";
@@ -41,8 +39,6 @@ const DEFAULT_PRELOADER: SponsorPreloaderConfig = {
   starts_on: null,
   ends_on: null,
   max_sponsors: 8,
-
-  // ✅ Default VIP cap (you can change in dashboard any time)
   vip_max_shows: 3,
 };
 
@@ -60,17 +56,21 @@ function clampConfig(raw: any): SponsorPreloaderConfig {
   const max = Number(merged.max_sponsors);
   merged.max_sponsors = Number.isFinite(max) ? Math.min(30, Math.max(1, max)) : DEFAULT_PRELOADER.max_sponsors;
 
-  // ✅ Clamp VIP max shows (0..50)
-  // - 0 means "do not show for VIP" (still can show for guests if enabled)
-  // - 1..50 means show VIP up to N times (tracked in DB)
-  const vip = Number(merged.vip_max_shows);
-  merged.vip_max_shows = Number.isFinite(vip) ? Math.min(50, Math.max(0, vip)) : DEFAULT_PRELOADER.vip_max_shows;
-
   const s = merged.starts_on ? String(merged.starts_on).slice(0, 10) : null;
   const e = merged.ends_on ? String(merged.ends_on).slice(0, 10) : null;
 
   merged.starts_on = s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
   merged.ends_on = e && /^\d{4}-\d{2}-\d{2}$/.test(e) ? e : null;
+
+  // VIP max shows: allow 0..50 (0 = never for VIP)
+  const vipRaw = merged.vip_max_shows;
+  const vip = Number(vipRaw);
+  merged.vip_max_shows =
+    vipRaw === 0
+      ? 0
+      : Number.isFinite(vip)
+      ? Math.min(50, Math.max(0, vip))
+      : DEFAULT_PRELOADER.vip_max_shows;
 
   return merged;
 }
@@ -268,7 +268,7 @@ export default function SponsorPreloaderPage() {
     <DashboardShell
       title="Sponsor Preloader"
       subtitle="Edit preloader messaging (no app update) and manage which sponsors appear in the preloader."
-      activeTab="sponsor-preloader"
+      activeTab="sponsors"
     >
       <div className="space-y-6">
         {/* Config card */}
@@ -343,20 +343,20 @@ export default function SponsorPreloaderPage() {
                 </div>
               </div>
 
-              {/* ✅ New: VIP max shows */}
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-800">VIP Max Shows</label>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
-                  value={config.vip_max_shows}
-                  onChange={(e) => setConfig((p) => ({ ...p, vip_max_shows: Number(e.target.value) }))}
-                />
-                <p className="text-[11px] text-slate-500">
-                  VIP users (logged in) will see the preloader up to this many times. Set to <span className="font-semibold">0</span> to disable for VIP.
-                  Guests (no login) can still be shown every time when Enabled is on.
-                </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-800">VIP max shows per day (ET)</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+                    value={typeof config.vip_max_shows === "number" ? config.vip_max_shows : 3}
+                    onChange={(e) => setConfig((p) => ({ ...p, vip_max_shows: Number(e.target.value) }))}
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    VIP users see the preloader up to this many times per day. Set to <span className="font-semibold">0</span> to never show VIP.
+                  </p>
+                </div>
               </div>
             </div>
 
