@@ -25,7 +25,7 @@ type SponsorPreloaderConfig = {
   ends_on: string | null; // YYYY-MM-DD
   max_sponsors: number;
 
-  // VIP daily control
+  // VIP daily cap (ET) – used by the app
   vip_max_shows?: number; // 0 = never for VIP, N>0 = show up to N times per day (ET)
 };
 
@@ -97,6 +97,10 @@ export default function SponsorPreloaderPage() {
   const [pickerSearch, setPickerSearch] = useState("");
   const [pickerSelectedIds, setPickerSelectedIds] = useState<Record<string, boolean>>({});
 
+  // Preview modal
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
+
   useEffect(() => {
     void fetchConfig();
     void fetchSponsors();
@@ -104,7 +108,17 @@ export default function SponsorPreloaderPage() {
   }, []);
 
   const pool = useMemo(() => sponsors.filter((s) => !!s.is_preloader_enabled), [sponsors]);
-  const poolCount = pool.length;
+  const poolSorted = useMemo(() => {
+    return pool
+      .slice()
+      .sort(
+        (a, b) =>
+          Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0) ||
+          String(a.created_at || "").localeCompare(String(b.created_at || ""))
+      );
+  }, [pool]);
+
+  const poolCount = poolSorted.length;
 
   const availableForPicker = useMemo(() => {
     const q = pickerSearch.trim().toLowerCase();
@@ -116,6 +130,14 @@ export default function SponsorPreloaderPage() {
 
     return base.filter((s) => (s.name || "").toLowerCase().includes(q) || (s.tier || "").toLowerCase().includes(q));
   }, [sponsors, pickerSearch]);
+
+  const previewSponsor = useMemo(() => {
+    if (poolSorted.length === 0) return null;
+    const idx = Math.max(0, Math.min(poolSorted.length - 1, previewIndex));
+    return poolSorted[idx] || null;
+  }, [poolSorted, previewIndex]);
+
+  const previewLogoUrl = useMemo(() => getLogoPublicUrl(previewSponsor?.logo_path || null), [previewSponsor]);
 
   async function fetchConfig() {
     setLoadingConfig(true);
@@ -264,10 +286,29 @@ export default function SponsorPreloaderPage() {
     }
   }
 
+  function openPreview() {
+    setPreviewIndex(0);
+    setPreviewOpen(true);
+  }
+
+  function closePreview() {
+    setPreviewOpen(false);
+  }
+
+  function nextPreview() {
+    if (poolSorted.length === 0) return;
+    setPreviewIndex((i) => (i + 1) % poolSorted.length);
+  }
+
+  function prevPreview() {
+    if (poolSorted.length === 0) return;
+    setPreviewIndex((i) => (i - 1 + poolSorted.length) % poolSorted.length);
+  }
+
   return (
     <DashboardShell
       title="Sponsor Preloader"
-      subtitle="Edit preloader messaging (no app update) and manage which sponsors appear in the preloader."
+      subtitle="Edit preloader messaging (no app update), control VIP daily frequency, and manage which sponsors appear in the preloader."
       activeTab="sponsors"
     >
       <div className="space-y-6">
@@ -276,12 +317,31 @@ export default function SponsorPreloaderPage() {
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">Preloader messaging</h3>
-              <p className="text-xs text-slate-600">These values are read by the app. Change copy here without shipping an app update.</p>
+              <p className="text-xs text-slate-600">
+                These values are read by the app. Change copy here without shipping an app update.
+              </p>
             </div>
-            {loadingConfig && <span className="text-xs text-slate-500">Loading…</span>}
+
+            <div className="flex items-center gap-2">
+              {loadingConfig && <span className="text-xs text-slate-500">Loading…</span>}
+
+              <button
+                type="button"
+                onClick={openPreview}
+                disabled={poolSorted.length === 0}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                title={poolSorted.length === 0 ? "Add sponsors to the pool to enable preview" : "Preview the exact preloader look"}
+              >
+                Preview preloader
+              </button>
+            </div>
           </div>
 
-          {configError && <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">{configError}</div>}
+          {configError && (
+            <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {configError}
+            </div>
+          )}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-2">
@@ -354,7 +414,8 @@ export default function SponsorPreloaderPage() {
                     onChange={(e) => setConfig((p) => ({ ...p, vip_max_shows: Number(e.target.value) }))}
                   />
                   <p className="text-[11px] text-slate-500">
-                    VIP users see the preloader up to this many times per day. Set to <span className="font-semibold">0</span> to never show VIP.
+                    VIP users see the preloader up to this many times per day. Set to{" "}
+                    <span className="font-semibold">0</span> to never show VIP.
                   </p>
                 </div>
               </div>
@@ -378,7 +439,9 @@ export default function SponsorPreloaderPage() {
                   value={config.body}
                   onChange={(e) => setConfig((p) => ({ ...p, body: e.target.value }))}
                 />
-                <p className="text-[11px] text-slate-500">Tip: keep it short + premium. This copy appears in the app overlay.</p>
+                <p className="text-[11px] text-slate-500">
+                  Tip: keep it short + premium. This copy appears in the app overlay.
+                </p>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">
@@ -407,7 +470,9 @@ export default function SponsorPreloaderPage() {
 
             <div className="flex items-center gap-2">
               {loadingSponsors && <span className="text-xs text-slate-500">Loading…</span>}
-              <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">{poolCount} in pool</span>
+              <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                {poolCount} in pool
+              </span>
 
               <button
                 type="button"
@@ -420,48 +485,56 @@ export default function SponsorPreloaderPage() {
             </div>
           </div>
 
-          {poolError && <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">{poolError}</div>}
+          {poolError && (
+            <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {poolError}
+            </div>
+          )}
 
-          {pool.length === 0 && !loadingSponsors ? (
+          {poolSorted.length === 0 && !loadingSponsors ? (
             <p className="text-sm text-slate-600">
-              No sponsors in the preloader pool yet. Click <span className="font-semibold">“Add sponsors”</span> to select some.
+              No sponsors in the preloader pool yet. Click{" "}
+              <span className="font-semibold">“Add sponsors”</span> to select some.
             </p>
           ) : (
             <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {pool
-                .slice()
-                .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
-                .map((s) => {
-                  const logoUrl = getLogoPublicUrl(s.logo_path);
-                  return (
-                    <li key={s.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 overflow-hidden rounded-xl border border-slate-200 bg-white">
-                          {logoUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={logoUrl} alt={s.name || "Sponsor"} className="h-full w-full object-contain p-2" />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">No logo</div>
-                          )}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-slate-900">{s.name || "Unnamed sponsor"}</p>
-                          {s.tier ? <p className="text-[11px] font-semibold text-sky-700">{s.tier}</p> : <p className="text-[11px] text-slate-500">—</p>}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => void removeFromPool(s.id)}
-                          disabled={poolSaving}
-                          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-60"
-                        >
-                          Remove
-                        </button>
+              {poolSorted.map((s) => {
+                const logoUrl = getLogoPublicUrl(s.logo_path);
+                return (
+                  <li key={s.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        {logoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={logoUrl} alt={s.name || "Sponsor"} className="h-full w-full object-contain p-2" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">
+                            No logo
+                          </div>
+                        )}
                       </div>
-                    </li>
-                  );
-                })}
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">{s.name || "Unnamed sponsor"}</p>
+                        {s.tier ? (
+                          <p className="text-[11px] font-semibold text-sky-700">{s.tier}</p>
+                        ) : (
+                          <p className="text-[11px] text-slate-500">—</p>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => void removeFromPool(s.id)}
+                        disabled={poolSaving}
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-60"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -517,14 +590,19 @@ export default function SponsorPreloaderPage() {
                   const logoUrl = getLogoPublicUrl(s.logo_path);
 
                   return (
-                    <li key={s.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="flex items-center gap-3 min-w-0">
+                    <li
+                      key={s.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
                         <div className="h-10 w-10 overflow-hidden rounded-xl border border-slate-200 bg-white">
                           {logoUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={logoUrl} alt={s.name || "Sponsor"} className="h-full w-full object-contain p-2" />
                           ) : (
-                            <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">No logo</div>
+                            <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">
+                              No logo
+                            </div>
                           )}
                         </div>
 
@@ -548,6 +626,175 @@ export default function SponsorPreloaderPage() {
                 })}
               </ul>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal (MATCH APP ORDER + SAFE TOP + FIT) */}
+      {previewOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-3 py-4 sm:px-6 sm:py-6">
+          <div className="w-full max-w-5xl max-h-[88vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-4 py-3 sm:px-5 sm:py-4">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-900">Preloader Preview</h2>
+                <p className="mt-0.5 text-xs text-slate-600">
+                  This preview uses the same visual order as the app: <span className="font-semibold">Title → Logo → Body → Tap</span>.
+                  Extra top padding is included so the title won’t ride the status bar.
+                </p>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={prevPreview}
+                  disabled={poolSorted.length <= 1}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  onClick={nextPreview}
+                  disabled={poolSorted.length <= 1}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Next
+                </button>
+                <button
+                  type="button"
+                  onClick={closePreview}
+                  className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-[calc(88vh-72px)] overflow-auto">
+              <div className="grid gap-4 p-4 sm:gap-6 sm:p-5 lg:grid-cols-[1fr_340px]">
+                {/* Left: phone preview */}
+                <div className="flex items-center justify-center">
+                  <div className="w-full max-w-[420px]">
+                    <div className="rounded-[34px] border border-slate-200 bg-slate-950 p-3 shadow-xl">
+                      <div className="relative overflow-hidden rounded-[28px] bg-[#020617]">
+                        {/* Interior scroll-safe area (like small phones) */}
+                        <div className="max-h-[68vh] overflow-auto px-6 pt-14 pb-10">
+                          {/* TITLE (top, with safe padding) */}
+                          <div className="text-center">
+                            <div className="mx-auto max-w-[320px] text-[26px] font-black leading-[30px] tracking-tight text-white">
+                              {config.title || DEFAULT_PRELOADER.title}
+                            </div>
+                          </div>
+
+                          {/* Sponsor tier pill */}
+                          <div className="mt-7 flex justify-center">
+                            <div className="rounded-full border border-sky-500/30 bg-sky-500/10 px-6 py-2.5">
+                              <span className="text-[12px] font-extrabold uppercase tracking-wide text-white">
+                                {previewSponsor?.tier ? String(previewSponsor.tier) : "Sponsor"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* LOGO (bigger + premium container) */}
+                          <div className="mt-6 flex justify-center">
+                            <div className="h-[230px] w-[230px] overflow-hidden rounded-[38px] border border-white/10 bg-white/[0.06] shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+                              <div className="flex h-full w-full items-center justify-center p-7">
+                                {previewLogoUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={previewLogoUrl}
+                                    alt={previewSponsor?.name || "Sponsor"}
+                                    className="h-full w-full object-contain"
+                                  />
+                                ) : (
+                                  <div className="text-center text-xs font-semibold text-slate-300">No logo</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Sponsor name */}
+                          <div className="mt-6 text-center">
+                            <div className="mx-auto max-w-[320px] text-[44px] font-black leading-[46px] tracking-tight text-white">
+                              {previewSponsor?.name ? String(previewSponsor.name) : "Sponsor"}
+                            </div>
+                          </div>
+
+                          {/* BODY (under logo/name, slightly smaller) */}
+                          <div className="mt-7 text-center">
+                            <div className="mx-auto max-w-[340px] text-[14px] font-semibold leading-[20px] text-slate-300">
+                              {config.body || DEFAULT_PRELOADER.body}
+                            </div>
+                          </div>
+
+                          {/* Tap */}
+                          <div className="mt-8 text-center">
+                            <div className="text-[12px] font-semibold text-slate-400">Tap anywhere to continue</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 text-center text-[11px] text-slate-500">
+                      Showing sponsor {poolSorted.length === 0 ? 0 : previewIndex + 1} of {poolSorted.length}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: details panel */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="text-sm font-semibold text-slate-900">Preview details</h3>
+
+                  <ul className="mt-2 space-y-2 text-xs text-slate-700">
+                    <li>
+                      <span className="font-semibold">Safe top padding:</span> the title starts lower to avoid iOS status bar crowding.
+                    </li>
+                    <li>
+                      <span className="font-semibold">App order:</span> Title → Logo → Body → Tap.
+                    </li>
+                    <li>
+                      <span className="font-semibold">Logo treatment:</span> larger container, more padding, always contain.
+                    </li>
+                    <li>
+                      <span className="font-semibold">Fit:</span> the phone frame scrolls internally on very small screens.
+                    </li>
+                  </ul>
+
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="text-[11px] font-semibold text-slate-900">Current settings (from this page)</div>
+                    <div className="mt-2 space-y-1 text-[11px] text-slate-700">
+                      <div>
+                        <span className="font-semibold">Enabled:</span> {config.enabled ? "Yes" : "No"}
+                      </div>
+                      <div>
+                        <span className="font-semibold">Duration:</span> {config.duration_ms} ms
+                      </div>
+                      <div>
+                        <span className="font-semibold">Max sponsors:</span> {config.max_sponsors}
+                      </div>
+                      <div>
+                        <span className="font-semibold">VIP max/day (ET):</span>{" "}
+                        {typeof config.vip_max_shows === "number" ? config.vip_max_shows : DEFAULT_PRELOADER.vip_max_shows}
+                      </div>
+                      <div className="pt-1">
+                        <div className="font-semibold">Title</div>
+                        <div className="text-slate-600">{config.title}</div>
+                      </div>
+                      <div className="pt-1">
+                        <div className="font-semibold">Body</div>
+                        <div className="text-slate-600">{config.body}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {poolSorted.length === 0 ? (
+                    <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                      Add sponsors to the pool to enable preview.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
