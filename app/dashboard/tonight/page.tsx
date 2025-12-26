@@ -75,11 +75,11 @@ type TonightRow = {
   lastRedemptionAt: string | null;
 };
 
+// ✅ FIX: guest_device_links now uses linked_at (not first/last_linked_at)
 type GuestDeviceLinkRow = {
   guest_device_id: string;
   user_id: string;
-  first_linked_at: string;
-  last_linked_at: string;
+  linked_at: string | null;
 };
 
 function getEtYmd(now = new Date()): string {
@@ -170,7 +170,9 @@ function getGuestTimestampIso(g: GuestCheckinRow): string | null {
 }
 
 // 15-min bucket label + sortKey in ET
-function bucket15mEtWithKey(iso: string): { label: string; sortKey: number } | null {
+function bucket15mEtWithKey(
+  iso: string
+): { label: string; sortKey: number } | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
 
@@ -219,14 +221,18 @@ export default async function TonightDashboardPage() {
 
   const scans: ScanRow[] = (scansData ?? []) as ScanRow[];
 
-  const userIds = Array.from(new Set(scans.map((s) => s.user_id).filter(Boolean)));
+  const userIds = Array.from(
+    new Set(scans.map((s) => s.user_id).filter(Boolean))
+  );
 
   // ✅ 3) VIP overview rows
   let vipOverviewRows: VipOverviewRow[] = [];
   if (userIds.length > 0) {
     const { data, error } = await supabase
       .from("rewards_user_overview")
-      .select("user_id, phone, full_name, email, zip, is_vip, total_points, total_visits, first_scan_at, last_scan_at")
+      .select(
+        "user_id, phone, full_name, email, zip, is_vip, total_points, total_visits, first_scan_at, last_scan_at"
+      )
       .in("user_id", userIds);
 
     if (error) console.error("[tonight] rewards_user_overview error", error);
@@ -244,14 +250,17 @@ export default async function TonightDashboardPage() {
     .lte("created_at", dayEndUtc)
     .order("created_at", { ascending: false });
 
-  if (redemptionsError) console.error("[tonight] redemptions error", redemptionsError);
+  if (redemptionsError)
+    console.error("[tonight] redemptions error", redemptionsError);
 
   const redemptions: RedemptionRow[] = (redemptionsData ?? []) as RedemptionRow[];
 
   // ✅ 5) Guest check-ins today
   const { data: guestData, error: guestError } = await supabase
     .from("guest_checkins")
-    .select("id, guest_device_id, device_id, platform, app_version, source, qr_code, day_et, scanned_at, checked_in_at")
+    .select(
+      "id, guest_device_id, device_id, platform, app_version, source, qr_code, day_et, scanned_at, checked_in_at"
+    )
     .eq("day_et", todayEt)
     .order("scanned_at", { ascending: false });
 
@@ -273,8 +282,9 @@ export default async function TonightDashboardPage() {
       row = {
         userId,
         name:
-          (overview?.full_name && overview.full_name.trim().length > 0 ? overview.full_name : "Unknown guest") ??
-          "Unknown guest",
+          (overview?.full_name && overview.full_name.trim().length > 0
+            ? overview.full_name
+            : "Unknown guest") ?? "Unknown guest",
         phone: formatPhoneLocal(overview?.phone ?? null),
         email: overview?.email ?? "",
         isVip: overview?.is_vip ?? false,
@@ -297,8 +307,10 @@ export default async function TonightDashboardPage() {
     row.checkinsToday += 1;
     row.pointsToday += scan.points;
 
-    if (!row.firstScanToday || scan.scanned_at < row.firstScanToday) row.firstScanToday = scan.scanned_at;
-    if (!row.lastScanToday || scan.scanned_at > row.lastScanToday) row.lastScanToday = scan.scanned_at;
+    if (!row.firstScanToday || scan.scanned_at < row.firstScanToday)
+      row.firstScanToday = scan.scanned_at;
+    if (!row.lastScanToday || scan.scanned_at > row.lastScanToday)
+      row.lastScanToday = scan.scanned_at;
   }
 
   for (const r of redemptions) {
@@ -312,8 +324,9 @@ export default async function TonightDashboardPage() {
       row = {
         userId,
         name:
-          (overview?.full_name && overview.full_name.trim().length > 0 ? overview.full_name : "Unknown guest") ??
-          "Unknown guest",
+          (overview?.full_name && overview.full_name.trim().length > 0
+            ? overview.full_name
+            : "Unknown guest") ?? "Unknown guest",
         phone: formatPhoneLocal(overview?.phone ?? null),
         email: overview?.email ?? "",
         isVip: overview?.is_vip ?? false,
@@ -359,7 +372,9 @@ export default async function TonightDashboardPage() {
     new Set(
       guestCheckins
         .map((g) => g.guest_device_id || g.device_id)
-        .filter((x): x is string => !!x && String(x).trim().length > 0)
+        .filter(
+          (x): x is string => !!x && String(x).trim().length > 0
+        )
         .map((x) => String(x))
     )
   );
@@ -369,46 +384,51 @@ export default async function TonightDashboardPage() {
   const totalPeopleTonight = uniqueVipCount + uniqueGuestDevicesToday;
 
   // ✅ Guest → VIP conversion metric (Guests tonight who became VIP tonight)
-let guestToVipConversionsToday = 0;
+  let guestToVipConversionsToday = 0;
 
-if (guestDeviceIdsToday.length > 0) {
-  const { data: linksData, error: linksErr } = await supabase
-    .from("guest_device_links")
-    .select("guest_device_id, user_id, linked_at")
-    .in("guest_device_id", guestDeviceIdsToday);
+  if (guestDeviceIdsToday.length > 0) {
+    const { data: linksData, error: linksErr } = await supabase
+      .from("guest_device_links")
+      .select("guest_device_id, user_id, linked_at")
+      .in("guest_device_id", guestDeviceIdsToday);
 
-  if (linksErr) {
-    console.error("[tonight] guest_device_links error", JSON.stringify(linksErr));
-  } else {
-    const links = (linksData ?? []) as GuestDeviceLinkRow[];
+    if (linksErr) {
+      console.error(
+        "[tonight] guest_device_links error",
+        JSON.stringify(linksErr)
+      );
+    } else {
+      // ✅ FIX: TS-safe cast after schema change
+      const links = (linksData ?? []) as unknown as GuestDeviceLinkRow[];
 
-    const start = new Date(dayStartUtc).getTime();
-    const end = new Date(dayEndUtc).getTime();
+      const start = new Date(dayStartUtc).getTime();
+      const end = new Date(dayEndUtc).getTime();
 
-    const convertedSet = new Set<string>();
+      const convertedSet = new Set<string>();
 
-    for (const l of links) {
-      const ts = l.linked_at ?? null;
-      if (!ts) continue;
+      for (const l of links) {
+        const ts = l.linked_at ?? null;
+        if (!ts) continue;
 
-      const t = new Date(ts).getTime();
-      if (Number.isNaN(t)) continue;
+        const t = new Date(ts).getTime();
+        if (Number.isNaN(t)) continue;
 
-      // count only links created tonight (ET day bounds converted to UTC)
-      if (t >= start && t <= end) {
-        convertedSet.add(String(l.guest_device_id));
+        // count only links created tonight (ET day bounds converted to UTC)
+        if (t >= start && t <= end) {
+          convertedSet.add(String(l.guest_device_id));
+        }
       }
+
+      guestToVipConversionsToday = convertedSet.size;
     }
-
-    guestToVipConversionsToday = convertedSet.size;
   }
-}
 
-const guestToVipConversionRate =
-  uniqueGuestDevicesToday > 0
-    ? Math.round((guestToVipConversionsToday / uniqueGuestDevicesToday) * 1000) / 10
-    : 0;
-
+  const guestToVipConversionRate =
+    uniqueGuestDevicesToday > 0
+      ? Math.round(
+          (guestToVipConversionsToday / uniqueGuestDevicesToday) * 1000
+        ) / 10
+      : 0;
 
   // Peak time buckets (VIP + Guest together, 15-min)
   const bucketCounts = new Map<string, number>();
@@ -436,11 +456,17 @@ const guestToVipConversionRate =
 
   // Chart series (chronological)
   const chartSeriesAll = Array.from(bucketCounts.entries())
-    .map(([label, count]) => ({ label, count, sortKey: bucketSortKey.get(label) ?? 0 }))
+    .map(([label, count]) => ({
+      label,
+      count,
+      sortKey: bucketSortKey.get(label) ?? 0,
+    }))
     .sort((a, b) => a.sortKey - b.sortKey);
 
   const chartSeries =
-    chartSeriesAll.length > 28 ? chartSeriesAll.slice(chartSeriesAll.length - 28) : chartSeriesAll;
+    chartSeriesAll.length > 28
+      ? chartSeriesAll.slice(chartSeriesAll.length - 28)
+      : chartSeriesAll;
 
   const maxChartCount = chartSeries.reduce((m, x) => Math.max(m, x.count), 0);
 
@@ -459,51 +485,87 @@ const guestToVipConversionRate =
         {/* Summary cards */}
         <section className="grid gap-4 md:grid-cols-7">
           <div className="rounded-3xl border border-slate-100 bg-white px-6 py-4 shadow-sm md:col-span-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">VIP visits today</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{totalVipVisitsToday}</p>
-            <p className="mt-1 text-xs text-slate-500">Total VIP scans (rewards_scans).</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              VIP visits today
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">
+              {totalVipVisitsToday}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Total VIP scans (rewards_scans).
+            </p>
           </div>
 
           <div className="rounded-3xl border border-slate-100 bg-white px-6 py-4 shadow-sm md:col-span-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Unique VIPs today</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{uniqueVipCount}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Unique VIPs today
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">
+              {uniqueVipCount}
+            </p>
             <p className="mt-1 text-xs text-slate-500">Distinct VIP users.</p>
           </div>
 
           <div className="rounded-3xl border border-slate-100 bg-white px-6 py-4 shadow-sm md:col-span-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Guest check-ins today</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{totalGuestCheckinsToday}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Guest check-ins today
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">
+              {totalGuestCheckinsToday}
+            </p>
             <p className="mt-1 text-xs text-slate-500">Total guest rows logged.</p>
           </div>
 
           <div className="rounded-3xl border border-slate-100 bg-white px-6 py-4 shadow-sm md:col-span-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Unique guest devices</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{uniqueGuestDevicesToday}</p>
-            <p className="mt-1 text-xs text-slate-500">One per device per ET day.</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Unique guest devices
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">
+              {uniqueGuestDevicesToday}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              One per device per ET day.
+            </p>
           </div>
 
           {/* ✅ NEW: Guest → VIP conversions */}
           <div className="rounded-3xl border border-slate-100 bg-white px-6 py-4 shadow-sm md:col-span-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Guest → VIP</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Guest → VIP
+            </p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">
               {guestToVipConversionsToday}
-              <span className="ml-2 text-sm font-semibold text-slate-500">({guestToVipConversionRate}%)</span>
+              <span className="ml-2 text-sm font-semibold text-slate-500">
+                ({guestToVipConversionRate}%)
+              </span>
             </p>
-            <p className="mt-1 text-xs text-slate-500">Guest devices today that linked to VIP.</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Guest devices today that linked to VIP.
+            </p>
           </div>
 
           <div className="rounded-3xl border border-slate-100 bg-white px-6 py-4 shadow-sm md:col-span-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Points net today</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Points net today
+            </p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">
               {totalPointsToday > 0 ? `+${totalPointsToday}` : totalPointsToday}
             </p>
-            <p className="mt-1 text-xs text-slate-500">VIP check-in points today.</p>
+            <p className="mt-1 text-xs text-slate-500">
+              VIP check-in points today.
+            </p>
           </div>
 
           <div className="rounded-3xl border border-slate-100 bg-white px-6 py-4 shadow-sm md:col-span-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total people tonight</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{totalPeopleTonight}</p>
-            <p className="mt-1 text-xs text-slate-500">Unique VIPs + unique guest devices.</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Total people tonight
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">
+              {totalPeopleTonight}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Unique VIPs + unique guest devices.
+            </p>
           </div>
         </section>
 
@@ -511,16 +573,22 @@ const guestToVipConversionRate =
         <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
           <div className="flex items-baseline justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-slate-900">Check-ins over time</h2>
+              <h2 className="text-base font-semibold text-slate-900">
+                Check-ins over time
+              </h2>
               <p className="mt-1 text-sm text-slate-500">
                 15-minute buckets (VIP + Guest combined). Timezone: {ET_TZ}
               </p>
             </div>
-            <p className="text-xs text-slate-500">Last update: {formatShortDateTimeEt(new Date().toISOString())}</p>
+            <p className="text-xs text-slate-500">
+              Last update: {formatShortDateTimeEt(new Date().toISOString())}
+            </p>
           </div>
 
           {chartSeries.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">No check-ins recorded yet today.</p>
+            <p className="mt-4 text-sm text-slate-500">
+              No check-ins recorded yet today.
+            </p>
           ) : (
             <div className="mt-5">
               {/* fixed-height chart area so bars are always visible */}
@@ -530,7 +598,10 @@ const guestToVipConversionRate =
                     const pct = maxChartCount > 0 ? b.count / maxChartCount : 0;
                     const h = Math.max(8, Math.round(pct * 140)); // px height inside 176px area
                     return (
-                      <div key={b.label} className="flex flex-col items-center gap-2">
+                      <div
+                        key={b.label}
+                        className="flex flex-col items-center gap-2"
+                      >
                         <div
                           className="w-full rounded-xl bg-slate-300 hover:bg-slate-400 transition"
                           title={`${b.label}: ${b.count}`}
@@ -546,7 +617,8 @@ const guestToVipConversionRate =
               </div>
 
               <p className="mt-3 text-[11px] text-slate-400">
-                Hover a bar to see exact counts. Bars are scaled to tonight&apos;s peak bucket.
+                Hover a bar to see exact counts. Bars are scaled to
+                tonight&apos;s peak bucket.
               </p>
             </div>
           )}
@@ -556,23 +628,38 @@ const guestToVipConversionRate =
         <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
           <div className="flex items-baseline justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-slate-900">Peak check-in times</h2>
+              <h2 className="text-base font-semibold text-slate-900">
+                Peak check-in times
+              </h2>
               <p className="mt-1 text-sm text-slate-500">
                 Top 15-minute windows (VIP + Guest combined). Timezone: {ET_TZ}
               </p>
             </div>
-            <p className="text-xs text-slate-500">Last update: {formatShortDateTimeEt(new Date().toISOString())}</p>
+            <p className="text-xs text-slate-500">
+              Last update: {formatShortDateTimeEt(new Date().toISOString())}
+            </p>
           </div>
 
           {peakBuckets.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">No check-ins recorded yet today.</p>
+            <p className="mt-4 text-sm text-slate-500">
+              No check-ins recorded yet today.
+            </p>
           ) : (
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {peakBuckets.map(([label, count]) => (
-                <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Window</p>
-                  <p className="mt-1 text-base font-semibold text-slate-900">{label}</p>
-                  <p className="mt-1 text-xs text-slate-600">{count} check-ins</p>
+                <div
+                  key={label}
+                  className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3"
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Window
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-slate-900">
+                    {label}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {count} check-ins
+                  </p>
                 </div>
               ))}
             </div>
@@ -583,17 +670,23 @@ const guestToVipConversionRate =
         <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
           <div className="flex items-baseline justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-slate-900">Tonight&apos;s VIP guests</h2>
+              <h2 className="text-base font-semibold text-slate-900">
+                Tonight&apos;s VIP guests
+              </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Live board for the host stand or bar to recognize VIPs and watch points &amp; redemptions roll in.
+                Live board for the host stand or bar to recognize VIPs and watch
+                points &amp; redemptions roll in.
               </p>
-              <p className="mt-1 text-[11px] text-slate-400">Timezone: {ET_TZ} (Florida time)</p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Timezone: {ET_TZ} (Florida time)
+              </p>
             </div>
           </div>
 
           {tonightRows.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">
-              No VIP check-ins recorded for today yet. Once VIPs scan the QR code, you&apos;ll see them here.
+              No VIP check-ins recorded for today yet. Once VIPs scan the QR
+              code, you&apos;ll see them here.
             </p>
           ) : (
             <>
@@ -610,7 +703,8 @@ const guestToVipConversionRate =
 
               <div className="mt-1 space-y-2">
                 {tonightRows.map((row) => {
-                  const lastActivity = row.lastRedemptionAt ?? row.lastScanToday ?? row.lastScan ?? null;
+                  const lastActivity =
+                    row.lastRedemptionAt ?? row.lastScanToday ?? row.lastScan ?? null;
 
                   return (
                     <div
@@ -629,25 +723,43 @@ const guestToVipConversionRate =
                             </span>
                           )}
                         </Link>
-                        {row.email && <span className="text-[11px] text-slate-500">{row.email}</span>}
+                        {row.email && (
+                          <span className="text-[11px] text-slate-500">
+                            {row.email}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="text-[13px] text-slate-900">{row.phone || "—"}</div>
+                      <div className="text-[13px] text-slate-900">
+                        {row.phone || "—"}
+                      </div>
 
-                      <div className="text-right font-semibold text-slate-900">{row.lifetimePoints}</div>
+                      <div className="text-right font-semibold text-slate-900">
+                        {row.lifetimePoints}
+                      </div>
 
-                      <div className="text-right text-slate-900">{row.lifetimeVisits}</div>
+                      <div className="text-right text-slate-900">
+                        {row.lifetimeVisits}
+                      </div>
 
-                      <div className="text-right text-slate-900">{row.checkinsToday}</div>
+                      <div className="text-right text-slate-900">
+                        {row.checkinsToday}
+                      </div>
 
                       <div className="text-right text-slate-900">
                         {row.pointsToday > 0 ? `+${row.pointsToday}` : row.pointsToday}
                       </div>
 
-                      <div className="text-slate-900">{formatTimeEt(lastActivity)}</div>
+                      <div className="text-slate-900">
+                        {formatTimeEt(lastActivity)}
+                      </div>
 
                       <div className="text-slate-900">
-                        {row.redemptionsToday > 0 ? `${row.redemptionsToday}× ${row.lastRedemptionName ?? "Reward"}` : "—"}
+                        {row.redemptionsToday > 0
+                          ? `${row.redemptionsToday}× ${
+                              row.lastRedemptionName ?? "Reward"
+                            }`
+                          : "—"}
                       </div>
                     </div>
                   );
@@ -661,18 +773,29 @@ const guestToVipConversionRate =
         <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
           <div className="flex items-baseline justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-slate-900">Tonight&apos;s guest check-ins</h2>
+              <h2 className="text-base font-semibold text-slate-900">
+                Tonight&apos;s guest check-ins
+              </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Guests are tracked by device (one per device per ET day). This is great for sponsor analytics.
+                Guests are tracked by device (one per device per ET day). This
+                is great for sponsor analytics.
               </p>
-              <p className="mt-1 text-[11px] text-slate-400">Timezone: {ET_TZ} (Florida time)</p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Timezone: {ET_TZ} (Florida time)
+              </p>
             </div>
 
-            {guestRecent.length > 0 && <p className="text-xs text-slate-500">Showing most recent {guestRecent.length}</p>}
+            {guestRecent.length > 0 && (
+              <p className="text-xs text-slate-500">
+                Showing most recent {guestRecent.length}
+              </p>
+            )}
           </div>
 
           {guestCheckins.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">No guest check-ins recorded for today yet.</p>
+            <p className="mt-4 text-sm text-slate-500">
+              No guest check-ins recorded for today yet.
+            </p>
           ) : (
             <>
               <div className="mt-5 grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
@@ -693,7 +816,9 @@ const guestToVipConversionRate =
                       key={g.id}
                       className="grid items-center gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-xs shadow-sm md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]"
                     >
-                      <div className="text-[13px] font-semibold text-slate-900">{formatTimeEt(ts)}</div>
+                      <div className="text-[13px] font-semibold text-slate-900">
+                        {formatTimeEt(ts)}
+                      </div>
                       <div className="text-slate-900">{shortDevice(device)}</div>
                       <div className="text-slate-900">{g.platform || "—"}</div>
                       <div className="text-slate-900">{g.source || "—"}</div>
