@@ -1,6 +1,6 @@
 // app/events/new/page.tsx
 // Path: /events/new
-// Purpose: Create a new Sugarshack Downtown event (date + time + optional artist + notes).
+// Purpose: Create a new Sugarshack Downtown event (date + time + optional artist + notes + optional public details).
 // Sprint 8: Timezone-safe default date (America/New_York) so new events don’t drift by a day.
 //          Keep HH:MM:SS storage for start_time/end_time.
 
@@ -71,8 +71,12 @@ export default async function NewEventPage() {
     const end_time = toHmsOrNull(end_hm || null); // "HH:MM:SS" or null
 
     const title = formData.get("title")?.toString().trim() || null;
-    const genre_override =
-      formData.get("genre_override")?.toString().trim() || null;
+    const genre_override = formData.get("genre_override")?.toString().trim() || null;
+
+    // ✅ NEW: user-facing details (optional)
+    const details = formData.get("details")?.toString().trim() || null;
+
+    // existing internal notes (optional)
     const notes = formData.get("notes")?.toString().trim() || null;
 
     const artist_id = formData.get("artist_id")?.toString() || null;
@@ -87,6 +91,7 @@ export default async function NewEventPage() {
       end_time,
       title,
       genre_override,
+      details, // ✅ NEW column
       notes,
       is_cancelled: false,
     };
@@ -224,6 +229,23 @@ export default async function NewEventPage() {
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
               />
             </div>
+          </div>
+
+          {/* ✅ NEW: Event Details (optional) */}
+          <div className="space-y-1.5">
+            <label
+              htmlFor="details"
+              className="text-xs font-medium text-slate-800"
+            >
+              Event details (optional)
+            </label>
+            <textarea
+              id="details"
+              name="details"
+              rows={4}
+              placeholder="What is this event? Include specials, dress code, tickets, etc. (Shown to users in the app.)"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
+            />
           </div>
 
           {/* Notes */}

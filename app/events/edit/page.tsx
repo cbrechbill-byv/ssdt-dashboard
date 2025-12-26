@@ -3,6 +3,7 @@
 // Purpose: Edit a scheduled event (date/time/artist/title/notes/cancelled).
 // Sprint 7: Add ability to change the linked artist on edit.
 // Keeps: Timezone-safe defaults + validate end_time >= start_time (same-day) + store HH:MM:SS.
+// Sprint 9: Add optional event image upload (stored in public `events` bucket) using same UX as artists.
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ import { supabaseServer } from "@/lib/supabaseServer";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { logDashboardEventServer } from "@/lib/logDashboardEventServer";
+import EventImageUploader from "@/components/events/EventImageUploader";
 
 type EventRow = {
   id: string;
@@ -21,7 +23,9 @@ type EventRow = {
   genre_override: string | null;
   title: string | null;
   notes: string | null;
-  artist_id: string | null; // ✅ needed for edit dropdown
+  details: string | null;
+  artist_id: string | null;
+  image_path: string | null; // ✅ NEW
 };
 
 type ArtistOption = {
@@ -38,6 +42,19 @@ function getIdFromSearchParams(
   if (!raw) return "";
   if (Array.isArray(raw)) return raw[0] ?? "";
   return raw;
+}
+
+function publicUrlFromStoragePath(path: string | null): string | null {
+  if (!path) return null;
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!base) return null;
+
+  const parts = path.split("/");
+  if (parts.length < 2) return null;
+
+  const bucket = parts[0];
+  const key = parts.slice(1).join("/");
+  return `${base}/storage/v1/object/public/${bucket}/${key}`;
 }
 
 async function fetchEvent(id: string): Promise<{
@@ -63,7 +80,9 @@ async function fetchEvent(id: string): Promise<{
       genre_override,
       title,
       notes,
-      artist_id
+      details,
+      artist_id,
+      image_path
     `
     )
     .eq("id", id)
@@ -105,7 +124,6 @@ function isoDateToInput(value: string | null): string {
 
 function timeToInput(value: string | null): string {
   if (!value) return "";
-  // stored as HH:MM:SS -> input wants HH:MM
   return value.slice(0, 5);
 }
 
@@ -134,7 +152,6 @@ function getEtYmd(now = new Date()): string {
   });
 }
 
-// NOTE: searchParams is a Promise in Next 16 app router
 export default async function EventEditPage({
   searchParams,
 }: {
@@ -157,39 +174,43 @@ export default async function EventEditPage({
       throw new Error("Event date is required.");
     }
 
-    const start_hm = (formData.get("start_time")?.toString() || "").trim(); // "HH:MM"
-    const end_hm = (formData.get("end_time")?.toString() || "").trim(); // "HH:MM"
+    const start_hm = (formData.get("start_time")?.toString() || "").trim();
+    const end_hm = (formData.get("end_time")?.toString() || "").trim();
 
-    // ensure end >= start if both provided (assumes same-day show)
     const startMin = minutesFromHm(start_hm || null);
     const endMin = minutesFromHm(end_hm || null);
     if (startMin !== null && endMin !== null && endMin < startMin) {
       throw new Error("End time cannot be earlier than start time.");
     }
 
-    const start_time = toHmsOrNull(start_hm || null); // HH:MM:SS or null
-    const end_time = toHmsOrNull(end_hm || null); // HH:MM:SS or null
+    const start_time = toHmsOrNull(start_hm || null);
+    const end_time = toHmsOrNull(end_hm || null);
 
     const title = formData.get("title")?.toString().trim() || null;
-    const genre_override =
-      formData.get("genre_override")?.toString().trim() || null;
+    const genre_override = formData.get("genre_override")?.toString().trim() || null;
     const notes = formData.get("notes")?.toString().trim() || null;
+    const details = formData.get("details")?.toString().trim() || null;
 
     const is_cancelled = formData.get("is_cancelled") === "on";
 
-    // ✅ artist link (allow clearing)
     const artistRaw = (formData.get("artist_id")?.toString() || "").trim();
     const artist_id = artistRaw.length > 0 ? artistRaw : null;
 
+    // ✅ NEW: image path from uploader hidden input
+    const imageRaw = (formData.get("image_path")?.toString() || "").trim();
+    const image_path = imageRaw.length > 0 ? imageRaw : null;
+
     const payload = {
-      event_date, // now guaranteed non-empty
+      event_date,
       start_time,
       end_time,
       title,
       genre_override,
       notes,
+      details,
       is_cancelled,
       artist_id,
+      image_path,
     };
 
     const { error } = await supabaseServer
@@ -215,24 +236,16 @@ export default async function EventEditPage({
 
   if (!event) {
     return (
-      <DashboardShell
-        title="Edit event"
-        subtitle="Unable to load event"
-        activeTab="events"
-      >
+      <DashboardShell title="Edit event" subtitle="Unable to load event" activeTab="events">
         <section className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800 space-y-2">
           <p className="font-semibold">Could not load event</p>
           <p>
             Query id:&nbsp;
-            <code className="font-mono text-xs">
-              {id || "(missing or undefined)"}
-            </code>
+            <code className="font-mono text-xs">{id || "(missing or undefined)"}</code>
           </p>
           <p className="text-xs">
             searchParams:&nbsp;
-            <code className="font-mono text-[10px]">
-              {JSON.stringify(resolvedSearchParams)}
-            </code>
+            <code className="font-mono text-[10px]">{JSON.stringify(resolvedSearchParams)}</code>
           </p>
           {errorMessage && (
             <p className="text-xs">
@@ -250,12 +263,10 @@ export default async function EventEditPage({
     );
   }
 
+  const initialEventImageUrl = publicUrlFromStoragePath(event.image_path ?? null);
+
   return (
-    <DashboardShell
-      title="Edit event"
-      subtitle={event.title || "Untitled event"}
-      activeTab="events"
-    >
+    <DashboardShell title="Edit event" subtitle={event.title || "Untitled event"} activeTab="events">
       <form action={updateEvent} className="space-y-4 max-w-3xl">
         <input type="hidden" name="id" defaultValue={event.id} />
 
@@ -268,18 +279,22 @@ export default async function EventEditPage({
               <p className="mt-1 text-xs text-slate-500">
                 Update date, time, artist, and description for tonight&apos;s show.
               </p>
-              <p className="mt-1 text-[11px] text-slate-400">
-                Timezone: {ET_TZ} (Florida time)
-              </p>
+              <p className="mt-1 text-[11px] text-slate-400">Timezone: {ET_TZ} (Florida time)</p>
             </div>
           </div>
 
+          {/* ✅ NEW: Event image uploader (same UX pattern as artists) */}
+          <EventImageUploader
+            eventId={event.id}
+            eventTitle={event.title || "Event"}
+            initialPath={event.image_path}
+            initialUrl={initialEventImageUrl}
+            fieldName="image_path"
+          />
+
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
-              <label
-                htmlFor="event_date"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="event_date" className="text-xs font-medium text-slate-800">
                 Date
               </label>
               <input
@@ -292,12 +307,8 @@ export default async function EventEditPage({
               />
             </div>
 
-            {/* ✅ Artist picker */}
             <div className="space-y-1.5">
-              <label
-                htmlFor="artist_id"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="artist_id" className="text-xs font-medium text-slate-800">
                 Artist (optional)
               </label>
               <select
@@ -316,18 +327,14 @@ export default async function EventEditPage({
 
               {artistsErrorMessage && (
                 <p className="text-[11px] text-rose-500">
-                  Could not load artists list:{" "}
-                  <span className="font-mono">{artistsErrorMessage}</span>
+                  Could not load artists list: <span className="font-mono">{artistsErrorMessage}</span>
                 </p>
               )}
             </div>
 
             <div className="grid grid-cols-2 gap-3 md:col-span-2">
               <div className="space-y-1.5">
-                <label
-                  htmlFor="start_time"
-                  className="text-xs font-medium text-slate-800"
-                >
+                <label htmlFor="start_time" className="text-xs font-medium text-slate-800">
                   Start time
                 </label>
                 <input
@@ -340,10 +347,7 @@ export default async function EventEditPage({
               </div>
 
               <div className="space-y-1.5">
-                <label
-                  htmlFor="end_time"
-                  className="text-xs font-medium text-slate-800"
-                >
+                <label htmlFor="end_time" className="text-xs font-medium text-slate-800">
                   End time
                 </label>
                 <input
@@ -357,10 +361,7 @@ export default async function EventEditPage({
             </div>
 
             <div className="md:col-span-2 space-y-1.5">
-              <label
-                htmlFor="title"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="title" className="text-xs font-medium text-slate-800">
                 Title (optional)
               </label>
               <input
@@ -373,10 +374,7 @@ export default async function EventEditPage({
             </div>
 
             <div className="md:col-span-2 space-y-1.5">
-              <label
-                htmlFor="genre_override"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="genre_override" className="text-xs font-medium text-slate-800">
                 Genre override (optional)
               </label>
               <input
@@ -389,10 +387,21 @@ export default async function EventEditPage({
             </div>
 
             <div className="md:col-span-2 space-y-1.5">
-              <label
-                htmlFor="notes"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="details" className="text-xs font-medium text-slate-800">
+                Event details (optional)
+              </label>
+              <textarea
+                id="details"
+                name="details"
+                defaultValue={event.details ?? ""}
+                rows={4}
+                placeholder="Optional event description shown to users in the app."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
+              />
+            </div>
+
+            <div className="md:col-span-2 space-y-1.5">
+              <label htmlFor="notes" className="text-xs font-medium text-slate-800">
                 Internal notes
               </label>
               <textarea
@@ -411,8 +420,7 @@ export default async function EventEditPage({
           <div className="space-y-1">
             <p className="text-xs font-medium text-slate-800">Event status</p>
             <p className="text-[11px] text-slate-500">
-              Cancelled shows stay in history but are hidden from Tonight&apos;s
-              Board and the app.
+              Cancelled shows stay in history but are hidden from Tonight&apos;s Board and the app.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -423,10 +431,7 @@ export default async function EventEditPage({
               defaultChecked={event.is_cancelled}
               className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-400"
             />
-            <label
-              htmlFor="is_cancelled"
-              className="text-xs font-medium text-slate-800"
-            >
+            <label htmlFor="is_cancelled" className="text-xs font-medium text-slate-800">
               Mark this event as cancelled
             </label>
           </div>
