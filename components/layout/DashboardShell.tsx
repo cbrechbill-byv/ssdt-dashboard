@@ -1,8 +1,9 @@
+// PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\components\layout\DashboardShell.tsx
 // components/layout/DashboardShell.tsx
 // Path: /components/layout/DashboardShell.tsx
 // Purpose: Top-level dashboard shell (header, auth status, primary nav pills, and optional dropdown submenus).
 //
-// Change: For tabs that have submenus (Rewards, Notifications, Admin Users, Sponsors), the top pill is now a PLACEHOLDER ONLY.
+// Change: For tabs that have submenus (Dashboard, Rewards, Notifications, Admin Users, Sponsors), the top pill is now a PLACEHOLDER ONLY.
 //         The parent page link is included as the first item in the dropdown so users discover it.
 
 "use client";
@@ -36,7 +37,9 @@ interface DashboardShellProps {
 }
 
 const tabsBase: { key: DashboardTab; label: string; href: string }[] = [
+  // Dashboard will now act as a placeholder pill when submenu exists
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
+
   { key: "artists", label: "Artists", href: "/artists" },
   { key: "events", label: "Events", href: "/events" },
   { key: "fan-wall", label: "Fan wall", href: "/fan-wall" },
@@ -73,6 +76,20 @@ type SubMenuItem = {
 };
 
 const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
+  // NEW: Dashboard dropdown: Dashboard + Tonight Board
+  dashboard: [
+    {
+      label: "Dashboard",
+      href: "/dashboard",
+      description: "Main dashboard overview.",
+    },
+    {
+      label: "Tonight Board",
+      href: "/dashboard/tonight",
+      description: "Tonight’s ET metrics: VIP scans, guest check-ins, conversions, and redemptions.",
+    },
+  ],
+
   sponsors: [
     {
       label: "Sponsors",
@@ -178,6 +195,14 @@ export default function DashboardShell({
       return (
         activeTab === "sponsors" ||
         (pathname ?? "").startsWith("/photo-booth/sponsors")
+      );
+    }
+
+    // Make Dashboard pill appear active when on /dashboard OR /dashboard/tonight
+    if (tab.key === "dashboard") {
+      return (
+        activeTab === "dashboard" ||
+        (pathname ?? "").startsWith("/dashboard")
       );
     }
 

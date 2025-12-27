@@ -1,3 +1,4 @@
+// PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\dashboard\page.tsx
 // app/dashboard/page.tsx
 // Path: /dashboard
 // Purpose: Main Sugarshack Downtown overview (today KPIs, VIP health, content readiness, fan wall, Top VIPs).
@@ -10,6 +11,8 @@
 // Sprint 10: Remove Quick Actions, make readiness titles bold black, move Sponsors to full-width lower-priority row.
 // Sprint 11: FIX "Untitled artist" in Events readiness by avoiding embedded join; do 2-step artist lookup.
 // Sprint 12: Add Artist button to "Next 7 days" rows (parity with Tonight).
+// Sprint 14: ALIGN dashboard KPIs with Tonight board data sources (VIP + Guest + Conversions + Redemptions) + clearer labels.
+// Sprint 15: Option A — Add “Total people tonight” WITHOUT adding more cards (replace VIP-only check-in count).
 
 import { redirect } from "next/navigation";
 import { getDashboardSession } from "@/lib/dashboardAuth";
@@ -83,6 +86,40 @@ function formatTimeRangeEt(start: string | null, end: string | null): string {
   if (start && end) return `${startLabel}–${endLabel}`;
   if (start) return startLabel;
   return "TBD";
+}
+
+/**
+ * Convert an ET-local wall-clock time into an absolute UTC ISO string.
+ * Uses Intl timeZoneName: 'shortOffset' (e.g. "GMT-5") when available.
+ * Robust across DST because the offset comes from the target date.
+ */
+function etWallClockToUtcIso(ymd: string, hmss: string): string {
+  const [Y, M, D] = ymd.split("-").map((x) => Number(x));
+  const [h, m, s] = hmss.split(":").map((x) => Number(x));
+
+  const approxUtcMs = Date.UTC(Y, M - 1, D, h, m, s);
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ET_TZ,
+    timeZoneName: "shortOffset",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(approxUtcMs));
+
+  const tzPart = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
+  const match = tzPart.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+  const sign = match?.[1] === "-" ? -1 : 1;
+  const offH = match ? Number(match[2]) : 0;
+  const offM = match?.[3] ? Number(match[3]) : 0;
+  const offsetMinutes = sign * (offH * 60 + offM);
+
+  const utcMs = approxUtcMs - offsetMinutes * 60_000;
+  return new Date(utcMs).toISOString();
 }
 
 export default async function DashboardPage() {
@@ -171,6 +208,29 @@ export default async function DashboardPage() {
     artist: ArtistMini | null;
   };
 
+  // ✅ Guest tables (align with Tonight board)
+  type GuestCheckinRow = {
+    id: string;
+    guest_device_id: string | null;
+    device_id: string | null; // legacy/optional
+    day_et: string | null;
+    scanned_at: string | null;
+    checked_in_at: string | null;
+  };
+
+  type GuestDeviceLinkRow = {
+    guest_device_id: string;
+    user_id: string;
+    linked_at: string | null;
+  };
+
+  type RedemptionRow = {
+    user_id: string;
+    reward_name: string;
+    points_spent: number;
+    created_at: string;
+  };
+
   function formatPhone(phone?: string | null): string {
     if (!phone) return "Unknown";
     const digits = phone.replace(/\D/g, "");
@@ -202,25 +262,39 @@ export default async function DashboardPage() {
   }
 
   // ✅ today must be Florida time, not UTC/local-server default
-  const today = getEtYmd();
+  const todayEt = getEtYmd();
+
+  // ET day boundaries -> UTC ISO (used for created_at filters)
+  const dayStartUtc = etWallClockToUtcIso(todayEt, "00:00:00");
+  const dayEndUtc = etWallClockToUtcIso(todayEt, "23:59:59");
 
   // -----------------------------
-  // 1) Today’s rewards_scans stats
+  // 1) Today KPIs (aligned to Tonight board)
   // -----------------------------
-  let checkinsToday = 0;
+  // VIP (from rewards_scans)
+  let vipCheckinScanCountToday = 0; // rewards_scans source=qr-checkin
   let uniqueVipsToday = 0;
-  let pointsAwardedToday = 0;
-  let pointsRedeemedToday = 0;
 
+  // Guests (from guest_checkins)
+  let guestCheckinRowsToday = 0; // total guest rows
+  let uniqueGuestDevicesToday = 0; // unique devices
+
+  // Conversions (from guest_device_links)
+  let guestToVipConversionsToday = 0;
+  let guestToVipConversionRate = 0;
+
+  // Redemptions (from rewards_redemptions)
+  let redemptionsCountToday = 0;
+
+  // --- VIP scans today ---
   const { data: scanRows } = await supabase
     .from("rewards_scans")
-    .select("user_id, points, scan_date, source")
-    .eq("scan_date", today);
+    .select("user_id, scan_date, source")
+    .eq("scan_date", todayEt);
 
   if (scanRows?.length) {
     type ScanRow = {
       user_id: string | null;
-      points: number | null;
       scan_date: string;
       source: string | null;
     };
@@ -231,21 +305,91 @@ export default async function DashboardPage() {
       (row) => (row.source ?? "").toLowerCase() === "qr-checkin"
     );
 
-    checkinsToday = checkinRows.length;
+    vipCheckinScanCountToday = checkinRows.length;
 
     uniqueVipsToday = new Set(
       checkinRows.map((row) => row.user_id).filter(Boolean)
     ).size;
+  }
 
-    for (const row of rows) {
-      const pts = Number(row.points ?? 0);
-      if (!Number.isFinite(pts) || pts === 0) continue;
-      if (pts > 0) pointsAwardedToday += pts;
-      else pointsRedeemedToday += Math.abs(pts);
+  // --- Guests today ---
+  const { data: guestRows, error: guestErr } = await supabase
+    .from("guest_checkins")
+    .select("id, guest_device_id, device_id, day_et, scanned_at, checked_in_at")
+    .eq("day_et", todayEt);
+
+  if (guestErr) {
+    console.error("[dashboard] guest_checkins error:", guestErr);
+  }
+
+  const guestCheckins = (guestRows ?? []) as GuestCheckinRow[];
+  guestCheckinRowsToday = guestCheckins.length;
+
+  const guestDeviceIdsToday = Array.from(
+    new Set(
+      guestCheckins
+        .map((g) => g.guest_device_id || g.device_id)
+        .filter((x): x is string => !!x && String(x).trim().length > 0)
+        .map((x) => String(x))
+    )
+  );
+
+  uniqueGuestDevicesToday = guestDeviceIdsToday.length;
+
+  // --- Guest → VIP conversions today ---
+  if (guestDeviceIdsToday.length > 0) {
+    const { data: linksData, error: linksErr } = await supabase
+      .from("guest_device_links")
+      .select("guest_device_id, user_id, linked_at")
+      .in("guest_device_id", guestDeviceIdsToday);
+
+    if (linksErr) {
+      console.error("[dashboard] guest_device_links error:", linksErr);
+    } else {
+      const links = (linksData ?? []) as unknown as GuestDeviceLinkRow[];
+
+      const start = new Date(dayStartUtc).getTime();
+      const end = new Date(dayEndUtc).getTime();
+
+      const convertedSet = new Set<string>();
+
+      for (const l of links) {
+        const ts = l.linked_at ?? null;
+        if (!ts) continue;
+        const t = new Date(ts).getTime();
+        if (Number.isNaN(t)) continue;
+
+        if (t >= start && t <= end) {
+          convertedSet.add(String(l.guest_device_id));
+        }
+      }
+
+      guestToVipConversionsToday = convertedSet.size;
     }
   }
 
-  const netPointsToday = pointsAwardedToday - pointsRedeemedToday;
+  guestToVipConversionRate =
+    uniqueGuestDevicesToday > 0
+      ? Math.round((guestToVipConversionsToday / uniqueGuestDevicesToday) * 1000) /
+        10
+      : 0;
+
+  // --- Redemptions today ---
+  const { data: redemptionsData, error: redemptionsErr } = await supabase
+    .from("rewards_redemptions")
+    .select("user_id, reward_name, points_spent, created_at")
+    .gte("created_at", dayStartUtc)
+    .lte("created_at", dayEndUtc);
+
+  if (redemptionsErr) {
+    console.error("[dashboard] rewards_redemptions error:", redemptionsErr);
+  }
+
+  const redemptions = (redemptionsData ?? []) as RedemptionRow[];
+  redemptionsCountToday = redemptions.length;
+
+  // ✅ Option A: Total people tonight
+  const totalPeopleTonight = uniqueVipsToday + uniqueGuestDevicesToday;
 
   // -----------------------------
   // 2) VIP overview via rewards_user_overview
@@ -317,7 +461,7 @@ export default async function DashboardPage() {
 
   const topTwentyRows = sortedVipRows.slice(0, 20);
 
-  const vipList: VipListRow[] = topTwentyRows
+  const vipList: any[] = topTwentyRows
     .filter((row) => Boolean(row.user_id))
     .map((row) => ({
       userId: row.user_id as string,
@@ -331,15 +475,13 @@ export default async function DashboardPage() {
   // -----------------------------
   // 5) Events readiness (Tonight + next 7 days) — FIXED (no embed)
   // -----------------------------
-  const weekEnd = addDaysEtYmd(today, 7);
+  const weekEnd = addDaysEtYmd(todayEt, 7);
 
   const { data: upcomingEventsData, error: eventsError } = await supabase
     .from("artist_events")
-    .select(
-      "id, event_date, start_time, end_time, is_cancelled, title, artist_id"
-    )
+    .select("id, event_date, start_time, end_time, is_cancelled, title, artist_id")
     .eq("is_cancelled", false)
-    .gte("event_date", today)
+    .gte("event_date", todayEt)
     .lte("event_date", weekEnd)
     .order("event_date", { ascending: true })
     .order("start_time", { ascending: true });
@@ -375,8 +517,8 @@ export default async function DashboardPage() {
     artist: e.artist_id ? artistsById.get(e.artist_id) ?? null : null,
   }));
 
-  const tonightEvents = upcomingEvents.filter((e) => e.event_date === today);
-  const nextWeekEvents = upcomingEvents.filter((e) => e.event_date !== today);
+  const tonightEvents = upcomingEvents.filter((e) => e.event_date === todayEt);
+  const nextWeekEvents = upcomingEvents.filter((e) => e.event_date !== todayEt);
 
   const eventsMissingArtist = upcomingEvents.filter((e) => !e.artist_id).length;
   const eventsMissingTime = upcomingEvents.filter((e) => !e.start_time).length;
@@ -430,8 +572,7 @@ export default async function DashboardPage() {
         !!a.tiktok_url ||
         !!a.spotify_url;
 
-      const score =
-        (hasImage ? 0 : 4) + (hasBio ? 0 : 2) + (hasAnySocial ? 0 : 1);
+      const score = (hasImage ? 0 : 4) + (hasBio ? 0 : 2) + (hasAnySocial ? 0 : 1);
 
       return {
         id: a.id,
@@ -557,32 +698,32 @@ export default async function DashboardPage() {
       activeTab="dashboard"
     >
       <div className="space-y-6">
-        {/* 1) Today KPIs */}
+        {/* 1) Today KPIs (5 cards ONLY) */}
         <div className="grid gap-4 md:grid-cols-5">
           <StatCard
-            label="Check-ins today"
-            helper="VIPs who checked in with tonight’s QR."
-            value={checkinsToday}
+            label="Total people tonight"
+            helper="Unique VIPs + unique guest devices (today ET)."
+            value={totalPeopleTonight}
           />
           <StatCard
             label="Unique VIPs today"
-            helper="One per phone number per day."
+            helper="Distinct VIP users who completed a QR check-in (today ET)."
             value={uniqueVipsToday}
           />
           <StatCard
-            label="Points awarded today"
-            helper="Points given from check-ins and boosts."
-            value={pointsAwardedToday}
+            label="Unique guests (devices)"
+            helper="One per device per ET day (guest_device_id)."
+            value={uniqueGuestDevicesToday}
           />
           <StatCard
-            label="Points redeemed today"
-            helper="Points spent on rewards today."
-            value={pointsRedeemedToday}
+            label="Guest → VIP"
+            helper={`Guest devices linked to VIP today (ET). Conversion: ${guestToVipConversionRate}%`}
+            value={guestToVipConversionsToday}
           />
           <StatCard
-            label="Net points today"
-            helper="Awarded minus redeemed (today only)."
-            value={netPointsToday}
+            label="Redemptions today"
+            helper="Total rewards redeemed today (rewards_redemptions, ET day)."
+            value={redemptionsCountToday}
           />
         </div>
 
@@ -637,6 +778,12 @@ export default async function DashboardPage() {
               >
                 Open Sponsors
               </Link>
+              <Link
+                href="/dashboard/tonight"
+                className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
+              >
+                Tonight Board
+              </Link>
             </div>
           </div>
 
@@ -685,8 +832,7 @@ export default async function DashboardPage() {
                   Events readiness (Tonight + next 7 days)
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Check the artist, times, and at least an artist image for the
-                  app calendar.
+                  Check the artist, times, and at least an artist image for the app calendar.
                 </p>
               </div>
               <Link
@@ -706,7 +852,7 @@ export default async function DashboardPage() {
                   {upcomingEvents.length}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  {formatDateEt(today)} → {formatDateEt(weekEnd)}
+                  {formatDateEt(todayEt)} → {formatDateEt(weekEnd)}
                 </p>
               </div>
 
@@ -737,9 +883,7 @@ export default async function DashboardPage() {
                 <p className="mt-1 text-xl font-semibold text-amber-600">
                   {eventsMissingArtistImage}
                 </p>
-                <p className="text-[11px] text-slate-500">
-                  artist.image_path blank
-                </p>
+                <p className="text-[11px] text-slate-500">artist.image_path blank</p>
               </div>
             </div>
 
@@ -750,28 +894,21 @@ export default async function DashboardPage() {
                   <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">
                     Tonight
                   </p>
-                  <span className="text-[11px] text-slate-500">
-                    {formatDateEt(today)}
-                  </span>
+                  <span className="text-[11px] text-slate-500">{formatDateEt(todayEt)}</span>
                 </div>
 
                 {tonightEvents.length === 0 ? (
-                  <p className="mt-3 text-xs text-slate-500">
-                    No event found for tonight.
-                  </p>
+                  <p className="mt-3 text-xs text-slate-500">No event found for tonight.</p>
                 ) : (
                   <div className="mt-3 space-y-2">
                     {tonightEvents.map((e) => {
+                      // NOTE: this file already supports SSDT Event naming logic elsewhere if you want it here too later
                       const artistName =
                         e.artist?.name?.trim() ||
-                        (e.artist_id ? "Artist not found" : "No artist linked");
+                        (e.artist_id ? "Artist not found" : "SSDT Event");
 
                       const hasImage = !!e.artist?.image_path;
-
-                      const timeLabel = formatTimeRangeEt(
-                        e.start_time,
-                        e.end_time
-                      );
+                      const timeLabel = formatTimeRangeEt(e.start_time, e.end_time);
 
                       return (
                         <div
@@ -781,29 +918,15 @@ export default async function DashboardPage() {
                           <div className="min-w-0">
                             <p className="truncate text-xs font-semibold text-slate-900">
                               {artistName}{" "}
-                              <span className="text-slate-400 font-normal">
-                                ·
-                              </span>{" "}
-                              <span className="text-slate-700 font-medium">
-                                {timeLabel}
-                              </span>
+                              <span className="text-slate-400 font-normal">·</span>{" "}
+                              <span className="text-slate-700 font-medium">{timeLabel}</span>
                             </p>
                             <p className="mt-0.5 text-[11px] text-slate-500">
                               {!e.artist_id ? "⚠️ No artist linked" : null}
-                              {e.artist_id && !e.artist
-                                ? " · ⚠️ Artist not found"
-                                : null}
-                              {e.artist_id && !hasImage
-                                ? " · ⚠️ Missing artist image"
-                                : null}
-                              {!e.start_time
-                                ? " · ⚠️ Missing start time"
-                                : null}
-                              {e.title ? (
-                                <span className="ml-2 text-slate-400">
-                                  ({e.title})
-                                </span>
-                              ) : null}
+                              {e.artist_id && !e.artist ? " · ⚠️ Artist not found" : null}
+                              {e.artist_id && !hasImage ? " · ⚠️ Missing artist image" : null}
+                              {!e.start_time ? " · ⚠️ Missing start time" : null}
+                              {e.title ? <span className="ml-2 text-slate-400">({e.title})</span> : null}
                             </p>
                           </div>
 
@@ -840,22 +963,16 @@ export default async function DashboardPage() {
                 </div>
 
                 {nextWeekEvents.length === 0 ? (
-                  <p className="mt-3 text-xs text-slate-500">
-                    No upcoming events in the next 7 days.
-                  </p>
+                  <p className="mt-3 text-xs text-slate-500">No upcoming events in the next 7 days.</p>
                 ) : (
                   <div className="mt-3 space-y-2">
                     {nextWeekEvents.slice(0, 8).map((e) => {
                       const artistName =
                         e.artist?.name?.trim() ||
-                        (e.artist_id ? "Artist not found" : "No artist linked");
+                        (e.artist_id ? "Artist not found" : `SSDT Event${e.title ? ` (${e.title})` : ""}`);
 
                       const hasImage = !!e.artist?.image_path;
-
-                      const timeLabel = formatTimeRangeEt(
-                        e.start_time,
-                        e.end_time
-                      );
+                      const timeLabel = formatTimeRangeEt(e.start_time, e.end_time);
 
                       return (
                         <div
@@ -865,32 +982,19 @@ export default async function DashboardPage() {
                           <div className="min-w-0">
                             <p className="truncate text-xs font-semibold text-slate-900">
                               {formatDateEt(e.event_date)}{" "}
-                              <span className="text-slate-400 font-normal">
-                                ·
-                              </span>{" "}
+                              <span className="text-slate-400 font-normal">·</span>{" "}
                               {artistName}{" "}
-                              <span className="text-slate-400 font-normal">
-                                ·
-                              </span>{" "}
-                              <span className="text-slate-700 font-medium">
-                                {timeLabel}
-                              </span>
+                              <span className="text-slate-400 font-normal">·</span>{" "}
+                              <span className="text-slate-700 font-medium">{timeLabel}</span>
                             </p>
                             <p className="mt-0.5 text-[11px] text-slate-500">
                               {!e.artist_id ? "⚠️ No artist linked" : null}
-                              {e.artist_id && !e.artist
-                                ? " · ⚠️ Artist not found"
-                                : null}
-                              {e.artist_id && !hasImage
-                                ? " · ⚠️ Missing artist image"
-                                : null}
-                              {!e.start_time
-                                ? " · ⚠️ Missing start time"
-                                : null}
+                              {e.artist_id && !e.artist ? " · ⚠️ Artist not found" : null}
+                              {e.artist_id && !hasImage ? " · ⚠️ Missing artist image" : null}
+                              {!e.start_time ? " · ⚠️ Missing start time" : null}
                             </p>
                           </div>
 
-                          {/* ✅ Sprint 12: Add Artist button (parity with Tonight) */}
                           <div className="flex flex-shrink-0 items-center gap-2">
                             {e.artist_id && (
                               <Link
@@ -932,36 +1036,24 @@ export default async function DashboardPage() {
                 <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                   Active artists
                 </p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">
-                  {artistsActive}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {artistsTotal} total in directory
-                </p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">{artistsActive}</p>
+                <p className="text-[11px] text-slate-500">{artistsTotal} total in directory</p>
               </div>
 
               <div>
                 <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                   Missing image
                 </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {missingArtistImage}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Needed for Artist + Events pages
-                </p>
+                <p className="mt-1 text-xl font-semibold text-amber-600">{missingArtistImage}</p>
+                <p className="text-[11px] text-slate-500">Needed for Artist + Events pages</p>
               </div>
 
               <div>
                 <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                   Missing bio
                 </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {missingArtistBio}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Improves app engagement
-                </p>
+                <p className="mt-1 text-xl font-semibold text-amber-600">{missingArtistBio}</p>
+                <p className="text-[11px] text-slate-500">Improves app engagement</p>
               </div>
             </div>
 
@@ -970,9 +1062,7 @@ export default async function DashboardPage() {
                 Missing any social link
               </span>
               <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-xl font-semibold text-amber-600">
-                  {missingArtistAnySocial}
-                </span>
+                <span className="text-xl font-semibold text-amber-600">{missingArtistAnySocial}</span>
                 <span className="text-[11px] text-slate-500">
                   Website / IG / FB / TikTok / Spotify all blank
                 </span>
@@ -1004,14 +1094,10 @@ export default async function DashboardPage() {
                       className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-slate-900">
-                          {a.name}
-                        </p>
+                        <p className="truncate text-xs font-semibold text-slate-900">{a.name}</p>
                         <p className="mt-0.5 text-[11px] text-slate-500">
                           {!a.hasImage ? "Missing image" : null}
-                          {!a.hasImage && (!a.hasBio || !a.hasAnySocial)
-                            ? " · "
-                            : null}
+                          {!a.hasImage && (!a.hasBio || !a.hasAnySocial) ? " · " : null}
                           {!a.hasBio ? "Missing bio" : null}
                           {!a.hasBio && !a.hasAnySocial ? " · " : null}
                           {!a.hasAnySocial ? "No links" : null}
@@ -1027,8 +1113,7 @@ export default async function DashboardPage() {
                     </div>
                   ))}
                   <p className="pt-1 text-[11px] text-slate-400">
-                    Tip: prioritize adding the main image first (most visible in
-                    the app).
+                    Tip: prioritize adding the main image first (most visible in the app).
                   </p>
                 </div>
               )}
@@ -1056,45 +1141,27 @@ export default async function DashboardPage() {
 
             <div className="mt-3 grid gap-3 sm:grid-cols-4 text-xs">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Active rewards
-                </p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">
-                  {rewardsMenuActive}
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Active rewards</p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">{rewardsMenuActive}</p>
                 <p className="text-[11px] text-slate-500">
                   {rewardsMenuTotal} total · {rewardsMenuInactive} inactive
                 </p>
               </div>
 
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing name
-                </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {rewardsMissingName}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Items must be labeled
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Missing name</p>
+                <p className="mt-1 text-xl font-semibold text-amber-600">{rewardsMissingName}</p>
+                <p className="text-[11px] text-slate-500">Items must be labeled</p>
               </div>
 
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Invalid points
-                </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {rewardsInvalidPoints}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Points required must be &gt; 0
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Invalid points</p>
+                <p className="mt-1 text-xl font-semibold text-amber-600">{rewardsInvalidPoints}</p>
+                <p className="text-[11px] text-slate-500">Points required must be &gt; 0</p>
               </div>
 
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Status
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Status</p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">
                   {rewardsNeedingAttention.length === 0 ? "✅" : "⚠️"}
                 </p>
@@ -1131,9 +1198,7 @@ export default async function DashboardPage() {
                       className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-slate-900">
-                          {r.name}
-                        </p>
+                        <p className="truncate text-xs font-semibold text-slate-900">{r.name}</p>
                         <p className="mt-0.5 text-[11px] text-slate-500">
                           {!r.hasName ? "Missing name" : null}
                           {!r.hasName && !r.hasValidPoints ? " · " : null}
@@ -1168,8 +1233,7 @@ export default async function DashboardPage() {
                   Sponsors data quality (active only)
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Lower priority. Keeps sponsor value consistent in Sponsors +
-                  Photo Booth.
+                  Lower priority. Keeps sponsor value consistent in Sponsors + Photo Booth.
                 </p>
               </div>
               <Link
@@ -1185,36 +1249,24 @@ export default async function DashboardPage() {
                 <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                   Active sponsors
                 </p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">
-                  {sponsorsActive}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {sponsorsTotal} total in list
-                </p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">{sponsorsActive}</p>
+                <p className="text-[11px] text-slate-500">{sponsorsTotal} total in list</p>
               </div>
 
               <div>
                 <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                   Missing logo
                 </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {missingSponsorLogo}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Needed for Sponsors + Photo Booth
-                </p>
+                <p className="mt-1 text-xl font-semibold text-amber-600">{missingSponsorLogo}</p>
+                <p className="text-[11px] text-slate-500">Needed for Sponsors + Photo Booth</p>
               </div>
 
               <div>
                 <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
                   Missing website
                 </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {missingSponsorWebsite}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Optional, but improves sponsor value
-                </p>
+                <p className="mt-1 text-xl font-semibold text-amber-600">{missingSponsorWebsite}</p>
+                <p className="text-[11px] text-slate-500">Optional, but improves sponsor value</p>
               </div>
             </div>
 
@@ -1233,8 +1285,7 @@ export default async function DashboardPage() {
 
               {sponsorsNeedingAttention.length === 0 ? (
                 <p className="mt-3 text-xs text-emerald-700">
-                  ✅ All active sponsors have a logo and a website link (or
-                  intentionally blank).
+                  ✅ All active sponsors have a logo and a website link (or intentionally blank).
                 </p>
               ) : (
                 <div className="mt-3 space-y-2">
@@ -1244,9 +1295,7 @@ export default async function DashboardPage() {
                       className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-slate-900">
-                          {s.name}
-                        </p>
+                        <p className="truncate text-xs font-semibold text-slate-900">{s.name}</p>
                         <p className="mt-0.5 text-[11px] text-slate-500">
                           {!s.hasLogo ? "Missing logo" : null}
                           {!s.hasLogo && !s.hasWebsite ? " · " : null}
@@ -1274,7 +1323,7 @@ export default async function DashboardPage() {
           <RedemptionHealth />
         </section>
 
-        {/* 4) Fan wall (full-width, Quick actions removed) */}
+        {/* 4) Fan wall (full-width) */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
@@ -1299,9 +1348,7 @@ export default async function DashboardPage() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Pending
               </p>
-              <p className="mt-1 text-xl font-semibold text-amber-600">
-                {fanPending}
-              </p>
+              <p className="mt-1 text-xl font-semibold text-amber-600">{fanPending}</p>
               <p className="text-[11px] text-slate-500">Awaiting approval</p>
             </div>
 
@@ -1309,9 +1356,7 @@ export default async function DashboardPage() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Live
               </p>
-              <p className="mt-1 text-xl font-semibold text-emerald-600">
-                {fanLive}
-              </p>
+              <p className="mt-1 text-xl font-semibold text-emerald-600">{fanLive}</p>
               <p className="text-[11px] text-slate-500">Showing in the app</p>
             </div>
 
@@ -1319,9 +1364,7 @@ export default async function DashboardPage() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Hidden
               </p>
-              <p className="mt-1 text-xl font-semibold text-slate-700">
-                {fanHidden}
-              </p>
+              <p className="mt-1 text-xl font-semibold text-slate-700">{fanHidden}</p>
               <p className="text-[11px] text-slate-500">Removed/hidden</p>
             </div>
 
@@ -1329,15 +1372,13 @@ export default async function DashboardPage() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Total submissions
               </p>
-              <p className="mt-1 text-xl font-semibold text-slate-900">
-                {fanTotal}
-              </p>
+              <p className="mt-1 text-xl font-semibold text-slate-900">{fanTotal}</p>
               <p className="text-[11px] text-slate-500">All-time photos</p>
             </div>
           </div>
         </section>
 
-        {/* Top VIPs (client expand; no CSV export) */}
+        {/* Top VIPs */}
         <TopVipsTableClient vipList={vipList} totalVipCount={totalVipCount} />
       </div>
     </DashboardShell>

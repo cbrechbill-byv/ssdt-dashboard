@@ -1,3 +1,4 @@
+// PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\events\page.tsx
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
@@ -72,16 +73,17 @@ function formatTimeRangeEt(start: string | null, end: string | null): string {
 }
 
 function getArtistNames(artist: EventRow["artist"]): string {
-  if (!artist) return "Unknown artist";
+  // ✅ Change: If no artist is linked, show "SSDT Event" (not "Unknown artist")
+  if (!artist) return "SSDT Event";
 
   if (Array.isArray(artist)) {
     const names = artist
       .map((a) => a?.name?.trim())
       .filter((name): name is string => !!name);
-    return names.length ? names.join(", ") : "Unknown artist";
+    return names.length ? names.join(", ") : "SSDT Event";
   }
 
-  return artist.name?.trim() ? artist.name : "Unknown artist";
+  return artist.name?.trim() ? artist.name : "SSDT Event";
 }
 
 function getArtistGenre(evt: EventRow): string {
