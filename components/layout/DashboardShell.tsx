@@ -3,7 +3,8 @@
 // Path: /components/layout/DashboardShell.tsx
 // Purpose: Top-level dashboard shell (header, auth status, primary nav pills, and optional dropdown submenus).
 //
-// Change: For tabs that have submenus (Dashboard, Rewards, Notifications, Admin Users, Sponsors), the top pill is now a PLACEHOLDER ONLY.
+// Change: For tabs that have submenus (Dashboard, Rewards, Notifications, Admin Users, Sponsors),
+//         the top pill is now a PLACEHOLDER ONLY.
 //         The parent page link is included as the first item in the dropdown so users discover it.
 
 "use client";
@@ -37,7 +38,7 @@ interface DashboardShellProps {
 }
 
 const tabsBase: { key: DashboardTab; label: string; href: string }[] = [
-  // Dashboard will now act as a placeholder pill when submenu exists
+  // Dashboard = placeholder pill when submenu exists
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
 
   { key: "artists", label: "Artists", href: "/artists" },
@@ -76,17 +77,22 @@ type SubMenuItem = {
 };
 
 const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
-  // NEW: Dashboard dropdown: Dashboard + Tonight Board
+  // ✅ NEW: Dashboard submenu
   dashboard: [
     {
       label: "Dashboard",
       href: "/dashboard",
-      description: "Main dashboard overview.",
+      description: "Main overview KPIs and readiness checks.",
     },
     {
       label: "Tonight Board",
       href: "/dashboard/tonight",
-      description: "Tonight’s ET metrics: VIP scans, guest check-ins, conversions, and redemptions.",
+      description: "Live VIP + guest check-ins, conversions, points, redemptions.",
+    },
+    {
+      label: "Venue Health",
+      href: "/dashboard/venue-health",
+      description: "Historical trends by day/week/month and event/artist correlation.",
     },
   ],
 
@@ -198,7 +204,7 @@ export default function DashboardShell({
       );
     }
 
-    // Make Dashboard pill appear active when on /dashboard OR /dashboard/tonight
+    // Dashboard should appear active for /dashboard and all sub-pages like /dashboard/tonight and /dashboard/venue-health
     if (tab.key === "dashboard") {
       return (
         activeTab === "dashboard" ||
