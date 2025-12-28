@@ -520,12 +520,28 @@ export default async function DashboardPage() {
   const tonightEvents = upcomingEvents.filter((e) => e.event_date === todayEt);
   const nextWeekEvents = upcomingEvents.filter((e) => e.event_date !== todayEt);
 
-  const eventsMissingArtist = upcomingEvents.filter((e) => !e.artist_id).length;
+    // ✅ Readiness rules:
+  // - "Missing artist link" should ONLY apply to events that are intended to be artist nights.
+  //   In our system, SSDT Events often have artist_id intentionally blank but DO have a title.
+  //   So we treat: artist-required = missing title (or has artist_id).
+  const isArtistRequiredEvent = (e: EventCheckRow) => {
+    const hasArtistId = !!e.artist_id;
+    const title = (e.title ?? "").trim();
+    const isSsdEvent = title.length > 0; // titled events are treated as SSDT Events
+    return hasArtistId || !isSsdEvent;
+  };
+
+  const eventsMissingArtist = upcomingEvents.filter(
+    (e) => isArtistRequiredEvent(e) && !e.artist_id
+  ).length;
+
   const eventsMissingTime = upcomingEvents.filter((e) => !e.start_time).length;
+
   const eventsMissingArtistImage = upcomingEvents.filter((e) => {
     if (!e.artist_id) return false;
     return !e.artist?.image_path;
   }).length;
+
 
   // -----------------------------
   // 6) Artists readiness summary (dashboard only)
