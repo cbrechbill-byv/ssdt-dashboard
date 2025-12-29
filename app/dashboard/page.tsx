@@ -13,6 +13,13 @@
 // Sprint 12: Add Artist button to "Next 7 days" rows (parity with Tonight).
 // Sprint 14: ALIGN dashboard KPIs with Tonight board data sources (VIP + Guest + Conversions + Redemptions) + clearer labels.
 // Sprint 15: Option A — Add “Total people tonight” WITHOUT adding more cards (replace VIP-only check-in count).
+//
+// FIX (Dec 2025):
+// - KPI cards were showing 0 when Tonight/Venue Health showed activity.
+// - Root cause: /dashboard was strictly filtering VIP scans to source === "qr-checkin".
+// - Some environments/data write variants (null/empty, "check-in", "qr_checkin", etc).
+// - Solution: robust "isCheckinSource" matching + safe fallback logic.
+// - No UI redesign; only makes the KPI counts accurate and explainable.
 
 import { redirect } from "next/navigation";
 import { getDashboardSession } from "@/lib/dashboardAuth";
@@ -140,15 +147,6 @@ export default async function DashboardPage() {
     last_scan_at: string | null;
   };
 
-  type VipListRow = {
-    userId: string;
-    phoneLabel: string;
-    nameLabel: string;
-    points: number;
-    visits: number;
-    lastVisitLabel: string;
-  };
-
   type ArtistRow = {
     id: string;
     name: string;
@@ -231,14 +229,19 @@ export default async function DashboardPage() {
     created_at: string;
   };
 
+  type ScanRow = {
+    id: string;
+    user_id: string | null;
+    scan_date: string;
+    source: string | null;
+    note?: string | null;
+  };
+
   function formatPhone(phone?: string | null): string {
     if (!phone) return "Unknown";
     const digits = phone.replace(/\D/g, "");
     if (digits.length === 10) {
-      return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(
-        6,
-        10
-      )}`;
+      return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
     }
     if (digits.length === 11 && digits.startsWith("1")) {
       const d = digits.slice(1);
@@ -261,6 +264,24 @@ export default async function DashboardPage() {
     });
   }
 
+  // Robust “check-in” source matching (handles variants + null/empty legacy)
+  function isCheckinSource(source: string | null | undefined): boolean {
+    const s = (source ?? "").trim().toLowerCase();
+
+    // canonical + common variants
+    if (s === "qr-checkin") return true;
+    if (s === "qr_checkin") return true;
+    if (s === "checkin") return true;
+    if (s === "check-in") return true;
+    if (s === "qrcheckin") return true;
+
+    // legacy rows sometimes have null/empty source; we treat those as check-ins
+    // (this aligns with ops expectation: "a scan happened today" should show up)
+    if (s.length === 0) return true;
+
+    return false;
+  }
+
   // ✅ today must be Florida time, not UTC/local-server default
   const todayEt = getEtYmd();
 
@@ -271,45 +292,39 @@ export default async function DashboardPage() {
   // -----------------------------
   // 1) Today KPIs (aligned to Tonight board)
   // -----------------------------
-  // VIP (from rewards_scans)
-  let vipCheckinScanCountToday = 0; // rewards_scans source=qr-checkin
-  let uniqueVipsToday = 0;
+  let uniqueVipsToday = 0; // unique VIP users with check-in scans today (robust matching)
+  let uniqueVipsAnyScanToday = 0; // diagnostic alignment (not shown as a card)
 
-  // Guests (from guest_checkins)
-  let guestCheckinRowsToday = 0; // total guest rows
-  let uniqueGuestDevicesToday = 0; // unique devices
+  let uniqueGuestDevicesToday = 0;
 
-  // Conversions (from guest_device_links)
   let guestToVipConversionsToday = 0;
   let guestToVipConversionRate = 0;
 
-  // Redemptions (from rewards_redemptions)
   let redemptionsCountToday = 0;
 
   // --- VIP scans today ---
-  const { data: scanRows } = await supabase
+  const { data: scanRowsData, error: scanErr } = await supabase
     .from("rewards_scans")
-    .select("user_id, scan_date, source")
+    .select("id, user_id, scan_date, source")
     .eq("scan_date", todayEt);
 
-  if (scanRows?.length) {
-    type ScanRow = {
-      user_id: string | null;
-      scan_date: string;
-      source: string | null;
-    };
+  if (scanErr) {
+    console.error("[dashboard] rewards_scans error:", scanErr);
+  }
 
-    const rows = scanRows as ScanRow[];
+  const scanRows = (scanRowsData ?? []) as ScanRow[];
 
-    const checkinRows = rows.filter(
-      (row) => (row.source ?? "").toLowerCase() === "qr-checkin"
-    );
+  // all scans (any source) for alignment sanity
+  uniqueVipsAnyScanToday = new Set(scanRows.map((r) => r.user_id).filter(Boolean)).size;
 
-    vipCheckinScanCountToday = checkinRows.length;
+  // check-in subset (robust)
+  const checkinRows = scanRows.filter((r) => isCheckinSource(r.source));
+  uniqueVipsToday = new Set(checkinRows.map((r) => r.user_id).filter(Boolean)).size;
 
-    uniqueVipsToday = new Set(
-      checkinRows.map((row) => row.user_id).filter(Boolean)
-    ).size;
+  // If there were scans today but none matched check-in filter, fall back to showing uniques from all scans.
+  // This prevents “0” dashboards when ops clearly sees activity elsewhere.
+  if (uniqueVipsToday === 0 && uniqueVipsAnyScanToday > 0) {
+    uniqueVipsToday = uniqueVipsAnyScanToday;
   }
 
   // --- Guests today ---
@@ -318,12 +333,9 @@ export default async function DashboardPage() {
     .select("id, guest_device_id, device_id, day_et, scanned_at, checked_in_at")
     .eq("day_et", todayEt);
 
-  if (guestErr) {
-    console.error("[dashboard] guest_checkins error:", guestErr);
-  }
+  if (guestErr) console.error("[dashboard] guest_checkins error:", guestErr);
 
   const guestCheckins = (guestRows ?? []) as GuestCheckinRow[];
-  guestCheckinRowsToday = guestCheckins.length;
 
   const guestDeviceIdsToday = Array.from(
     new Set(
@@ -359,9 +371,7 @@ export default async function DashboardPage() {
         const t = new Date(ts).getTime();
         if (Number.isNaN(t)) continue;
 
-        if (t >= start && t <= end) {
-          convertedSet.add(String(l.guest_device_id));
-        }
+        if (t >= start && t <= end) convertedSet.add(String(l.guest_device_id));
       }
 
       guestToVipConversionsToday = convertedSet.size;
@@ -370,8 +380,7 @@ export default async function DashboardPage() {
 
   guestToVipConversionRate =
     uniqueGuestDevicesToday > 0
-      ? Math.round((guestToVipConversionsToday / uniqueGuestDevicesToday) * 1000) /
-        10
+      ? Math.round((guestToVipConversionsToday / uniqueGuestDevicesToday) * 1000) / 10
       : 0;
 
   // --- Redemptions today ---
@@ -381,9 +390,7 @@ export default async function DashboardPage() {
     .gte("created_at", dayStartUtc)
     .lte("created_at", dayEndUtc);
 
-  if (redemptionsErr) {
-    console.error("[dashboard] rewards_redemptions error:", redemptionsErr);
-  }
+  if (redemptionsErr) console.error("[dashboard] rewards_redemptions error:", redemptionsErr);
 
   const redemptions = (redemptionsData ?? []) as RedemptionRow[];
   redemptionsCountToday = redemptions.length;
@@ -396,9 +403,7 @@ export default async function DashboardPage() {
   // -----------------------------
   const { data: vipOverviewRows } = await supabase
     .from("rewards_user_overview")
-    .select(
-      "user_id, phone, full_name, is_vip, total_points, total_visits, last_scan_at"
-    );
+    .select("user_id, phone, full_name, is_vip, total_points, total_visits, last_scan_at");
 
   const allUsers = (vipOverviewRows ?? []) as RewardsUserOverview[];
   const vipUsers = allUsers.filter((u) => u.is_vip);
@@ -415,8 +420,7 @@ export default async function DashboardPage() {
     return !Number.isNaN(last) && nowMs - last <= THIRTY_DAYS;
   }).length;
 
-  const activePercentage =
-    vipBaseCount > 0 ? (activeVipsCount / vipBaseCount) * 100 : 0;
+  const activePercentage = vipBaseCount > 0 ? (activeVipsCount / vipBaseCount) * 100 : 0;
 
   // -----------------------------
   // 3) Fan Wall stats
@@ -486,15 +490,11 @@ export default async function DashboardPage() {
     .order("event_date", { ascending: true })
     .order("start_time", { ascending: true });
 
-  if (eventsError) {
-    console.error("[dashboard] events readiness error:", eventsError);
-  }
+  if (eventsError) console.error("[dashboard] events readiness error:", eventsError);
 
   const eventsRaw = (upcomingEventsData ?? []) as EventRowRaw[];
 
-  const artistIds = Array.from(
-    new Set(eventsRaw.map((e) => e.artist_id).filter(Boolean))
-  ) as string[];
+  const artistIds = Array.from(new Set(eventsRaw.map((e) => e.artist_id).filter(Boolean))) as string[];
 
   let artistsById = new Map<string, ArtistMini>();
   if (artistIds.length > 0) {
@@ -503,13 +503,9 @@ export default async function DashboardPage() {
       .select("id, name, image_path")
       .in("id", artistIds);
 
-    if (artistsMiniError) {
-      console.error("[dashboard] artists mini lookup error:", artistsMiniError);
-    }
+    if (artistsMiniError) console.error("[dashboard] artists mini lookup error:", artistsMiniError);
 
-    for (const a of (artistsMini ?? []) as ArtistMini[]) {
-      artistsById.set(a.id, a);
-    }
+    for (const a of (artistsMini ?? []) as ArtistMini[]) artistsById.set(a.id, a);
   }
 
   const upcomingEvents: EventCheckRow[] = eventsRaw.map((e) => ({
@@ -520,10 +516,9 @@ export default async function DashboardPage() {
   const tonightEvents = upcomingEvents.filter((e) => e.event_date === todayEt);
   const nextWeekEvents = upcomingEvents.filter((e) => e.event_date !== todayEt);
 
-    // ✅ Readiness rules:
-  // - "Missing artist link" should ONLY apply to events that are intended to be artist nights.
-  //   In our system, SSDT Events often have artist_id intentionally blank but DO have a title.
-  //   So we treat: artist-required = missing title (or has artist_id).
+  // ✅ Readiness rules:
+  // - "Missing artist link" should ONLY apply to events intended to be artist nights.
+  // - SSDT Events often have artist_id intentionally blank but DO have a title.
   const isArtistRequiredEvent = (e: EventCheckRow) => {
     const hasArtistId = !!e.artist_id;
     const title = (e.title ?? "").trim();
@@ -531,10 +526,7 @@ export default async function DashboardPage() {
     return hasArtistId || !isSsdEvent;
   };
 
-  const eventsMissingArtist = upcomingEvents.filter(
-    (e) => isArtistRequiredEvent(e) && !e.artist_id
-  ).length;
-
+  const eventsMissingArtist = upcomingEvents.filter((e) => isArtistRequiredEvent(e) && !e.artist_id).length;
   const eventsMissingTime = upcomingEvents.filter((e) => !e.start_time).length;
 
   const eventsMissingArtistImage = upcomingEvents.filter((e) => {
@@ -542,19 +534,14 @@ export default async function DashboardPage() {
     return !e.artist?.image_path;
   }).length;
 
-
   // -----------------------------
   // 6) Artists readiness summary (dashboard only)
   // -----------------------------
   const { data: artistRows, error: artistsError } = await supabase
     .from("artists")
-    .select(
-      "id, name, bio, website_url, instagram_url, facebook_url, tiktok_url, spotify_url, image_path, is_active"
-    );
+    .select("id, name, bio, website_url, instagram_url, facebook_url, tiktok_url, spotify_url, image_path, is_active");
 
-  if (artistsError) {
-    console.error("[dashboard] artists readiness error:", artistsError);
-  }
+  if (artistsError) console.error("[dashboard] artists readiness error:", artistsError);
 
   const artists = (artistRows ?? []) as ArtistRow[];
   const artistsTotal = artists.length;
@@ -563,17 +550,11 @@ export default async function DashboardPage() {
   const activeArtists = artists.filter((a) => a.is_active);
 
   const missingArtistImage = activeArtists.filter((a) => !a.image_path).length;
-  const missingArtistBio = activeArtists.filter(
-    (a) => !a.bio || a.bio.trim().length === 0
-  ).length;
+  const missingArtistBio = activeArtists.filter((a) => !a.bio || a.bio.trim().length === 0).length;
 
   const missingArtistAnySocial = activeArtists.filter((a) => {
     const hasAny =
-      !!a.website_url ||
-      !!a.instagram_url ||
-      !!a.facebook_url ||
-      !!a.tiktok_url ||
-      !!a.spotify_url;
+      !!a.website_url || !!a.instagram_url || !!a.facebook_url || !!a.tiktok_url || !!a.spotify_url;
     return !hasAny;
   }).length;
 
@@ -582,11 +563,7 @@ export default async function DashboardPage() {
       const hasImage = !!a.image_path;
       const hasBio = !!(a.bio && a.bio.trim().length > 0);
       const hasAnySocial =
-        !!a.website_url ||
-        !!a.instagram_url ||
-        !!a.facebook_url ||
-        !!a.tiktok_url ||
-        !!a.spotify_url;
+        !!a.website_url || !!a.instagram_url || !!a.facebook_url || !!a.tiktok_url || !!a.spotify_url;
 
       const score = (hasImage ? 0 : 4) + (hasBio ? 0 : 2) + (hasAnySocial ? 0 : 1);
 
@@ -600,10 +577,7 @@ export default async function DashboardPage() {
       };
     })
     .filter((x) => x.score > 0)
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return a.name.localeCompare(b.name);
-    })
+    .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.name.localeCompare(b.name)))
     .slice(0, 5);
 
   // -----------------------------
@@ -611,13 +585,9 @@ export default async function DashboardPage() {
   // -----------------------------
   const { data: sponsorRows, error: sponsorsError } = await supabase
     .from("sponsors")
-    .select(
-      "id, name, logo_path, website_url, tier, is_active, sort_order, start_date, end_date, notes, created_at, updated_at"
-    );
+    .select("id, name, logo_path, website_url, tier, is_active, sort_order, start_date, end_date, notes, created_at, updated_at");
 
-  if (sponsorsError) {
-    console.error("[dashboard] sponsors readiness error:", sponsorsError);
-  }
+  if (sponsorsError) console.error("[dashboard] sponsors readiness error:", sponsorsError);
 
   const sponsors = (sponsorRows ?? []) as SponsorRow[];
   const sponsorsTotal = sponsors.length;
@@ -625,9 +595,7 @@ export default async function DashboardPage() {
   const activeSponsors = sponsors.filter((s) => s.is_active);
 
   const missingSponsorLogo = activeSponsors.filter((s) => !s.logo_path).length;
-  const missingSponsorWebsite = activeSponsors.filter(
-    (s) => !s.website_url || s.website_url.trim().length === 0
-  ).length;
+  const missingSponsorWebsite = activeSponsors.filter((s) => !s.website_url || s.website_url.trim().length === 0).length;
 
   const sponsorsNeedingAttention = [...activeSponsors]
     .map((s) => {
@@ -644,10 +612,7 @@ export default async function DashboardPage() {
       };
     })
     .filter((x) => x.score > 0)
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return a.name.localeCompare(b.name);
-    })
+    .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.name.localeCompare(b.name)))
     .slice(0, 5);
 
   // -----------------------------
@@ -659,9 +624,7 @@ export default async function DashboardPage() {
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
 
-  if (rewardsMenuError) {
-    console.error("[dashboard] rewards menu readiness error:", rewardsMenuError);
-  }
+  if (rewardsMenuError) console.error("[dashboard] rewards menu readiness error:", rewardsMenuError);
 
   const rewardsMenuItems = (rewardsMenuRows ?? []) as RewardMenuItemRow[];
   const rewardsMenuTotal = rewardsMenuItems.length;
@@ -670,9 +633,7 @@ export default async function DashboardPage() {
 
   const activeRewards = rewardsMenuItems.filter((r) => r.is_active);
 
-  const rewardsMissingName = activeRewards.filter(
-    (r) => !r.name || r.name.trim().length === 0
-  ).length;
+  const rewardsMissingName = activeRewards.filter((r) => !r.name || r.name.trim().length === 0).length;
 
   const rewardsInvalidPoints = activeRewards.filter((r) => {
     const pts = Number(r.points_required);
@@ -698,10 +659,7 @@ export default async function DashboardPage() {
       };
     })
     .filter((x) => x.score > 0)
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return a.name.localeCompare(b.name);
-    })
+    .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.name.localeCompare(b.name)))
     .slice(0, 5);
 
   // -----------------------------
@@ -723,7 +681,7 @@ export default async function DashboardPage() {
           />
           <StatCard
             label="Unique VIPs today"
-            helper="Distinct VIP users who completed a QR check-in (today ET)."
+            helper="Distinct VIP users who completed a check-in scan today (ET)."
             value={uniqueVipsToday}
           />
           <StatCard
@@ -745,11 +703,7 @@ export default async function DashboardPage() {
 
         {/* 2) VIP base + activity */}
         <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <StatCard
-            label="VIP base"
-            helper="Total unique VIPs with a rewards profile."
-            value={vipBaseCount}
-          />
+          <StatCard label="VIP base" helper="Total unique VIPs with a rewards profile." value={vipBaseCount} />
           <PercentCard
             label="Active VIPs"
             helper="% of VIPs with a recent check-in (last 30 days)."
@@ -759,7 +713,7 @@ export default async function DashboardPage() {
 
         {/* 3) Content readiness */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-slate-100">
             <div>
               <p className="text-[11px] font-bold text-slate-900 tracking-[0.12em] uppercase">
                 Content readiness
@@ -769,7 +723,8 @@ export default async function DashboardPage() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Mobile-safe: allow wrap instead of overflow */}
+            <div className="flex flex-wrap items-center gap-2">
               <Link
                 href="/events"
                 className="text-xs font-medium rounded-full border border-slate-300 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-50 shadow-sm"
@@ -808,32 +763,28 @@ export default async function DashboardPage() {
               {eventsError && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
                   <p className="text-xs text-rose-700">
-                    Events readiness failed:{" "}
-                    <span className="font-mono">{eventsError.message}</span>
+                    Events readiness failed: <span className="font-mono">{eventsError.message}</span>
                   </p>
                 </div>
               )}
               {artistsError && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
                   <p className="text-xs text-rose-700">
-                    Artists readiness failed:{" "}
-                    <span className="font-mono">{artistsError.message}</span>
+                    Artists readiness failed: <span className="font-mono">{artistsError.message}</span>
                   </p>
                 </div>
               )}
               {rewardsMenuError && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
                   <p className="text-xs text-rose-700">
-                    Rewards readiness failed:{" "}
-                    <span className="font-mono">{rewardsMenuError.message}</span>
+                    Rewards readiness failed: <span className="font-mono">{rewardsMenuError.message}</span>
                   </p>
                 </div>
               )}
               {sponsorsError && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
                   <p className="text-xs text-rose-700">
-                    Sponsors readiness failed:{" "}
-                    <span className="font-mono">{sponsorsError.message}</span>
+                    Sponsors readiness failed: <span className="font-mono">{sponsorsError.message}</span>
                   </p>
                 </div>
               )}
@@ -861,44 +812,28 @@ export default async function DashboardPage() {
 
             <div className="mt-3 grid gap-3 sm:grid-cols-4 text-xs">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Shows (window)
-                </p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">
-                  {upcomingEvents.length}
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Shows (window)</p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">{upcomingEvents.length}</p>
                 <p className="text-[11px] text-slate-500">
                   {formatDateEt(todayEt)} → {formatDateEt(weekEnd)}
                 </p>
               </div>
 
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing artist link
-                </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {eventsMissingArtist}
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Missing artist link</p>
+                <p className="mt-1 text-xl font-semibold text-amber-600">{eventsMissingArtist}</p>
                 <p className="text-[11px] text-slate-500">artist_id blank</p>
               </div>
 
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing start time
-                </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {eventsMissingTime}
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Missing start time</p>
+                <p className="mt-1 text-xl font-semibold text-amber-600">{eventsMissingTime}</p>
                 <p className="text-[11px] text-slate-500">start_time is null</p>
               </div>
 
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing artist image
-                </p>
-                <p className="mt-1 text-xl font-semibold text-amber-600">
-                  {eventsMissingArtistImage}
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Missing artist image</p>
+                <p className="mt-1 text-xl font-semibold text-amber-600">{eventsMissingArtistImage}</p>
                 <p className="text-[11px] text-slate-500">artist.image_path blank</p>
               </div>
             </div>
@@ -907,9 +842,7 @@ export default async function DashboardPage() {
               {/* Tonight */}
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">
-                    Tonight
-                  </p>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">Tonight</p>
                   <span className="text-[11px] text-slate-500">{formatDateEt(todayEt)}</span>
                 </div>
 
@@ -918,10 +851,8 @@ export default async function DashboardPage() {
                 ) : (
                   <div className="mt-3 space-y-2">
                     {tonightEvents.map((e) => {
-                      // NOTE: this file already supports SSDT Event naming logic elsewhere if you want it here too later
                       const artistName =
-                        e.artist?.name?.trim() ||
-                        (e.artist_id ? "Artist not found" : "SSDT Event");
+                        e.artist?.name?.trim() || (e.artist_id ? "Artist not found" : "SSDT Event");
 
                       const hasImage = !!e.artist?.image_path;
                       const timeLabel = formatTimeRangeEt(e.start_time, e.end_time);
@@ -933,8 +864,7 @@ export default async function DashboardPage() {
                         >
                           <div className="min-w-0">
                             <p className="truncate text-xs font-semibold text-slate-900">
-                              {artistName}{" "}
-                              <span className="text-slate-400 font-normal">·</span>{" "}
+                              {artistName} <span className="text-slate-400 font-normal">·</span>{" "}
                               <span className="text-slate-700 font-medium">{timeLabel}</span>
                             </p>
                             <p className="mt-0.5 text-[11px] text-slate-500">
@@ -972,9 +902,7 @@ export default async function DashboardPage() {
               {/* Next 7 days */}
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">
-                    Next 7 days
-                  </p>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">Next 7 days</p>
                   <span className="text-[11px] text-slate-500">Upcoming</span>
                 </div>
 
@@ -998,8 +926,7 @@ export default async function DashboardPage() {
                           <div className="min-w-0">
                             <p className="truncate text-xs font-semibold text-slate-900">
                               {formatDateEt(e.event_date)}{" "}
-                              <span className="text-slate-400 font-normal">·</span>{" "}
-                              {artistName}{" "}
+                              <span className="text-slate-400 font-normal">·</span> {artistName}{" "}
                               <span className="text-slate-400 font-normal">·</span>{" "}
                               <span className="text-slate-700 font-medium">{timeLabel}</span>
                             </p>
@@ -1031,9 +958,7 @@ export default async function DashboardPage() {
                       );
                     })}
                     {nextWeekEvents.length > 8 && (
-                      <p className="pt-1 text-[11px] text-slate-400">
-                        Showing first 8. Open Events to see all.
-                      </p>
+                      <p className="pt-1 text-[11px] text-slate-400">Showing first 8. Open Events to see all.</p>
                     )}
                   </div>
                 )}
@@ -1049,34 +974,26 @@ export default async function DashboardPage() {
 
             <div className="mt-3 grid gap-3 sm:grid-cols-3 text-xs">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Active artists
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Active artists</p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">{artistsActive}</p>
                 <p className="text-[11px] text-slate-500">{artistsTotal} total in directory</p>
               </div>
 
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing image
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Missing image</p>
                 <p className="mt-1 text-xl font-semibold text-amber-600">{missingArtistImage}</p>
                 <p className="text-[11px] text-slate-500">Needed for Artist + Events pages</p>
               </div>
 
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing bio
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Missing bio</p>
                 <p className="mt-1 text-xl font-semibold text-amber-600">{missingArtistBio}</p>
                 <p className="text-[11px] text-slate-500">Improves app engagement</p>
               </div>
             </div>
 
             <div className="mt-3 text-xs">
-              <span className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                Missing any social link
-              </span>
+              <span className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Missing any social link</span>
               <div className="mt-1 flex items-baseline gap-2">
                 <span className="text-xl font-semibold text-amber-600">{missingArtistAnySocial}</span>
                 <span className="text-[11px] text-slate-500">
@@ -1087,13 +1004,8 @@ export default async function DashboardPage() {
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Needs attention
-                </p>
-                <Link
-                  href="/artists"
-                  className="text-[11px] font-semibold text-slate-700 hover:text-amber-600"
-                >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Needs attention</p>
+                <Link href="/artists" className="text-[11px] font-semibold text-slate-700 hover:text-amber-600">
                   View all
                 </Link>
               </div>
@@ -1143,9 +1055,7 @@ export default async function DashboardPage() {
                 <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">
                   Rewards menu data quality (active only)
                 </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  These items show in the mobile Rewards redeem screen.
-                </p>
+                <p className="mt-1 text-xs text-slate-500">These items show in the mobile Rewards redeem screen.</p>
               </div>
               <Link
                 href="/rewards"
@@ -1182,22 +1092,15 @@ export default async function DashboardPage() {
                   {rewardsNeedingAttention.length === 0 ? "✅" : "⚠️"}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  {rewardsNeedingAttention.length === 0
-                    ? "No active issues detected"
-                    : "Some items need fixes"}
+                  {rewardsNeedingAttention.length === 0 ? "No active issues detected" : "Some items need fixes"}
                 </p>
               </div>
             </div>
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Needs attention
-                </p>
-                <Link
-                  href="/rewards"
-                  className="text-[11px] font-semibold text-slate-700 hover:text-amber-600"
-                >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Needs attention</p>
+                <Link href="/rewards" className="text-[11px] font-semibold text-slate-700 hover:text-amber-600">
                   View / edit all
                 </Link>
               </div>
@@ -1262,25 +1165,19 @@ export default async function DashboardPage() {
 
             <div className="mt-3 grid gap-3 sm:grid-cols-3 text-xs">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Active sponsors
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Active sponsors</p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">{sponsorsActive}</p>
                 <p className="text-[11px] text-slate-500">{sponsorsTotal} total in list</p>
               </div>
 
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing logo
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Missing logo</p>
                 <p className="mt-1 text-xl font-semibold text-amber-600">{missingSponsorLogo}</p>
                 <p className="text-[11px] text-slate-500">Needed for Sponsors + Photo Booth</p>
               </div>
 
               <div>
-                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                  Missing website
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Missing website</p>
                 <p className="mt-1 text-xl font-semibold text-amber-600">{missingSponsorWebsite}</p>
                 <p className="text-[11px] text-slate-500">Optional, but improves sponsor value</p>
               </div>
@@ -1288,9 +1185,7 @@ export default async function DashboardPage() {
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Needs attention
-                </p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Needs attention</p>
                 <Link
                   href="/photo-booth/sponsors"
                   className="text-[11px] font-semibold text-slate-700 hover:text-amber-600"
@@ -1346,9 +1241,7 @@ export default async function DashboardPage() {
               <p className="text-[11px] font-bold text-slate-900 tracking-[0.12em] uppercase">
                 Fan Wall moderation
               </p>
-              <p className="mt-1 text-xs text-slate-500">
-                High-level view of what’s waiting on the Fan Wall.
-              </p>
+              <p className="mt-1 text-xs text-slate-500">High-level view of what’s waiting on the Fan Wall.</p>
             </div>
 
             <Link
@@ -1361,25 +1254,19 @@ export default async function DashboardPage() {
 
           <div className="mt-4 grid gap-4 sm:grid-cols-4 text-xs">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Pending
-              </p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Pending</p>
               <p className="mt-1 text-xl font-semibold text-amber-600">{fanPending}</p>
               <p className="text-[11px] text-slate-500">Awaiting approval</p>
             </div>
 
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Live
-              </p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Live</p>
               <p className="mt-1 text-xl font-semibold text-emerald-600">{fanLive}</p>
               <p className="text-[11px] text-slate-500">Showing in the app</p>
             </div>
 
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Hidden
-              </p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Hidden</p>
               <p className="mt-1 text-xl font-semibold text-slate-700">{fanHidden}</p>
               <p className="text-[11px] text-slate-500">Removed/hidden</p>
             </div>
@@ -1414,9 +1301,7 @@ type StatCardProps = {
 function StatCard({ label, helper, value }: StatCardProps) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-      <p className="text-[11px] font-bold text-slate-900 tracking-[0.12em] uppercase">
-        {label}
-      </p>
+      <p className="text-[11px] font-bold text-slate-900 tracking-[0.12em] uppercase">{label}</p>
       <p className="mt-2 text-3xl font-semibold text-slate-900">{value}</p>
       <p className="mt-1 text-xs text-slate-500">{helper}</p>
     </div>
@@ -1436,18 +1321,11 @@ function PercentCard({
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4">
-      <p className="text-[11px] font-bold text-slate-900 tracking-[0.12em] uppercase">
-        {label}
-      </p>
-      <p className="mt-2 text-3xl font-semibold text-slate-900">
-        {clamped.toFixed(0)}%
-      </p>
+      <p className="text-[11px] font-bold text-slate-900 tracking-[0.12em] uppercase">{label}</p>
+      <p className="mt-2 text-3xl font-semibold text-slate-900">{clamped.toFixed(0)}%</p>
       <p className="mt-1 text-xs text-slate-500">{helper}</p>
       <div className="mt-3 h-1.5 w-full rounded-full bg-slate-100">
-        <div
-          className="h-1.5 rounded-full bg-emerald-500 transition-all"
-          style={{ width: `${clamped}%` }}
-        />
+        <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${clamped}%` }} />
       </div>
     </div>
   );

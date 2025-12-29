@@ -6,15 +6,10 @@
 // and any redemptions today.
 // Fix: ALL “today” logic America/New_York, and render timestamps in America/New_York.
 //
-// Redesign (matches existing dashboard look):
-// - Ops-first hero summary (one glance) + Pace badge (Slow/Steady/Busy) based on UNIQUE people last 30 min.
-// - Balanced KPI row: 4 primary KPIs + 3 secondary KPIs (same style).
-// - Analytics: simplified activity strip + peak window insight (no heavy charting).
-// - Tables: same layout, with small clarity badges (scan vs redemption) and guest diagnostics.
-//
-// Update (per request):
-// - Remove top-right pills (Back to Dashboard / Events / Sponsors) from the hero card.
-// - Redo "Activity over time" to match Venue Health (clean SVG line+area that scales well).
+// Mobile usability fix (NO UI redesign):
+// - Reduce section padding on small screens (px-4 sm:px-6 lg:px-8).
+// - Wrap VIP + Guest "tables" in overflow-x-auto + min-width so columns remain readable on phones.
+// - Desktop layout remains unchanged.
 
 import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
@@ -535,13 +530,10 @@ export default async function TonightDashboardPage() {
   const chartSeries =
     chartSeriesAll.length > 28 ? chartSeriesAll.slice(chartSeriesAll.length - 28) : chartSeriesAll;
 
-  const maxChartCount = chartSeries.reduce((m, x) => Math.max(m, x.count), 0);
-
   // Guest diagnostics (ops)
   const missingDeviceCount = guestCheckins.filter(
     (g) =>
-      !(g.guest_device_id || g.device_id) ||
-      String(g.guest_device_id || g.device_id).trim().length === 0
+      !(g.guest_device_id || g.device_id) || String(g.guest_device_id || g.device_id).trim().length === 0
   ).length;
 
   const platformCounts = new Map<string, number>();
@@ -581,7 +573,7 @@ export default async function TonightDashboardPage() {
 
       <div className="space-y-8">
         {/* HERO SUMMARY (ops-first) */}
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+        <section className="rounded-3xl border border-slate-100 bg-white px-4 py-6 shadow-sm sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
               <p className="text-base font-semibold text-slate-900">
@@ -662,25 +654,17 @@ export default async function TonightDashboardPage() {
 
         {/* SECONDARY KPIs (details: 3) */}
         <section className="grid gap-4 md:grid-cols-3">
-          <StatCard
-            label="VIP scan volume"
-            value={totalVipVisitsToday}
-            helper="All rewards_scans rows today (any source)."
-          />
+          <StatCard label="VIP scan volume" value={totalVipVisitsToday} helper="All rewards_scans rows today (any source)." />
           <StatCard
             label="Points net today"
             value={totalPointsToday > 0 ? `+${totalPointsToday}` : totalPointsToday}
             helper="VIP points earned today (from scans)."
           />
-          <StatCard
-            label="Redemptions today"
-            value={totalRedemptionsToday}
-            helper="All rewards_redemptions today (ET day bounds)."
-          />
+          <StatCard label="Redemptions today" value={totalRedemptionsToday} helper="All rewards_redemptions today (ET day bounds)." />
         </section>
 
-        {/* ✅ UPDATED: Activity over time (SVG line+area) */}
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+        {/* Activity over time */}
+        <section className="rounded-3xl border border-slate-100 bg-white px-4 py-6 shadow-sm sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 md:flex-row md:items-baseline md:justify-between">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Activity over time</h2>
@@ -702,7 +686,7 @@ export default async function TonightDashboardPage() {
             <div className="mt-5">
               <div className="rounded-3xl border border-slate-100 bg-slate-50 px-5 py-5">
                 {(() => {
-                  const W = 980; // virtual width for stable math (scales to container)
+                  const W = 980;
                   const H = 180;
                   const padX = 18;
                   const padTop = 14;
@@ -736,7 +720,6 @@ export default async function TonightDashboardPage() {
                     "Z",
                   ].join(" ");
 
-                  // label cadence: show less as it grows
                   const step = n <= 10 ? 1 : n <= 16 ? 2 : n <= 24 ? 3 : 4;
 
                   return (
@@ -828,13 +811,11 @@ export default async function TonightDashboardPage() {
         </section>
 
         {/* GUEST DIAGNOSTICS (ops) */}
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+        <section className="rounded-3xl border border-slate-100 bg-white px-4 py-6 shadow-sm sm:px-6 lg:px-8">
           <div className="flex items-baseline justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Guest diagnostics</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Quick signals that help catch device / scanning issues fast.
-              </p>
+              <p className="mt-1 text-sm text-slate-500">Quick signals that help catch device / scanning issues fast.</p>
             </div>
             <p className="text-xs text-slate-500">Timezone: {ET_TZ}</p>
           </div>
@@ -853,10 +834,7 @@ export default async function TonightDashboardPage() {
               <p className="mt-1 text-base font-semibold text-slate-900">
                 {missingDeviceCount}{" "}
                 <span className="text-xs font-semibold text-slate-500">
-                  (
-                  {totalGuestCheckinsToday > 0
-                    ? Math.round((missingDeviceCount / totalGuestCheckinsToday) * 100)
-                    : 0}
+                  ({totalGuestCheckinsToday > 0 ? Math.round((missingDeviceCount / totalGuestCheckinsToday) * 100) : 0}
                   %)
                 </span>
               </p>
@@ -864,14 +842,12 @@ export default async function TonightDashboardPage() {
           </div>
         </section>
 
-        {/* VIP TABLE (same layout; add activity type pill) */}
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+        {/* VIP TABLE */}
+        <section className="rounded-3xl border border-slate-100 bg-white px-4 py-6 shadow-sm sm:px-6 lg:px-8">
           <div className="flex items-baseline justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Tonight&apos;s VIP guests</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Recognize VIPs and watch points &amp; redemptions roll in.
-              </p>
+              <p className="mt-1 text-sm text-slate-500">Recognize VIPs and watch points &amp; redemptions roll in.</p>
               <p className="mt-1 text-[11px] text-slate-400">Timezone: {ET_TZ} (Florida time)</p>
             </div>
           </div>
@@ -882,72 +858,79 @@ export default async function TonightDashboardPage() {
             </p>
           ) : (
             <>
-              <div className="mt-5 grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,2.1fr)_minmax(0,1.6fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,1.6fr)]">
-                <span>Guest</span>
-                <span>Phone</span>
-                <span className="text-right">Lifetime pts</span>
-                <span className="text-right">Lifetime visits</span>
-                <span className="text-right">Check-ins today</span>
-                <span className="text-right">Points today</span>
-                <span>Last activity</span>
-                <span>Reward today</span>
-              </div>
+              {/* ✅ Mobile-safe: horizontal scroll wrapper for the whole "table" */}
+              <div className="mt-5 overflow-x-auto rounded-2xl">
+                <div className="min-w-[980px]">
+                  <div className="grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,2.1fr)_minmax(0,1.6fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,1.6fr)]">
+                    <span>Guest</span>
+                    <span>Phone</span>
+                    <span className="text-right">Lifetime pts</span>
+                    <span className="text-right">Lifetime visits</span>
+                    <span className="text-right">Check-ins today</span>
+                    <span className="text-right">Points today</span>
+                    <span>Last activity</span>
+                    <span>Reward today</span>
+                  </div>
 
-              <div className="mt-1 space-y-2">
-                {tonightRows.map((row) => {
-                  const lastActivityIso = row.lastRedemptionAt ?? row.lastScanToday ?? row.lastScan ?? null;
+                  <div className="mt-1 space-y-2">
+                    {tonightRows.map((row) => {
+                      const lastActivityIso = row.lastRedemptionAt ?? row.lastScanToday ?? row.lastScan ?? null;
 
-                  const lastType =
-                    row.lastRedemptionAt && (!row.lastScanToday || row.lastRedemptionAt >= row.lastScanToday)
-                      ? "redemption"
-                      : "scan";
+                      const lastType =
+                        row.lastRedemptionAt && (!row.lastScanToday || row.lastRedemptionAt >= row.lastScanToday)
+                          ? "redemption"
+                          : "scan";
 
-                  return (
-                    <div
-                      key={row.userId}
-                      className="grid items-center gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-xs shadow-sm md:grid-cols-[minmax(0,2.1fr)_minmax(0,1.6fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,1.6fr)]"
-                    >
-                      <div className="flex flex-col gap-0.5">
-                        <Link
-                          href={`/rewards/vips/${row.userId}/insights`}
-                          className="inline-flex items-center gap-2 text-[13px] font-semibold text-slate-900 hover:text-amber-600"
+                      return (
+                        <div
+                          key={row.userId}
+                          className="grid items-center gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-xs shadow-sm md:grid-cols-[minmax(0,2.1fr)_minmax(0,1.6fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,1.6fr)]"
                         >
-                          <span className="truncate">{row.name}</span>
-                          {row.isVip && <Pill tone="emerald">VIP</Pill>}
-                          <Pill tone={lastType === "redemption" ? "amber" : "slate"}>
-                            {lastType === "redemption" ? "Redemption" : "Scan"}
-                          </Pill>
-                        </Link>
-                        {row.email && <span className="text-[11px] text-slate-500">{row.email}</span>}
-                      </div>
+                          <div className="flex flex-col gap-0.5">
+                            <Link
+                              href={`/rewards/vips/${row.userId}/insights`}
+                              className="inline-flex items-center gap-2 text-[13px] font-semibold text-slate-900 hover:text-amber-600"
+                            >
+                              <span className="truncate">{row.name}</span>
+                              {row.isVip && <Pill tone="emerald">VIP</Pill>}
+                              <Pill tone={lastType === "redemption" ? "amber" : "slate"}>
+                                {lastType === "redemption" ? "Redemption" : "Scan"}
+                              </Pill>
+                            </Link>
+                            {row.email && <span className="text-[11px] text-slate-500">{row.email}</span>}
+                          </div>
 
-                      <div className="text-[13px] text-slate-900">{row.phone || "—"}</div>
+                          <div className="text-[13px] text-slate-900">{row.phone || "—"}</div>
 
-                      <div className="text-right font-semibold text-slate-900">{row.lifetimePoints}</div>
+                          <div className="text-right font-semibold text-slate-900">{row.lifetimePoints}</div>
 
-                      <div className="text-right text-slate-900">{row.lifetimeVisits}</div>
+                          <div className="text-right text-slate-900">{row.lifetimeVisits}</div>
 
-                      <div className="text-right text-slate-900">{row.checkinsToday}</div>
+                          <div className="text-right text-slate-900">{row.checkinsToday}</div>
 
-                      <div className="text-right text-slate-900">
-                        {row.pointsToday > 0 ? `+${row.pointsToday}` : row.pointsToday}
-                      </div>
+                          <div className="text-right text-slate-900">
+                            {row.pointsToday > 0 ? `+${row.pointsToday}` : row.pointsToday}
+                          </div>
 
-                      <div className="text-slate-900">{formatTimeEt(lastActivityIso)}</div>
+                          <div className="text-slate-900">{formatTimeEt(lastActivityIso)}</div>
 
-                      <div className="text-slate-900">
-                        {row.redemptionsToday > 0 ? `${row.redemptionsToday}× ${row.lastRedemptionName ?? "Reward"}` : "—"}
-                      </div>
-                    </div>
-                  );
-                })}
+                          <div className="text-slate-900">
+                            {row.redemptionsToday > 0
+                              ? `${row.redemptionsToday}× ${row.lastRedemptionName ?? "Reward"}`
+                              : "—"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </>
           )}
         </section>
 
-        {/* GUEST TABLE (unchanged; keep recent 30) */}
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+        {/* GUEST TABLE */}
+        <section className="rounded-3xl border border-slate-100 bg-white px-4 py-6 shadow-sm sm:px-6 lg:px-8">
           <div className="flex items-baseline justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Tonight&apos;s guest check-ins</h2>
@@ -957,41 +940,44 @@ export default async function TonightDashboardPage() {
               <p className="mt-1 text-[11px] text-slate-400">Timezone: {ET_TZ} (Florida time)</p>
             </div>
 
-            {guestRecent.length > 0 && (
-              <p className="text-xs text-slate-500">Showing most recent {guestRecent.length}</p>
-            )}
+            {guestRecent.length > 0 && <p className="text-xs text-slate-500">Showing most recent {guestRecent.length}</p>}
           </div>
 
           {guestCheckins.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">No guest check-ins recorded for today yet.</p>
           ) : (
             <>
-              <div className="mt-5 grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
-                <span>Time</span>
-                <span>Device</span>
-                <span>Platform</span>
-                <span>Source</span>
-                <span>App version</span>
-              </div>
+              {/* ✅ Mobile-safe: horizontal scroll wrapper for the whole "table" */}
+              <div className="mt-5 overflow-x-auto rounded-2xl">
+                <div className="min-w-[720px]">
+                  <div className="grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
+                    <span>Time</span>
+                    <span>Device</span>
+                    <span>Platform</span>
+                    <span>Source</span>
+                    <span>App version</span>
+                  </div>
 
-              <div className="mt-1 space-y-2">
-                {guestRecent.map((g) => {
-                  const ts = getGuestTimestampIso(g);
-                  const device = (g.guest_device_id || g.device_id) ?? null;
+                  <div className="mt-1 space-y-2">
+                    {guestRecent.map((g) => {
+                      const ts = getGuestTimestampIso(g);
+                      const device = (g.guest_device_id || g.device_id) ?? null;
 
-                  return (
-                    <div
-                      key={g.id}
-                      className="grid items-center gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-xs shadow-sm md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]"
-                    >
-                      <div className="text-[13px] font-semibold text-slate-900">{formatTimeEt(ts)}</div>
-                      <div className="text-slate-900">{shortDevice(device)}</div>
-                      <div className="text-slate-900">{g.platform || "—"}</div>
-                      <div className="text-slate-900">{g.source || "—"}</div>
-                      <div className="text-slate-900">{g.app_version || "—"}</div>
-                    </div>
-                  );
-                })}
+                      return (
+                        <div
+                          key={g.id}
+                          className="grid items-center gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-xs shadow-sm md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]"
+                        >
+                          <div className="text-[13px] font-semibold text-slate-900">{formatTimeEt(ts)}</div>
+                          <div className="text-slate-900">{shortDevice(device)}</div>
+                          <div className="text-slate-900">{g.platform || "—"}</div>
+                          <div className="text-slate-900">{g.source || "—"}</div>
+                          <div className="text-slate-900">{g.app_version || "—"}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </>
           )}
