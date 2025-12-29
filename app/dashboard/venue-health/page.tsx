@@ -10,6 +10,11 @@
 // - Event label rules:
 //   If artist_id exists -> Artist name
 //   Else -> "SSDT Event (Title)" (or "SSDT Event" if title blank)
+//
+// Mobile usability fix (NO UI redesign):
+// - Responsive section padding (px-4 sm:px-6 lg:px-8).
+// - Wrap "Top nights" + "Top artists" grids in overflow-x-auto + min-width so columns remain readable on phones.
+// - Desktop layout remains unchanged.
 
 import React from "react";
 import Link from "next/link";
@@ -202,8 +207,7 @@ function normalizeEventLabel(
   ev: { artist_id: string | null; title: string | null },
   artistName: string | null
 ): string {
-  if (ev.artist_id && artistName && artistName.trim().length > 0)
-    return artistName.trim();
+  if (ev.artist_id && artistName && artistName.trim().length > 0) return artistName.trim();
   const t = (ev.title ?? "").trim();
   if (t.length > 0) return `SSDT Event (${t})`;
   return "SSDT Event";
@@ -220,9 +224,7 @@ function StatCard({
 }) {
   return (
     <div className="rounded-3xl border border-slate-100 bg-white px-6 py-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
       <p className="mt-1 text-xs text-slate-500">{helper}</p>
     </div>
@@ -243,11 +245,7 @@ function Pill({
       ? "bg-amber-100 text-amber-700"
       : "bg-slate-200 text-slate-700";
 
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>
-      {children}
-    </span>
-  );
+  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>{children}</span>;
 }
 
 function pct(n: number, d: number): number {
@@ -311,11 +309,9 @@ export default async function VenueHealthPage({
   const metricRaw = spValue(sp.metric);
 
   const range: RangeDays = rangeRaw === "7" ? 7 : rangeRaw === "90" ? 90 : 30;
-  const group: Grouping =
-    groupRaw === "week" ? "week" : groupRaw === "month" ? "month" : "day";
+  const group: Grouping = groupRaw === "week" ? "week" : groupRaw === "month" ? "month" : "day";
 
-  const metric: TrendMetric =
-    metricRaw === "vip" ? "vip" : metricRaw === "guest" ? "guest" : "total";
+  const metric: TrendMetric = metricRaw === "vip" ? "vip" : metricRaw === "guest" ? "guest" : "total";
 
   const todayEt = getEtYmd();
   const startEt = addDaysEtYmd(todayEt, -(range - 1));
@@ -323,23 +319,20 @@ export default async function VenueHealthPage({
   const rangeStartUtc = etWallClockToUtcIso(startEt, "00:00:00");
   const rangeEndUtc = etWallClockToUtcIso(todayEt, "23:59:59");
 
-  const [{ data: scansData, error: scansError }, { data: guestData, error: guestErr }] =
-    await Promise.all([
-      supabase
-        .from("rewards_scans")
-        .select("id, user_id, points, scanned_at, scan_date, source, note")
-        .gte("scan_date", startEt)
-        .lte("scan_date", todayEt)
-        .order("scanned_at", { ascending: false }),
-      supabase
-        .from("guest_checkins")
-        .select(
-          "id, guest_device_id, device_id, platform, app_version, source, day_et, scanned_at, checked_in_at"
-        )
-        .gte("day_et", startEt)
-        .lte("day_et", todayEt)
-        .order("scanned_at", { ascending: false }),
-    ]);
+  const [{ data: scansData, error: scansError }, { data: guestData, error: guestErr }] = await Promise.all([
+    supabase
+      .from("rewards_scans")
+      .select("id, user_id, points, scanned_at, scan_date, source, note")
+      .gte("scan_date", startEt)
+      .lte("scan_date", todayEt)
+      .order("scanned_at", { ascending: false }),
+    supabase
+      .from("guest_checkins")
+      .select("id, guest_device_id, device_id, platform, app_version, source, day_et, scanned_at, checked_in_at")
+      .gte("day_et", startEt)
+      .lte("day_et", todayEt)
+      .order("scanned_at", { ascending: false }),
+  ]);
 
   if (scansError) console.error("[venue-health] rewards_scans error", scansError);
   if (guestErr) console.error("[venue-health] guest_checkins error", guestErr);
@@ -347,21 +340,20 @@ export default async function VenueHealthPage({
   const scans: ScanRow[] = (scansData ?? []) as ScanRow[];
   const guestCheckins: GuestCheckinRow[] = (guestData ?? []) as GuestCheckinRow[];
 
-  const [{ data: linksData, error: linksErr }, { data: redData, error: redErr }] =
-    await Promise.all([
-      supabase
-        .from("guest_device_links")
-        .select("guest_device_id, user_id, linked_at")
-        .gte("linked_at", rangeStartUtc)
-        .lte("linked_at", rangeEndUtc)
-        .order("linked_at", { ascending: false }),
-      supabase
-        .from("rewards_redemptions")
-        .select("id, user_id, reward_name, points_spent, created_at")
-        .gte("created_at", rangeStartUtc)
-        .lte("created_at", rangeEndUtc)
-        .order("created_at", { ascending: false }),
-    ]);
+  const [{ data: linksData, error: linksErr }, { data: redData, error: redErr }] = await Promise.all([
+    supabase
+      .from("guest_device_links")
+      .select("guest_device_id, user_id, linked_at")
+      .gte("linked_at", rangeStartUtc)
+      .lte("linked_at", rangeEndUtc)
+      .order("linked_at", { ascending: false }),
+    supabase
+      .from("rewards_redemptions")
+      .select("id, user_id, reward_name, points_spent, created_at")
+      .gte("created_at", rangeStartUtc)
+      .lte("created_at", rangeEndUtc)
+      .order("created_at", { ascending: false }),
+  ]);
 
   if (linksErr) console.error("[venue-health] guest_device_links error", linksErr);
   if (redErr) console.error("[venue-health] rewards_redemptions error", redErr);
@@ -381,16 +373,11 @@ export default async function VenueHealthPage({
   if (eventsErr) console.error("[venue-health] artist_events error", eventsErr);
 
   const events: ArtistEventRow[] = (eventsData ?? []) as ArtistEventRow[];
-  const artistIds = Array.from(
-    new Set(events.map((e) => e.artist_id).filter((x): x is string => !!x))
-  );
+  const artistIds = Array.from(new Set(events.map((e) => e.artist_id).filter((x): x is string => !!x)));
 
   let artists: ArtistMini[] = [];
   if (artistIds.length > 0) {
-    const { data: artistsData, error: artistsError } = await supabase
-      .from("artists")
-      .select("id, name")
-      .in("id", artistIds);
+    const { data: artistsData, error: artistsError } = await supabase.from("artists").select("id, name").in("id", artistIds);
 
     if (artistsError) console.error("[venue-health] artists lookup error", artistsError);
     artists = (artistsData ?? []) as ArtistMini[];
@@ -491,10 +478,7 @@ export default async function VenueHealthPage({
   const dayList: string[] = [];
   for (let i = 0; i < range; i++) dayList.push(addDaysEtYmd(startEt, i));
 
-  const dayMeta = new Map<
-    string,
-    { eventLabel: string; eventCount: number; artistId: string | null }
-  >();
+  const dayMeta = new Map<string, { eventLabel: string; eventCount: number; artistId: string | null }>();
 
   for (const day of dayList) {
     const evs = (eventsByDay.get(day) ?? [])
@@ -736,8 +720,7 @@ export default async function VenueHealthPage({
   const baseParams = { range: String(range), group, metric };
 
   // Trend metric helpers
-  const metricLabel =
-    metric === "vip" ? "VIP uniques" : metric === "guest" ? "Guest uniques" : "Total people";
+  const metricLabel = metric === "vip" ? "VIP uniques" : metric === "guest" ? "Guest uniques" : "Total people";
 
   const metricValue = (s: (typeof series)[number]) =>
     metric === "vip" ? s.uniqueVips : metric === "guest" ? s.uniqueGuests : s.totalPeople;
@@ -756,13 +739,12 @@ export default async function VenueHealthPage({
       activeTab="dashboard"
     >
       <div className="space-y-8">
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+        <section className="rounded-3xl border border-slate-100 bg-white px-4 py-6 shadow-sm sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Historical trends</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Attendance is{" "}
-                <span className="font-semibold">unique VIPs + unique guest devices</span>. Conversions are{" "}
+                Attendance is <span className="font-semibold">unique VIPs + unique guest devices</span>. Conversions are{" "}
                 <span className="font-semibold">guest devices linked to VIP</span>.
               </p>
             </div>
@@ -772,10 +754,7 @@ export default async function VenueHealthPage({
               {/* Range (Last 7 / 30 / 90) */}
               <div className="inline-flex w-full overflow-hidden rounded-full border border-slate-200 bg-slate-50 sm:w-auto">
                 <Link
-                  href={
-                    "/dashboard/venue-health" +
-                    buildQueryString({ ...baseParams, range: 7 })
-                  }
+                  href={"/dashboard/venue-health" + buildQueryString({ ...baseParams, range: 7 })}
                   className={`px-4 py-2 text-xs font-semibold transition ${
                     range === 7 ? "bg-white text-slate-900" : "text-slate-600 hover:bg-white"
                   }`}
@@ -783,10 +762,7 @@ export default async function VenueHealthPage({
                   Last 7
                 </Link>
                 <Link
-                  href={
-                    "/dashboard/venue-health" +
-                    buildQueryString({ ...baseParams, range: 30 })
-                  }
+                  href={"/dashboard/venue-health" + buildQueryString({ ...baseParams, range: 30 })}
                   className={`px-4 py-2 text-xs font-semibold transition ${
                     range === 30 ? "bg-white text-slate-900" : "text-slate-600 hover:bg-white"
                   }`}
@@ -794,10 +770,7 @@ export default async function VenueHealthPage({
                   Last 30
                 </Link>
                 <Link
-                  href={
-                    "/dashboard/venue-health" +
-                    buildQueryString({ ...baseParams, range: 90 })
-                  }
+                  href={"/dashboard/venue-health" + buildQueryString({ ...baseParams, range: 90 })}
                   className={`px-4 py-2 text-xs font-semibold transition ${
                     range === 90 ? "bg-white text-slate-900" : "text-slate-600 hover:bg-white"
                   }`}
@@ -809,10 +782,7 @@ export default async function VenueHealthPage({
               {/* Grouping (Daily / Weekly / Monthly) */}
               <div className="inline-flex w-full overflow-hidden rounded-full border border-slate-200 bg-slate-50 sm:w-auto">
                 <Link
-                  href={
-                    "/dashboard/venue-health" +
-                    buildQueryString({ range, group: "day", metric })
-                  }
+                  href={"/dashboard/venue-health" + buildQueryString({ range, group: "day", metric })}
                   className={`px-4 py-2 text-xs font-semibold transition ${
                     group === "day" ? "bg-white text-slate-900" : "text-slate-600 hover:bg-white"
                   }`}
@@ -820,10 +790,7 @@ export default async function VenueHealthPage({
                   Daily
                 </Link>
                 <Link
-                  href={
-                    "/dashboard/venue-health" +
-                    buildQueryString({ range, group: "week", metric })
-                  }
+                  href={"/dashboard/venue-health" + buildQueryString({ range, group: "week", metric })}
                   className={`px-4 py-2 text-xs font-semibold transition ${
                     group === "week" ? "bg-white text-slate-900" : "text-slate-600 hover:bg-white"
                   }`}
@@ -831,10 +798,7 @@ export default async function VenueHealthPage({
                   Weekly
                 </Link>
                 <Link
-                  href={
-                    "/dashboard/venue-health" +
-                    buildQueryString({ range, group: "month", metric })
-                  }
+                  href={"/dashboard/venue-health" + buildQueryString({ range, group: "month", metric })}
                   className={`px-4 py-2 text-xs font-semibold transition ${
                     group === "month" ? "bg-white text-slate-900" : "text-slate-600 hover:bg-white"
                   }`}
@@ -864,8 +828,7 @@ export default async function VenueHealthPage({
             value={sumPeople}
             helper={
               <>
-                In selected range.{" "}
-                <span className="text-slate-400">(Unique VIPs + unique guests per period)</span>
+                In selected range. <span className="text-slate-400">(Unique VIPs + unique guests per period)</span>
               </>
             }
           />
@@ -912,8 +875,8 @@ export default async function VenueHealthPage({
           />
         </section>
 
-        {/* ✅ NEW TREND: SVG LINE + AREA (scales for 7/30/90) + metric toggle */}
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+        {/* TREND */}
+        <section className="rounded-3xl border border-slate-100 bg-white px-4 py-6 shadow-sm sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 md:flex-row md:items-baseline md:justify-between">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Trend</h2>
@@ -923,7 +886,6 @@ export default async function VenueHealthPage({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {/* Metric toggle */}
               <div className="inline-flex overflow-hidden rounded-full border border-slate-200 bg-slate-50">
                 <Link
                   href={"/dashboard/venue-health" + buildQueryString({ range, group, metric: "total" })}
@@ -963,7 +925,7 @@ export default async function VenueHealthPage({
             <div className="mt-5">
               <div className="rounded-3xl border border-slate-100 bg-slate-50 px-5 py-5">
                 {(() => {
-                  const W = 980; // virtual width for stable math (scales to container)
+                  const W = 980;
                   const H = 180;
                   const padX = 18;
                   const padTop = 14;
@@ -1001,7 +963,6 @@ export default async function VenueHealthPage({
                     "Z",
                   ].join(" ");
 
-                  // Label cadence: fewer labels when there are many points
                   const step = n <= 10 ? 1 : n <= 20 ? 2 : n <= 45 ? 4 : n <= 70 ? 6 : 10;
 
                   return (
@@ -1028,7 +989,6 @@ export default async function VenueHealthPage({
                           aria-label="Venue health trend over time"
                           preserveAspectRatio="none"
                         >
-                          {/* baseline */}
                           <line
                             x1={padX}
                             y1={H - padBottom}
@@ -1038,10 +998,8 @@ export default async function VenueHealthPage({
                             strokeWidth="1"
                           />
 
-                          {/* area */}
                           <path d={areaD} fill="rgba(148,163,184,0.25)" />
 
-                          {/* line */}
                           <path
                             d={lineD}
                             fill="none"
@@ -1051,7 +1009,6 @@ export default async function VenueHealthPage({
                             strokeLinecap="round"
                           />
 
-                          {/* points */}
                           {points.map((p, i) => {
                             const isBest = i === bestIdx;
                             const showLabel = i % step === 0 || i === n - 1 || i === 0;
@@ -1071,7 +1028,6 @@ export default async function VenueHealthPage({
                                   </title>
                                 </circle>
 
-                                {/* x labels */}
                                 {showLabel ? (
                                   <text
                                     x={p.x}
@@ -1105,7 +1061,8 @@ export default async function VenueHealthPage({
           )}
         </section>
 
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+        {/* TOP NIGHTS */}
+        <section className="rounded-3xl border border-slate-100 bg-white px-4 py-6 shadow-sm sm:px-6 lg:px-8">
           <div className="flex items-baseline justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Top nights</h2>
@@ -1120,51 +1077,60 @@ export default async function VenueHealthPage({
             <p className="mt-4 text-sm text-slate-500">No nights found in range.</p>
           ) : (
             <>
-              <div className="mt-5 grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,1.1fr)_minmax(0,2.4fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.8fr)]">
-                <span>Date</span>
-                <span>Event</span>
-                <span className="text-right">People</span>
-                <span className="text-right">VIPs</span>
-                <span className="text-right">Guests</span>
-                <span className="text-right">Conv</span>
-                <span className="text-right">Redeem</span>
-              </div>
-
-              <div className="mt-1 space-y-2">
-                {topNights.map((r) => (
-                  <div
-                    key={r.day}
-                    className="grid items-center gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-xs shadow-sm md:grid-cols-[minmax(0,1.1fr)_minmax(0,2.4fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.8fr)]"
-                  >
-                    <div className="text-[13px] font-semibold text-slate-900">{r.dayLabel}</div>
-
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-semibold text-slate-900">{r.eventLabel}</div>
-                      <div className="mt-0.5 text-[11px] text-slate-500">
-                        VIP scans: {r.vipScans} · Points earned: {r.pointsEarned > 0 ? `+${r.pointsEarned}` : r.pointsEarned}
-                      </div>
-                    </div>
-
-                    <div className="text-right font-semibold text-slate-900">{r.people}</div>
-                    <div className="text-right text-slate-900">{r.uniqueVips}</div>
-                    <div className="text-right text-slate-900">{r.uniqueGuests}</div>
-                    <div className="text-right text-slate-900">
-                      {r.conversions} <span className="text-[11px] font-semibold text-slate-500">({r.conversionRate}%)</span>
-                    </div>
-                    <div className="text-right text-slate-900">{r.redemptions}</div>
+              {/* ✅ Mobile-safe table: horizontal scroll + min width */}
+              <div className="mt-5 overflow-x-auto rounded-2xl">
+                <div className="min-w-[980px]">
+                  <div className="grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,1.1fr)_minmax(0,2.4fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.8fr)]">
+                    <span>Date</span>
+                    <span>Event</span>
+                    <span className="text-right">People</span>
+                    <span className="text-right">VIPs</span>
+                    <span className="text-right">Guests</span>
+                    <span className="text-right">Conv</span>
+                    <span className="text-right">Redeem</span>
                   </div>
-                ))}
+
+                  <div className="mt-1 space-y-2">
+                    {topNights.map((r) => (
+                      <div
+                        key={r.day}
+                        className="grid items-center gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-xs shadow-sm md:grid-cols-[minmax(0,1.1fr)_minmax(0,2.4fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.8fr)]"
+                      >
+                        <div className="text-[13px] font-semibold text-slate-900">{r.dayLabel}</div>
+
+                        <div className="min-w-0">
+                          <div className="truncate text-[13px] font-semibold text-slate-900">{r.eventLabel}</div>
+                          <div className="mt-0.5 text-[11px] text-slate-500">
+                            VIP scans: {r.vipScans} · Points earned:{" "}
+                            {r.pointsEarned > 0 ? `+${r.pointsEarned}` : r.pointsEarned}
+                          </div>
+                        </div>
+
+                        <div className="text-right font-semibold text-slate-900">{r.people}</div>
+                        <div className="text-right text-slate-900">{r.uniqueVips}</div>
+                        <div className="text-right text-slate-900">{r.uniqueGuests}</div>
+                        <div className="text-right text-slate-900">
+                          {r.conversions}{" "}
+                          <span className="text-[11px] font-semibold text-slate-500">({r.conversionRate}%)</span>
+                        </div>
+                        <div className="text-right text-slate-900">{r.redemptions}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </>
           )}
         </section>
 
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+        {/* TOP ARTISTS */}
+        <section className="rounded-3xl border border-slate-100 bg-white px-4 py-6 shadow-sm sm:px-6 lg:px-8">
           <div className="flex items-baseline justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Top artists (by avg attendance)</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Only nights with an <span className="font-semibold">artist_id</span> are included (SSDT Events without an artist are excluded).
+                Only nights with an <span className="font-semibold">artist_id</span> are included (SSDT Events without an
+                artist are excluded).
               </p>
             </div>
             <p className="text-xs text-slate-500">Showing top 12</p>
@@ -1174,38 +1140,43 @@ export default async function VenueHealthPage({
             <p className="mt-4 text-sm text-slate-500">No artist-linked nights found in this range.</p>
           ) : (
             <>
-              <div className="mt-5 grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,2.2fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)]">
-                <span>Artist</span>
-                <span className="text-right">Nights</span>
-                <span className="text-right">Avg people</span>
-                <span className="text-right">VIP %</span>
-                <span className="text-right">Conv %</span>
-              </div>
-
-              <div className="mt-1 space-y-2">
-                {topArtists.map((a) => (
-                  <div
-                    key={a.artistId}
-                    className="grid items-center gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-xs shadow-sm md:grid-cols-[minmax(0,2.2fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)]"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-semibold text-slate-900">{a.name}</div>
-                      <div className="mt-0.5 text-[11px] text-slate-500">
-                        Best night: {a.bestPeople} people · {a.bestDayLabel}
-                      </div>
-                    </div>
-
-                    <div className="text-right text-slate-900">{a.nights}</div>
-                    <div className="text-right font-semibold text-slate-900">{a.avgPeople}</div>
-                    <div className="text-right text-slate-900">{a.vipPct}%</div>
-                    <div className="text-right text-slate-900">{a.convPct}%</div>
+              {/* ✅ Mobile-safe table: horizontal scroll + min width */}
+              <div className="mt-5 overflow-x-auto rounded-2xl">
+                <div className="min-w-[820px]">
+                  <div className="grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,2.2fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)]">
+                    <span>Artist</span>
+                    <span className="text-right">Nights</span>
+                    <span className="text-right">Avg people</span>
+                    <span className="text-right">VIP %</span>
+                    <span className="text-right">Conv %</span>
                   </div>
-                ))}
-              </div>
 
-              <p className="mt-3 text-[11px] text-slate-400">
-                Note: Weekly/monthly “uniques” are unique across the period (not sum of daily uniques).
-              </p>
+                  <div className="mt-1 space-y-2">
+                    {topArtists.map((a) => (
+                      <div
+                        key={a.artistId}
+                        className="grid items-center gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-xs shadow-sm md:grid-cols-[minmax(0,2.2fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)]"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-[13px] font-semibold text-slate-900">{a.name}</div>
+                          <div className="mt-0.5 text-[11px] text-slate-500">
+                            Best night: {a.bestPeople} people · {a.bestDayLabel}
+                          </div>
+                        </div>
+
+                        <div className="text-right text-slate-900">{a.nights}</div>
+                        <div className="text-right font-semibold text-slate-900">{a.avgPeople}</div>
+                        <div className="text-right text-slate-900">{a.vipPct}%</div>
+                        <div className="text-right text-slate-900">{a.convPct}%</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="mt-3 text-[11px] text-slate-400">
+                    Note: Weekly/monthly “uniques” are unique across the period (not sum of daily uniques).
+                  </p>
+                </div>
+              </div>
             </>
           )}
         </section>
