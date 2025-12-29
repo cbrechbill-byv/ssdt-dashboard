@@ -1,3 +1,4 @@
+// PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\artists\edit\page.tsx
 export const dynamic = "force-dynamic";
 
 import DashboardShell from "@/components/layout/DashboardShell";
@@ -105,18 +106,12 @@ export default async function ArtistEditPage({
     const slug = formData.get("slug")?.toString().trim() || null;
     const genre = formData.get("genre")?.toString().trim() || null;
     const bio = formData.get("bio")?.toString().trim() || null;
-    const website_url =
-      formData.get("website_url")?.toString().trim() || null;
-    const instagram_url =
-      formData.get("instagram_url")?.toString().trim() || null;
-    const facebook_url =
-      formData.get("facebook_url")?.toString().trim() || null;
-    const tiktok_url =
-      formData.get("tiktok_url")?.toString().trim() || null;
-    const spotify_url =
-      formData.get("spotify_url")?.toString().trim() || null;
-    const image_path =
-      formData.get("image_path")?.toString().trim() || null;
+    const website_url = formData.get("website_url")?.toString().trim() || null;
+    const instagram_url = formData.get("instagram_url")?.toString().trim() || null;
+    const facebook_url = formData.get("facebook_url")?.toString().trim() || null;
+    const tiktok_url = formData.get("tiktok_url")?.toString().trim() || null;
+    const spotify_url = formData.get("spotify_url")?.toString().trim() || null;
+    const image_path = formData.get("image_path")?.toString().trim() || null;
 
     const is_active_value = formData.get("is_active");
     const is_active = is_active_value === "on";
@@ -153,29 +148,20 @@ export default async function ArtistEditPage({
 
   if (!artist) {
     return (
-      <DashboardShell
-        title="Edit artist"
-        subtitle="Unable to load artist"
-        activeTab="artists"
-      >
-        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800 space-y-2">
+      <DashboardShell title="Edit artist" subtitle="Unable to load artist" activeTab="artists">
+        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-4 sm:px-5 py-4 text-sm text-rose-800 space-y-2">
           <p className="font-semibold">Could not load artist</p>
           <p>
             Query id:&nbsp;
-            <code className="font-mono text-xs">
-              {id || "(missing or undefined)"}
-            </code>
+            <code className="font-mono text-xs">{id || "(missing or undefined)"}</code>
           </p>
           <p className="text-xs">
             searchParams:&nbsp;
-            <code className="font-mono text-[10px]">
-              {JSON.stringify(resolvedSearchParams)}
-            </code>
+            <code className="font-mono text-[10px]">{JSON.stringify(resolvedSearchParams)}</code>
           </p>
           {errorMessage && (
             <p className="text-xs">
-              Supabase error:{" "}
-              <span className="font-mono">{errorMessage}</span>
+              Supabase error: <span className="font-mono">{errorMessage}</span>
             </p>
           )}
           <a
@@ -192,31 +178,22 @@ export default async function ArtistEditPage({
   const initialImageUrl = getPublicUrlForImagePath(artist.image_path);
 
   return (
-    <DashboardShell
-      title="Edit artist"
-      subtitle={artist.name}
-      activeTab="artists"
-    >
+    <DashboardShell title="Edit artist" subtitle={artist.name} activeTab="artists">
       <form action={updateArtist} className="space-y-4">
         <input type="hidden" name="id" defaultValue={artist.id} />
 
         {/* Core details */}
-        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm space-y-4">
+        <section className="rounded-2xl border border-slate-200 bg-white px-4 sm:px-5 py-4 shadow-sm space-y-4">
           <div className="mb-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
               Artist details
             </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Update how this artist appears in the app.
-            </p>
+            <p className="mt-1 text-xs text-slate-500">Update how this artist appears in the app.</p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
-              <label
-                htmlFor="name"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="name" className="text-xs font-medium text-slate-800">
                 Name
               </label>
               <input
@@ -229,10 +206,7 @@ export default async function ArtistEditPage({
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="slug"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="slug" className="text-xs font-medium text-slate-800">
                 Slug (optional)
               </label>
               <input
@@ -245,10 +219,7 @@ export default async function ArtistEditPage({
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="genre"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="genre" className="text-xs font-medium text-slate-800">
                 Genre
               </label>
               <input
@@ -269,10 +240,7 @@ export default async function ArtistEditPage({
             />
 
             <div className="md:col-span-2 space-y-1.5">
-              <label
-                htmlFor="bio"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="bio" className="text-xs font-medium text-slate-800">
                 Bio
               </label>
               <textarea
@@ -287,7 +255,7 @@ export default async function ArtistEditPage({
         </section>
 
         {/* Links & socials */}
-        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+        <section className="rounded-2xl border border-slate-200 bg-white px-4 sm:px-5 py-4 shadow-sm">
           <div className="mb-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
               Links & social
@@ -296,10 +264,7 @@ export default async function ArtistEditPage({
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
-              <label
-                htmlFor="website_url"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="website_url" className="text-xs font-medium text-slate-800">
                 Website
               </label>
               <input
@@ -312,10 +277,7 @@ export default async function ArtistEditPage({
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="instagram_url"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="instagram_url" className="text-xs font-medium text-slate-800">
                 Instagram
               </label>
               <input
@@ -328,10 +290,7 @@ export default async function ArtistEditPage({
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="facebook_url"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="facebook_url" className="text-xs font-medium text-slate-800">
                 Facebook
               </label>
               <input
@@ -344,10 +303,7 @@ export default async function ArtistEditPage({
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="tiktok_url"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="tiktok_url" className="text-xs font-medium text-slate-800">
                 TikTok
               </label>
               <input
@@ -360,10 +316,7 @@ export default async function ArtistEditPage({
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="spotify_url"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="spotify_url" className="text-xs font-medium text-slate-800">
                 Spotify
               </label>
               <input
@@ -378,14 +331,10 @@ export default async function ArtistEditPage({
         </section>
 
         {/* Status + actions */}
-        <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
+        <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 sm:px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
           <div className="space-y-1">
-            <p className="text-xs font-medium text-slate-800">
-              Visibility & status
-            </p>
-            <p className="text-[11px] text-slate-500">
-              Use this toggle to hide or show the artist in the app.
-            </p>
+            <p className="text-xs font-medium text-slate-800">Visibility & status</p>
+            <p className="text-[11px] text-slate-500">Use this toggle to hide or show the artist in the app.</p>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -395,10 +344,7 @@ export default async function ArtistEditPage({
               defaultChecked={artist.is_active}
               className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-400"
             />
-            <label
-              htmlFor="is_active"
-              className="text-xs font-medium text-slate-800"
-            >
+            <label htmlFor="is_active" className="text-xs font-medium text-slate-800">
               Artist is active and should appear in the app
             </label>
           </div>

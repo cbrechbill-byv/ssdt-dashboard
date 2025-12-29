@@ -1,3 +1,5 @@
+// PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\artists\page.tsx
+
 import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { supabaseServer } from "@/lib/supabaseServer";
@@ -67,14 +69,13 @@ export default async function ArtistsPage() {
     >
       <section className="space-y-4">
         {/* Summary + Add */}
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 sm:px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1.5">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
               Artist directory
             </p>
             <p className="text-xs text-slate-600">
-              Keep this list in sync with who actually plays Sugarshack Downtown.
-              Edits are live in the app.
+              Keep this list in sync with who actually plays Sugarshack Downtown. Edits are live in the app.
             </p>
             {totalCount > 0 && (
               <div className="flex flex-wrap gap-3 text-[11px] text-slate-500">
@@ -120,16 +121,16 @@ export default async function ArtistsPage() {
           {artists.length === 0 && !error ? (
             <div className="px-4 py-6">
               <p className="text-sm text-slate-500">
-                No artists found yet. Use{" "}
-                <span className="font-semibold">Add artist</span> to create your
-                first profile.
+                No artists found yet. Use <span className="font-semibold">Add artist</span> to create your first
+                profile.
               </p>
             </div>
           ) : null}
 
           {artists.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs">
+            // ✅ Mobile-safe: add side padding so the scroll area doesn't touch edges
+            <div className="overflow-x-auto px-4 sm:px-0">
+              <table className="min-w-[860px] sm:min-w-full text-xs">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                     <th className="px-4 py-2 text-left">Artist</th>
@@ -147,12 +148,9 @@ export default async function ArtistsPage() {
                     const hasWebsite = !!artist.website_url;
                     const hasInstagram = !!artist.instagram_url;
                     const hasImage = !!artist.image_path;
-                    const rowBg =
-                      idx % 2 === 0 ? "bg-white" : "bg-slate-50/40";
+                    const rowBg = idx % 2 === 0 ? "bg-white" : "bg-slate-50/40";
 
-                    const imageUrl = hasImage
-                      ? getPublicUrlForImagePath(artist.image_path)
-                      : null;
+                    const imageUrl = hasImage ? getPublicUrlForImagePath(artist.image_path) : null;
 
                     const renderStatus = (hasValue: boolean) =>
                       hasValue ? (
@@ -171,7 +169,7 @@ export default async function ArtistsPage() {
                         {/* Artist name */}
                         <td className="px-4 py-3 align-top whitespace-nowrap">
                           <div className="flex flex-col gap-0.5">
-                            <span className="max-w-xs overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-slate-900">
+                            <span className="max-w-[220px] sm:max-w-xs overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-slate-900">
                               {artist.name || "Untitled artist"}
                             </span>
                             {!artist.is_active && (
@@ -182,31 +180,21 @@ export default async function ArtistsPage() {
                           </div>
                         </td>
 
-                        {/* Genre (keep text) */}
+                        {/* Genre */}
                         <td className="px-3 py-3 align-top whitespace-nowrap text-xs text-slate-700">
-                          {artist.genre ? (
-                            artist.genre
-                          ) : (
-                            <span className="text-slate-400">Missing</span>
-                          )}
+                          {artist.genre ? artist.genre : <span className="text-slate-400">Missing</span>}
                         </td>
 
-                        {/* Bio status: ✓ or Missing */}
-                        <td className="px-3 py-3 align-top text-xs">
-                          {renderStatus(hasBio)}
-                        </td>
+                        {/* Bio status */}
+                        <td className="px-3 py-3 align-top text-xs">{renderStatus(hasBio)}</td>
 
-                        {/* Website status: ✓ or Missing */}
-                        <td className="px-3 py-3 align-top text-xs">
-                          {renderStatus(hasWebsite)}
-                        </td>
+                        {/* Website status */}
+                        <td className="px-3 py-3 align-top text-xs">{renderStatus(hasWebsite)}</td>
 
-                        {/* Instagram status: ✓ or Missing */}
-                        <td className="px-3 py-3 align-top text-xs">
-                          {renderStatus(hasInstagram)}
-                        </td>
+                        {/* Instagram status */}
+                        <td className="px-3 py-3 align-top text-xs">{renderStatus(hasInstagram)}</td>
 
-                        {/* Image thumbnail or Missing */}
+                        {/* Image thumbnail */}
                         <td className="px-3 py-3 align-top">
                           {hasImage && imageUrl ? (
                             <div className="h-9 w-9 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
@@ -218,9 +206,7 @@ export default async function ArtistsPage() {
                               />
                             </div>
                           ) : (
-                            <span className="text-xs text-slate-400">
-                              Missing
-                            </span>
+                            <span className="text-xs text-slate-400">Missing</span>
                           )}
                         </td>
 

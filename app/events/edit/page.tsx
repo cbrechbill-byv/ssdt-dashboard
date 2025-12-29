@@ -1,3 +1,4 @@
+// PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\events\edit\page.tsx
 // app/events/edit/page.tsx
 // Path: /events/edit?id=...
 // Purpose: Edit a scheduled event (date/time/artist/title/notes/cancelled).
@@ -237,7 +238,7 @@ export default async function EventEditPage({
   if (!event) {
     return (
       <DashboardShell title="Edit event" subtitle="Unable to load event" activeTab="events">
-        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800 space-y-2">
+        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-4 sm:px-5 py-4 text-sm text-rose-800 space-y-2">
           <p className="font-semibold">Could not load event</p>
           <p>
             Query id:&nbsp;
@@ -267,10 +268,10 @@ export default async function EventEditPage({
 
   return (
     <DashboardShell title="Edit event" subtitle={event.title || "Untitled event"} activeTab="events">
-      <form action={updateEvent} className="space-y-4 max-w-3xl">
+      <form action={updateEvent} className="space-y-4 w-full max-w-3xl">
         <input type="hidden" name="id" defaultValue={event.id} />
 
-        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm space-y-4">
+        <section className="rounded-2xl border border-slate-200 bg-white px-4 sm:px-5 py-4 shadow-sm space-y-4">
           <div className="mb-2 flex items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -283,7 +284,7 @@ export default async function EventEditPage({
             </div>
           </div>
 
-          {/* ✅ NEW: Event image uploader (same UX pattern as artists) */}
+          {/* ✅ Event image uploader (same UX pattern as artists) */}
           <EventImageUploader
             eventId={event.id}
             eventTitle={event.title || "Event"}
@@ -327,7 +328,8 @@ export default async function EventEditPage({
 
               {artistsErrorMessage && (
                 <p className="text-[11px] text-rose-500">
-                  Could not load artists list: <span className="font-mono">{artistsErrorMessage}</span>
+                  Could not load artists list:{" "}
+                  <span className="font-mono">{artistsErrorMessage}</span>
                 </p>
               )}
             </div>
@@ -416,7 +418,7 @@ export default async function EventEditPage({
           </div>
         </section>
 
-        <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
+        <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 sm:px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
           <div className="space-y-1">
             <p className="text-xs font-medium text-slate-800">Event status</p>
             <p className="text-[11px] text-slate-500">

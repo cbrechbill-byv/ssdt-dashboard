@@ -1,3 +1,5 @@
+// PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\artists\new\page.tsx
+
 export const dynamic = "force-dynamic";
 
 import DashboardShell from "@/components/layout/DashboardShell";
@@ -15,18 +17,12 @@ export default function NewArtistPage() {
     const slug = formData.get("slug")?.toString().trim() || null;
     const genre = formData.get("genre")?.toString().trim() || null;
     const bio = formData.get("bio")?.toString().trim() || null;
-    const website_url =
-      formData.get("website_url")?.toString().trim() || null;
-    const instagram_url =
-      formData.get("instagram_url")?.toString().trim() || null;
-    const facebook_url =
-      formData.get("facebook_url")?.toString().trim() || null;
-    const tiktok_url =
-      formData.get("tiktok_url")?.toString().trim() || null;
-    const spotify_url =
-      formData.get("spotify_url")?.toString().trim() || null;
-    const image_path =
-      formData.get("image_path")?.toString().trim() || null;
+    const website_url = formData.get("website_url")?.toString().trim() || null;
+    const instagram_url = formData.get("instagram_url")?.toString().trim() || null;
+    const facebook_url = formData.get("facebook_url")?.toString().trim() || null;
+    const tiktok_url = formData.get("tiktok_url")?.toString().trim() || null;
+    const spotify_url = formData.get("spotify_url")?.toString().trim() || null;
+    const image_path = formData.get("image_path")?.toString().trim() || null;
 
     if (!name) {
       throw new Error("Artist name is required.");
@@ -88,9 +84,9 @@ export default function NewArtistPage() {
       subtitle="Create a new artist profile for the app."
       activeTab="artists"
     >
-      <form action={createArtist} className="space-y-4">
+      <form action={createArtist} className="space-y-4 max-w-3xl">
         {/* Core details */}
-        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm space-y-4">
+        <section className="rounded-2xl border border-slate-200 bg-white px-4 sm:px-5 py-4 shadow-sm space-y-4">
           <div className="mb-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
               Artist details
@@ -102,10 +98,7 @@ export default function NewArtistPage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
-              <label
-                htmlFor="name"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="name" className="text-xs font-medium text-slate-800">
                 Name
               </label>
               <input
@@ -118,10 +111,7 @@ export default function NewArtistPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="slug"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="slug" className="text-xs font-medium text-slate-800">
                 Slug (optional)
               </label>
               <input
@@ -133,10 +123,7 @@ export default function NewArtistPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="genre"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="genre" className="text-xs font-medium text-slate-800">
                 Genre
               </label>
               <input
@@ -156,10 +143,7 @@ export default function NewArtistPage() {
             />
 
             <div className="md:col-span-2 space-y-1.5">
-              <label
-                htmlFor="bio"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="bio" className="text-xs font-medium text-slate-800">
                 Bio
               </label>
               <textarea
@@ -174,7 +158,7 @@ export default function NewArtistPage() {
         </section>
 
         {/* Links & socials */}
-        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+        <section className="rounded-2xl border border-slate-200 bg-white px-4 sm:px-5 py-4 shadow-sm">
           <div className="mb-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
               Links & social
@@ -183,10 +167,7 @@ export default function NewArtistPage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
-              <label
-                htmlFor="website_url"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="website_url" className="text-xs font-medium text-slate-800">
                 Website
               </label>
               <input
@@ -198,10 +179,7 @@ export default function NewArtistPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="instagram_url"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="instagram_url" className="text-xs font-medium text-slate-800">
                 Instagram
               </label>
               <input
@@ -213,10 +191,7 @@ export default function NewArtistPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="facebook_url"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="facebook_url" className="text-xs font-medium text-slate-800">
                 Facebook
               </label>
               <input
@@ -228,10 +203,7 @@ export default function NewArtistPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="tiktok_url"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="tiktok_url" className="text-xs font-medium text-slate-800">
                 TikTok
               </label>
               <input
@@ -243,10 +215,7 @@ export default function NewArtistPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="spotify_url"
-                className="text-xs font-medium text-slate-800"
-              >
+              <label htmlFor="spotify_url" className="text-xs font-medium text-slate-800">
                 Spotify
               </label>
               <input

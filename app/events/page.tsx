@@ -170,7 +170,7 @@ export default async function EventsPage() {
       subtitle={`Manage the Sugarshack Downtown live music calendar. (Timezone: ${ET_TZ})`}
       activeTab="events"
     >
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-4 space-y-3">
+      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 sm:px-5 py-4 space-y-3">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[11px] font-semibold text-slate-500 tracking-[0.12em] uppercase">
@@ -200,18 +200,19 @@ export default async function EventsPage() {
             No upcoming events with times set. Click &ldquo;Add event&rdquo; to schedule your first show.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-xs">
+          // ✅ Mobile-safe: allow edge-to-edge scroll on phones, preserve full table width
+          <div className="-mx-4 sm:mx-0 overflow-x-auto">
+            <table className="min-w-[980px] w-full text-xs">
               <thead>
                 <tr className="text-[11px] uppercase tracking-[0.12em] text-slate-500 border-b border-slate-100">
-                  <th className="py-2 pr-3 text-left font-semibold">Date</th>
+                  <th className="py-2 pr-3 pl-4 sm:pl-0 text-left font-semibold">Date</th>
                   <th className="py-2 pr-3 text-left font-semibold">Time</th>
                   <th className="py-2 pr-3 text-left font-semibold">Artist</th>
                   <th className="py-2 pr-3 text-left font-semibold">Genre</th>
                   <th className="py-2 pr-3 text-left font-semibold">Title</th>
                   <th className="py-2 pr-3 text-left font-semibold">Notes</th>
                   <th className="py-2 pr-3 text-right font-semibold">Status</th>
-                  <th className="py-2 text-right font-semibold">Actions</th>
+                  <th className="py-2 pr-4 sm:pr-0 text-right font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -233,7 +234,7 @@ export default async function EventsPage() {
                       key={evt.id}
                       className="border-b border-slate-100 last:border-0 transition-colors hover:bg-amber-50/60"
                     >
-                      <td className="py-2 pr-3 align-top whitespace-nowrap">
+                      <td className="py-2 pr-3 pl-4 sm:pl-0 align-top whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <span>{dateLabel}</span>
                           {tonight && (
@@ -255,7 +256,7 @@ export default async function EventsPage() {
                           {statusLabel}
                         </span>
                       </td>
-                      <td className="py-2 pl-3 align-top text-right whitespace-nowrap">
+                      <td className="py-2 pl-3 pr-4 sm:pr-0 align-top text-right whitespace-nowrap">
                         <div className="flex justify-end gap-2">
                           <Link
                             href={`/events/edit?id=${evt.id}`}
