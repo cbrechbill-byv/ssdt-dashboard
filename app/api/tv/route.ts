@@ -1,11 +1,13 @@
 // PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\api\tv\route.ts
 // app/api/tv/route.ts
 // Returns today's check-in totals (ET-aligned) + a small recent feed.
-// VIP = rewards_scans where source='qr_checkin' and scan_date=todayET
-// Guest = optional guest_checkins table (safe fallback if not present)
+// VIP = rewards_scans where scan_date=todayET (optionally filtered by source elsewhere)
+// Guest = guest_checkins where day_et=todayET
 
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
+
+export const dynamic = "force-dynamic";
 
 const ET_TZ = "America/New_York";
 
@@ -18,19 +20,17 @@ function getEtYmd(now = new Date()): string {
   });
 }
 
-export const dynamic = "force-dynamic";
-
 export async function GET() {
   const supabase = supabaseServer;
 
   const todayEt = getEtYmd();
   const asOfIso = new Date().toISOString();
 
-  // VIP check-ins today
+  // --- VIP check-ins today (ET) -----------------------------------------
+  // If you want ONLY QR check-ins, add: .eq("source", "qr_checkin")
   const { data: vipRows, error: vipErr } = await supabase
     .from("rewards_scans")
-    .select("id, scanned_at, source, points")
-    .eq("source", "qr_checkin")
+    .select("id, scanned_at, source, points, scan_date")
     .eq("scan_date", todayEt)
     .order("scanned_at", { ascending: false })
     .limit(80);
@@ -39,36 +39,33 @@ export async function GET() {
 
   const vipCount = (vipRows ?? []).length;
 
-  // Guest check-ins today (optional table)
+  // --- Guest check-ins today (ET) ---------------------------------------
+  // Your schema uses: day_et + checked_in_at/scanned_at
   let guestCount = 0;
   let guestRecent: Array<{ atIso: string; label: "Guest" }> = [];
 
-  try {
-    const { data: guestRows, error: guestErr } = await supabase
-      .from("guest_checkins")
-      .select("id, created_at")
-      .eq("checkin_date", todayEt)
-      .order("created_at", { ascending: false })
-      .limit(40);
+  const { data: guestRows, error: guestErr } = await supabase
+    .from("guest_checkins")
+    .select("id, day_et, scanned_at, checked_in_at")
+    .eq("day_et", todayEt)
+    // Prefer scanned_at ordering if present; checked_in_at exists and is not null
+    .order("checked_in_at", { ascending: false })
+    .limit(80);
 
-    if (guestErr) {
-      // table missing or column mismatch -> treat as “not configured”
-      console.warn("[tv] guest_checkins not available:", guestErr.message);
-    } else {
-      guestCount = (guestRows ?? []).length;
-      guestRecent =
-        (guestRows ?? []).map((r: any) => ({
-          atIso: r.created_at,
-          label: "Guest" as const,
-        })) ?? [];
-    }
-  } catch {
-    // ignore
+  if (guestErr) {
+    console.error("[tv] guest_checkins error", guestErr);
+  } else {
+    guestCount = (guestRows ?? []).length;
+    guestRecent =
+      (guestRows ?? []).map((r: any) => ({
+        atIso: (r.scanned_at ?? r.checked_in_at) as string,
+        label: "Guest" as const,
+      })) ?? [];
   }
 
   const vipRecent =
     (vipRows ?? []).map((r: any) => ({
-      atIso: r.scanned_at,
+      atIso: r.scanned_at as string,
       label: "VIP" as const,
       source: r.source ?? null,
       points: r.points ?? null,
