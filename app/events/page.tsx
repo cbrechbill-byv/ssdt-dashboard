@@ -114,7 +114,10 @@ async function deleteEvent(formData: FormData) {
   const id = formData.get("id")?.toString();
   if (!id) return;
 
-  const { error } = await supabaseServer.from("artist_events").delete().eq("id", id);
+  const { error } = await supabaseServer
+    .from("artist_events")
+    .delete()
+    .eq("id", id);
 
   if (error) {
     console.error("[Events] delete error:", error);
@@ -197,32 +200,45 @@ export default async function EventsPage() {
 
         {events.length === 0 && !error ? (
           <p className="text-xs text-slate-400">
-            No upcoming events with times set. Click &ldquo;Add event&rdquo; to schedule your first show.
+            No upcoming events with times set. Click &ldquo;Add event&rdquo; to
+            schedule your first show.
           </p>
         ) : (
-          // ✅ Mobile-safe: allow edge-to-edge scroll on phones, preserve full table width
+          // ✅ Mobile Safari fix:
+          // - keep overflow scroll
+          // - but bump base font to 13px on mobile + force full opacity
           <div className="-mx-4 sm:mx-0 overflow-x-auto">
-            <table className="min-w-[980px] w-full text-xs">
+            <table className="min-w-[980px] w-full text-[13px] sm:text-xs text-slate-900">
               <thead>
-                <tr className="text-[11px] uppercase tracking-[0.12em] text-slate-500 border-b border-slate-100">
-                  <th className="py-2 pr-3 pl-4 sm:pl-0 text-left font-semibold">Date</th>
+                <tr className="text-[12px] sm:text-[11px] uppercase tracking-[0.12em] text-slate-600 border-b border-slate-100">
+                  <th className="py-2 pr-3 pl-4 sm:pl-0 text-left font-semibold">
+                    Date
+                  </th>
                   <th className="py-2 pr-3 text-left font-semibold">Time</th>
                   <th className="py-2 pr-3 text-left font-semibold">Artist</th>
                   <th className="py-2 pr-3 text-left font-semibold">Genre</th>
                   <th className="py-2 pr-3 text-left font-semibold">Title</th>
                   <th className="py-2 pr-3 text-left font-semibold">Notes</th>
                   <th className="py-2 pr-3 text-right font-semibold">Status</th>
-                  <th className="py-2 pr-4 sm:pr-0 text-right font-semibold">Actions</th>
+                  <th className="py-2 pr-4 sm:pr-0 text-right font-semibold">
+                    Actions
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+
+              <tbody className="text-slate-900 opacity-100">
                 {events.map((evt) => {
                   const dateLabel = formatDateEt(evt.event_date);
-                  const timeLabel = formatTimeRangeEt(evt.start_time, evt.end_time);
+                  const timeLabel = formatTimeRangeEt(
+                    evt.start_time,
+                    evt.end_time
+                  );
                   const artistName = getArtistNames(evt.artist);
                   const genre = getArtistGenre(evt);
 
-                  const statusLabel = evt.is_cancelled ? "Cancelled" : "Scheduled";
+                  const statusLabel = evt.is_cancelled
+                    ? "Cancelled"
+                    : "Scheduled";
                   const statusClass = evt.is_cancelled
                     ? "bg-rose-100 text-rose-700"
                     : "bg-emerald-100 text-emerald-700";
@@ -244,11 +260,19 @@ export default async function EventsPage() {
                           )}
                         </div>
                       </td>
-                      <td className="py-2 pr-3 align-top whitespace-nowrap">{timeLabel}</td>
-                      <td className="py-2 pr-3 align-top whitespace-nowrap">{artistName}</td>
-                      <td className="py-2 pr-3 align-top whitespace-nowrap">{genre}</td>
+
+                      <td className="py-2 pr-3 align-top whitespace-nowrap">
+                        {timeLabel}
+                      </td>
+                      <td className="py-2 pr-3 align-top whitespace-nowrap">
+                        {artistName}
+                      </td>
+                      <td className="py-2 pr-3 align-top whitespace-nowrap">
+                        {genre}
+                      </td>
                       <td className="py-2 pr-3 align-top">{evt.title || "—"}</td>
                       <td className="py-2 pr-3 align-top">{evt.notes || "—"}</td>
+
                       <td className="py-2 pr-3 align-top text-right whitespace-nowrap">
                         <span
                           className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}
@@ -256,6 +280,7 @@ export default async function EventsPage() {
                           {statusLabel}
                         </span>
                       </td>
+
                       <td className="py-2 pl-3 pr-4 sm:pr-0 align-top text-right whitespace-nowrap">
                         <div className="flex justify-end gap-2">
                           <Link
