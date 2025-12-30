@@ -1,5 +1,11 @@
+// PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\rewards\page.tsx
 // app/rewards/page.tsx
 // Rewards menu – Add / edit / toggle / delete reward items.
+//
+// Mobile readability (iOS Safari):
+// - Increase contrast for key table/header text
+// - Keep helper copy subdued but readable
+// - Avoid "washed out" slate tones on light backgrounds
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -190,11 +196,11 @@ export default async function RewardsPage() {
     >
       <div className="space-y-8">
         {/* Add new reward */}
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+        <section className="rounded-3xl border border-slate-200 bg-white px-6 py-5 shadow-sm sm:px-8 sm:py-6">
           <h1 className="text-base font-semibold text-slate-900">
             Add new reward
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             Create a new reward with a label and required points.
           </p>
 
@@ -203,7 +209,7 @@ export default async function RewardsPage() {
             className="mt-4 grid gap-3 text-sm md:grid-cols-[minmax(0,2.2fr)_minmax(0,3fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_auto] md:items-end"
           >
             <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-700">
                 Name
               </label>
               <input
@@ -211,24 +217,24 @@ export default async function RewardsPage() {
                 name="name"
                 required
                 placeholder="Free non-alcoholic drink"
-                className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-300"
+                className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
               />
             </div>
 
             <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-700">
                 Description (optional)
               </label>
               <input
                 type="text"
                 name="description"
                 placeholder="Any NA beverage up to $X"
-                className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-300"
+                className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
               />
             </div>
 
             <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-700">
                 Points required
               </label>
               <input
@@ -237,19 +243,19 @@ export default async function RewardsPage() {
                 name="points_required"
                 required
                 defaultValue={100}
-                className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-300"
+                className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
               />
             </div>
 
             <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-700">
                 Sort order
               </label>
               <input
                 type="number"
                 name="sort_order"
                 defaultValue={0}
-                className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-300"
+                className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
               />
             </div>
 
@@ -265,32 +271,32 @@ export default async function RewardsPage() {
         </section>
 
         {/* Existing rewards */}
-        <section className="rounded-3xl border border-slate-100 bg-white px-8 py-6 shadow-sm">
+        <section className="rounded-3xl border border-slate-200 bg-white px-6 py-5 shadow-sm sm:px-8 sm:py-6">
           <div className="flex items-baseline justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-slate-900">
                 Existing rewards
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Edit labels, points, sort order, or toggle rewards on/off in
-                the app.
+              <p className="mt-1 text-sm text-slate-600">
+                Edit labels, points, sort order, or toggle rewards on/off in the
+                app.
               </p>
             </div>
             {items.length > 0 && (
-              <p className="text-xs text-slate-500">
+              <p className="text-xs font-medium text-slate-700">
                 {items.length} reward{items.length === 1 ? "" : "s"}
               </p>
             )}
           </div>
 
           {items.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">
+            <p className="mt-4 text-sm text-slate-600">
               No rewards created yet. Add your first reward above.
             </p>
           ) : (
             <>
               {/* Header row */}
-              <div className="mt-5 grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid-cols-[minmax(0,2.2fr)_minmax(0,3fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1.4fr)]">
+              <div className="mt-5 grid gap-3 border-b border-slate-200 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700 md:grid-cols-[minmax(0,2.2fr)_minmax(0,3fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1.4fr)]">
                 <span>Name</span>
                 <span>Description</span>
                 <span>Points</span>
@@ -305,7 +311,7 @@ export default async function RewardsPage() {
                   <form
                     key={item.id}
                     action={upsertOrDeleteRewardItem}
-                    className="grid gap-3 rounded-3xl bg-slate-50 px-4 py-3 text-sm shadow-sm md:grid-cols-[minmax(0,2.2fr)_minmax(0,3fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1.4fr)] md:items-center"
+                    className="grid gap-3 rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm md:grid-cols-[minmax(0,2.2fr)_minmax(0,3fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1.4fr)] md:items-center"
                   >
                     <input type="hidden" name="id" value={item.id} />
 
@@ -314,7 +320,7 @@ export default async function RewardsPage() {
                         type="text"
                         name="name"
                         defaultValue={item.name}
-                        className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                        className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
                       />
                     </div>
 
@@ -323,7 +329,7 @@ export default async function RewardsPage() {
                         type="text"
                         name="description"
                         defaultValue={item.description ?? ""}
-                        className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                        className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
                       />
                     </div>
 
@@ -332,7 +338,7 @@ export default async function RewardsPage() {
                         type="number"
                         name="points_required"
                         defaultValue={item.points_required}
-                        className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                        className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
                       />
                     </div>
 
@@ -341,12 +347,12 @@ export default async function RewardsPage() {
                         type="number"
                         name="sort_order"
                         defaultValue={item.sort_order}
-                        className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                        className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-inner outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
                       />
                     </div>
 
                     <div className="flex items-center justify-center">
-                      <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700">
+                      <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-800">
                         <input
                           type="checkbox"
                           name="is_active"
@@ -361,7 +367,7 @@ export default async function RewardsPage() {
                         type="submit"
                         name="intent"
                         value="save"
-                        className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-600"
+                        className="rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
                       >
                         Save
                       </button>

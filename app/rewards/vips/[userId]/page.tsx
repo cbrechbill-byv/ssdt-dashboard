@@ -1,4 +1,13 @@
+// PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\rewards\vips\[userId]\page.tsx
 // app/rewards/vips/[userId]/page.tsx
+//
+// VIP Edit Profile
+// ✅ Rewards consistency:
+// - Identity + notification prefs come from rewards_users
+// - Totals (points/last_scan_at/is_vip) come from rewards_user_overview (source of truth used by Tonight/Overview)
+// ✅ Session enforced in server action
+// ✅ Redirect back to this VIP after save (not the list)
+// ✅ Sidebar is now "Quick actions + data sources" (removes redundant snapshot)
 
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -8,6 +17,24 @@ import { getDashboardSession } from "@/lib/dashboardAuth";
 import Link from "next/link";
 
 const ET_TZ = "America/New_York";
+
+type RewardsUsersRow = {
+  user_id: string;
+  phone: string | null;
+  full_name: string | null;
+  email: string | null;
+  zip: string | null;
+  notify_artists: boolean | null;
+  notify_specials: boolean | null;
+  notify_vip_only: boolean | null;
+};
+
+type RewardsUserOverviewRow = {
+  user_id: string | null;
+  is_vip: boolean | null;
+  total_points: number | null;
+  last_scan_at: string | null;
+};
 
 type VipUserRow = {
   user_id: string;
@@ -24,11 +51,9 @@ type VipUserRow = {
 };
 
 function formatPhone(phone: string | null): string {
-  if (!phone) return "Unknown";
+  if (!phone) return "—";
   const digits = phone.replace(/\D/g, "");
-  if (digits.length === 10) {
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
+  if (digits.length === 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   if (digits.length === 11 && digits.startsWith("1")) {
     const d = digits.slice(1);
     return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
@@ -36,7 +61,7 @@ function formatPhone(phone: string | null): string {
   return phone;
 }
 
-function formatDateTime(value: string | null): string {
+function formatDateTimeEt(value: string | null): string {
   if (!value) return "—";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "—";
@@ -50,13 +75,18 @@ function formatDateTime(value: string | null): string {
   });
 }
 
-// Server action to update VIP profile
+// --- Server action -----------------------------------------------------------
+
 export async function updateVipProfile(formData: FormData) {
   "use server";
 
-  const userId = String(formData.get("user_id") || "");
-  const full_name =
-    ((formData.get("full_name") as string) || "").trim() || null;
+  const session = await getDashboardSession();
+  if (!session) redirect("/login");
+
+  const userId = String(formData.get("user_id") || "").trim();
+  if (!userId) return;
+
+  const full_name = ((formData.get("full_name") as string) || "").trim() || null;
   const email = ((formData.get("email") as string) || "").trim() || null;
   const zip = ((formData.get("zip") as string) || "").trim() || null;
 
@@ -64,12 +94,10 @@ export async function updateVipProfile(formData: FormData) {
   const notify_specials = formData.get("notify_specials") === "on";
   const notify_vip_only = formData.get("notify_vip_only") === "on";
 
-  if (!userId) return;
-
   const supabase = supabaseServer;
-  const session = await getDashboardSession();
-  const actor_email = session?.email ?? "unknown";
-  const actor_role = session?.role ?? "unknown";
+
+  const actor_email = session.email ?? "unknown";
+  const actor_role = session.role ?? "unknown";
 
   const { error: updateErr } = await supabase
     .from("rewards_users")
@@ -83,15 +111,13 @@ export async function updateVipProfile(formData: FormData) {
     })
     .eq("user_id", userId);
 
-  if (updateErr) {
-    console.error("[VIP edit] error updating rewards_users", updateErr);
-  }
+  if (updateErr) console.error("[VIP edit] error updating rewards_users", updateErr);
 
   const { error: logErr } = await supabase.from("dashboard_audit_log").insert({
     actor_email,
     actor_role,
-    action: "update",
-    entity: "rewards_user_profile",
+    action: "rewards_vip:update_profile",
+    entity: "rewards_users",
     entity_id: userId,
     details: {
       full_name,
@@ -104,44 +130,60 @@ export async function updateVipProfile(formData: FormData) {
     },
   });
 
-  if (logErr) {
-    console.error("[VIP edit] error writing dashboard_audit_log", logErr);
-  }
+  if (logErr) console.error("[VIP edit] error writing dashboard_audit_log", logErr);
 
+  // Revalidate both list + this page
   revalidatePath("/rewards/vips");
-  redirect("/rewards/vips?updated=1");
+  revalidatePath(`/rewards/vips/${userId}`);
+
+  redirect(`/rewards/vips/${userId}?updated=1`);
 }
 
-async function loadVip(userId: string): Promise<VipUserRow> {
-  const { data, error } = await supabaseServer
-    .from("rewards_users")
-    .select(
-      "user_id, phone, full_name, email, zip, is_vip, notify_artists, notify_specials, notify_vip_only, total_points, last_scan_at"
-    )
-    .eq("user_id", userId)
-    .maybeSingle();
+// --- Data loading ------------------------------------------------------------
 
-  if (error) {
-    console.error("[VIP edit] error loading rewards_users row", error);
-    throw error;
+async function loadVip(userId: string): Promise<VipUserRow> {
+  const supabase = supabaseServer;
+
+  const [{ data: u, error: uErr }, { data: o, error: oErr }] = await Promise.all([
+    supabase
+      .from("rewards_users")
+      .select("user_id, phone, full_name, email, zip, notify_artists, notify_specials, notify_vip_only")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    supabase
+      .from("rewards_user_overview")
+      .select("user_id, is_vip, total_points, last_scan_at")
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+
+  if (uErr) {
+    console.error("[VIP edit] error loading rewards_users row", uErr);
+    throw uErr;
+  }
+  if (!u) notFound();
+
+  if (oErr) {
+    console.error("[VIP edit] error loading rewards_user_overview row", oErr);
+    // If overview fails, we can still render identity; keep sane defaults
   }
 
-  if (!data) notFound();
-
-  const row = data as any;
+  const userRow = u as RewardsUsersRow;
+  const overRow = (o ?? null) as RewardsUserOverviewRow | null;
 
   return {
-    user_id: row.user_id,
-    phone: row.phone,
-    full_name: row.full_name,
-    email: row.email,
-    zip: row.zip,
-    is_vip: !!row.is_vip,
-    notify_artists: row.notify_artists ?? true,
-    notify_specials: row.notify_specials ?? true,
-    notify_vip_only: row.notify_vip_only ?? true,
-    total_points: row.total_points ?? 0,
-    last_scan_at: row.last_scan_at ?? null,
+    user_id: userRow.user_id,
+    phone: userRow.phone ?? null,
+    full_name: userRow.full_name ?? null,
+    email: userRow.email ?? null,
+    zip: userRow.zip ?? null,
+    // If overview is missing for some reason, treat as VIP false but still allow editing
+    is_vip: !!overRow?.is_vip,
+    notify_artists: userRow.notify_artists ?? true,
+    notify_specials: userRow.notify_specials ?? true,
+    notify_vip_only: userRow.notify_vip_only ?? true,
+    total_points: Number(overRow?.total_points ?? 0) || 0,
+    last_scan_at: overRow?.last_scan_at ?? null,
   };
 }
 
@@ -169,10 +211,7 @@ function VipSubnav({ userId }: { userId: string }) {
   );
 }
 
-// ✅ FIX: In your Next setup, params is a Promise. Await it.
-export default async function VipEditPage(props: {
-  params: Promise<{ userId: string }>;
-}) {
+export default async function VipEditPage(props: { params: Promise<{ userId: string }> }) {
   const session = await getDashboardSession();
   if (!session) redirect("/login");
 
@@ -193,45 +232,29 @@ export default async function VipEditPage(props: {
         <section className="rounded-3xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                VIP identity
-              </p>
-              <p className="mt-1 truncate text-base font-semibold text-slate-900">
-                {vip.full_name || "VIP Guest"}
-              </p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">VIP identity</p>
+              <p className="mt-1 truncate text-base font-semibold text-slate-900">{vip.full_name || "VIP Guest"}</p>
               <p className="mt-1 text-xs text-slate-600">
-                {formatPhone(vip.phone)}{" "}
-                <span className="text-slate-300">·</span>{" "}
-                <span className="font-mono text-[11px] text-slate-500">
-                  {vip.user_id}
-                </span>
+                {formatPhone(vip.phone)} <span className="text-slate-300">·</span>{" "}
+                <span className="font-mono text-[11px] text-slate-500">{vip.user_id}</span>
               </p>
             </div>
 
             <div className="grid grid-cols-3 gap-3 text-xs">
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500">
-                  Points
-                </p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">
-                  {vip.total_points}
-                </p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Points</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">{vip.total_points}</p>
+                <p className="text-[11px] text-slate-500">From rewards_user_overview</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500">
-                  Last check-in
-                </p>
-                <p className="mt-1 text-[11px] font-medium text-slate-900">
-                  {formatDateTime(vip.last_scan_at)}
-                </p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Last check-in</p>
+                <p className="mt-1 text-[11px] font-medium text-slate-900">{formatDateTimeEt(vip.last_scan_at)}</p>
+                <p className="text-[11px] text-slate-500">ET display</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500">
-                  Status
-                </p>
-                <p className="mt-1 text-[11px] font-semibold text-slate-900">
-                  {vip.is_vip ? "VIP active" : "Not marked VIP"}
-                </p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Status</p>
+                <p className="mt-1 text-[11px] font-semibold text-slate-900">{vip.is_vip ? "VIP active" : "Not VIP"}</p>
+                <p className="text-[11px] text-slate-500">From overview</p>
               </div>
             </div>
           </div>
@@ -240,10 +263,7 @@ export default async function VipEditPage(props: {
         <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
           <section className="rounded-3xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
             <h1 className="text-lg font-semibold text-slate-900">VIP profile</h1>
-            <p className="mt-1 text-xs text-slate-600">
-              Correct names, email addresses, ZIP codes, and notification
-              settings.
-            </p>
+            <p className="mt-1 text-xs text-slate-600">Correct name, email, ZIP, and notification settings.</p>
 
             <form action={updateVipProfile} className="mt-5 space-y-4 text-xs">
               <input type="hidden" name="user_id" value={vip.user_id} />
@@ -259,10 +279,7 @@ export default async function VipEditPage(props: {
                 </div>
 
                 <div className="space-y-1">
-                  <label
-                    htmlFor="full_name"
-                    className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
-                  >
+                  <label htmlFor="full_name" className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Full name
                   </label>
                   <input
@@ -277,10 +294,7 @@ export default async function VipEditPage(props: {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1">
-                  <label
-                    htmlFor="email"
-                    className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
-                  >
+                  <label htmlFor="email" className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Email
                   </label>
                   <input
@@ -294,10 +308,7 @@ export default async function VipEditPage(props: {
                 </div>
 
                 <div className="space-y-1">
-                  <label
-                    htmlFor="zip"
-                    className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
-                  >
+                  <label htmlFor="zip" className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     ZIP code
                   </label>
                   <input
@@ -311,21 +322,20 @@ export default async function VipEditPage(props: {
               </div>
 
               <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Notifications
-                </p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Notifications</p>
+
                 <ToggleRow
                   id="notify_artists"
                   name="notify_artists"
                   label="Artist announcements"
-                  helper="New artists, tonight’s lineup and live music nights."
+                  helper="Lineups, live music nights, and artist updates."
                   defaultChecked={vip.notify_artists ?? true}
                 />
                 <ToggleRow
                   id="notify_specials"
                   name="notify_specials"
                   label="Specials & events"
-                  helper="Food & drink specials, events and pop-ups."
+                  helper="Food/drink specials, events and pop-ups."
                   defaultChecked={vip.notify_specials ?? true}
                 />
                 <ToggleRow
@@ -356,37 +366,37 @@ export default async function VipEditPage(props: {
 
           <aside className="space-y-4">
             <section className="rounded-3xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                VIP snapshot
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Quick view of this guest’s current rewards status.
-              </p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Quick actions</p>
 
-              <dl className="mt-4 space-y-2 text-xs text-slate-800">
-                <div className="flex justify-between">
-                  <dt className="text-slate-500">Points balance</dt>
-                  <dd className="font-semibold">{vip.total_points}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-slate-500">Last check-in</dt>
-                  <dd className="font-medium">{formatDateTime(vip.last_scan_at)}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-slate-500">VIP status</dt>
-                  <dd className="font-medium">
-                    {vip.is_vip ? "VIP active" : "Not marked VIP"}
-                  </dd>
-                </div>
-              </dl>
+              <div className="mt-3 flex flex-col gap-2">
+                <Link
+                  href={`/rewards/vips/${vip.user_id}/insights`}
+                  className="rounded-full bg-amber-400 px-4 py-2 text-center text-[11px] font-semibold text-slate-900 hover:bg-amber-500"
+                >
+                  Open insights
+                </Link>
+                <Link
+                  href="/rewards/vips"
+                  className="rounded-full border border-slate-300 px-4 py-2 text-center text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Back to VIP list
+                </Link>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[11px] text-slate-700">
+                <p className="font-semibold text-slate-900">Data sources</p>
+                <p className="mt-1 text-slate-600">
+                  Identity + notification prefs come from <span className="font-mono">rewards_users</span>.
+                  Points, VIP status, and last check-in come from <span className="font-mono">rewards_user_overview</span>.
+                </p>
+              </div>
             </section>
 
             <section className="rounded-3xl border border-amber-100 bg-amber-50 px-6 py-4 text-xs text-amber-900">
-              <p className="font-semibold">Remember</p>
+              <p className="font-semibold">Reminder</p>
               <p className="mt-1">
-                Changes here do not add or remove points. Use the{" "}
-                <span className="font-semibold">Adjust points</span> controls on
-                the VIP users list for balance changes.
+                Editing this profile does <span className="font-semibold">not</span> add or remove points.
+                Use the <span className="font-semibold">Set total points</span> controls on the VIP list for balance changes.
               </p>
             </section>
           </aside>
@@ -405,10 +415,7 @@ function ToggleRow(props: {
 }) {
   const { id, name, label, helper, defaultChecked } = props;
   return (
-    <label
-      htmlFor={id}
-      className="flex cursor-pointer items-start justify-between gap-3"
-    >
+    <label htmlFor={id} className="flex cursor-pointer items-start justify-between gap-3">
       <div>
         <p className="text-xs font-medium text-slate-900">{label}</p>
         <p className="text-[11px] text-slate-600">{helper}</p>
