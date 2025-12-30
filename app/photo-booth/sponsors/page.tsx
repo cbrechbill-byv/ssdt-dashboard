@@ -88,7 +88,7 @@ const WHITE_MIN = 248;
 const DARK_LUMINANCE_THRESHOLD = 0.44;
 const HALO_ALPHA = 0.16;
 const HALO_RADIUS_MULT = 0.28;
-const HALO_PADDING_MULT = 1.20;
+const HALO_PADDING_MULT = 1.2;
 
 // App preview sizes (match mobile feel)
 const APP_TILE_SIZE = 64; // sponsor list tile
@@ -576,7 +576,7 @@ function SponsorLogoUltraUploader({
     <div className="space-y-4">
       <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold text-slate-800">Sponsor logo (Ultra-Premium Prep)</p>
             <p className="text-[11px] text-slate-600">
               Upload PNG/JPEG/WebP — we auto-prep to a transparent <span className="font-semibold">2000×2000 PNG</span> with trim + padding.
@@ -584,13 +584,13 @@ function SponsorLogoUltraUploader({
             </p>
           </div>
 
-          <label className="inline-flex cursor-pointer items-center rounded-full bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-slate-900 shadow-sm hover:bg-amber-300">
+          <label className="inline-flex shrink-0 cursor-pointer items-center rounded-full bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-slate-900 shadow-sm hover:bg-amber-300">
             <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} disabled={isUploading} />
             {isUploading ? "Working…" : "Choose logo"}
           </label>
         </div>
 
-        {status ? <div className="text-[11px] text-slate-700">{status}</div> : null}
+        {status ? <div className="break-words text-[11px] text-slate-700">{status}</div> : null}
 
         <div className="text-[11px] text-slate-500">
           Recommended input: transparent PNG, exported at <span className="font-semibold">2000×2000</span> (or larger).
@@ -825,7 +825,7 @@ export default function SponsorsPage() {
     <DashboardShell title="Sponsors" subtitle="Manage sponsor names, tiers, order, and logos." activeTab="sponsors">
       <div className="space-y-4">
         <header className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+          <div className="min-w-0">
             <h2 className="text-xl font-semibold text-slate-900">Sponsors</h2>
             <p className="text-xs text-slate-600">
               Upload logos with <span className="font-semibold">Ultra-Premium Prep</span> so they remain readable in the app preloader.
@@ -833,7 +833,7 @@ export default function SponsorsPage() {
             {reordering && <div className="mt-2 text-[11px] text-slate-500">Updating order…</div>}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 justify-end">
+          <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
             <button
               type="button"
               onClick={openCreateModal}
@@ -866,15 +866,15 @@ export default function SponsorsPage() {
                     key={sponsor.id}
                     className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       {logoUrl ? (
-                        <div className="flex items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white" style={{ width: 72, height: 72 }}>
+                        <div className="flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white" style={{ width: 72, height: 72 }}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={logoUrl} alt={sponsor.name} className="h-full w-full object-contain p-2" />
                         </div>
                       ) : (
                         <div
-                          className="flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white text-[10px] text-slate-400"
+                          className="flex shrink-0 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white text-[10px] text-slate-400"
                           style={{ width: 72, height: 72 }}
                         >
                           No logo
@@ -883,10 +883,10 @@ export default function SponsorsPage() {
 
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium text-slate-900">{sponsor.name}</span>
+                          <span className="truncate font-medium text-slate-900">{sponsor.name}</span>
 
                           {sponsor.tier && (
-                            <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
+                            <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
                               {sponsor.tier}
                             </span>
                           )}
@@ -896,7 +896,7 @@ export default function SponsorsPage() {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 justify-end">
+                    <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
                       <button
                         type="button"
                         onClick={() => void bumpSortOrder(sponsor.id, -1)}
@@ -945,14 +945,16 @@ export default function SponsorsPage() {
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
           <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-lg font-semibold text-slate-900">{isEditing ? "Edit sponsor" : "Add sponsor"}</h2>
-                <p className="text-xs text-slate-600">Logos are prepped to a premium standard so they remain readable on the mobile preloader.</p>
+                <p className="text-xs text-slate-600">
+                  Logos are prepped to a premium standard so they remain readable on the mobile preloader.
+                </p>
               </div>
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-full border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                className="shrink-0 rounded-full border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
               >
                 Close
               </button>
