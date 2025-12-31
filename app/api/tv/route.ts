@@ -1,4 +1,8 @@
 // PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\api\tv\route.ts
+// app/api/tv/route.ts
+// Returns today's check-in totals (ET-aligned) + a small recent feed.
+// Protected by ?key=CHECKIN_BOARD_KEY
+
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
 
@@ -6,15 +10,19 @@ export const dynamic = "force-dynamic";
 
 const ET_TZ = "America/New_York";
 
-function getKioskEnvKey(): string | null {
-  const primary = process.env.CHECKIN_BOARD_KEY?.trim();
-  if (primary) return primary;
+type RecentItem =
+  | { atIso: string; label: "VIP"; source?: string | null; points?: number | null }
+  | { atIso: string; label: "Guest" };
 
-  const fallback = process.env.CHECKIN_BOARD_KEY?.trim();
-  if (fallback) return fallback;
-
-  return null;
-}
+type TvApiResponse = {
+  ok: true;
+  asOfIso: string;
+  dateEt: string; // YYYY-MM-DD (ET)
+  total: number;
+  vip: number;
+  guest: number;
+  recent: RecentItem[];
+};
 
 function getEtYmd(now = new Date()): string {
   // YYYY-MM-DD in ET
@@ -26,58 +34,51 @@ function getEtYmd(now = new Date()): string {
   });
 }
 
-type RecentItem =
-  | { atIso: string; label: "VIP"; source?: string | null; points?: number | null }
-  | { atIso: string; label: "Guest" };
-
-type TvApiResponse = {
-  ok: true;
-  asOfIso: string;
-  dateEt: string;
-  total: number;
-  vip: number;
-  guest: number;
-  recent: RecentItem[];
-};
+function getEnvKioskKey(): string | null {
+  const k = process.env.CHECKIN_BOARD_KEY?.trim();
+  return k ? k : null;
+}
 
 export async function GET(req: NextRequest) {
-  const envKey = getKioskEnvKey();
+  const envKey = getEnvKioskKey();
   const key = req.nextUrl.searchParams.get("key") ?? "";
 
   if (!envKey || key !== envKey) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const supabase = supabaseServer();
+  // ✅ IMPORTANT:
+  // In this codebase, supabaseServer is a SupabaseClient instance (NOT a function).
+  const supabase = supabaseServer;
+
   const todayEt = getEtYmd(new Date());
   const asOfIso = new Date().toISOString();
 
-  // VIP: rewards_scans where source='qr_checkin' and scan_date=today ET
-  const vipCountPromise = supabase
+  // VIP check-ins: rewards_scans where source='qr_checkin' and scan_date=today ET
+  const vipCountRes = await supabase
     .from("rewards_scans")
     .select("*", { count: "exact", head: true })
     .eq("source", "qr_checkin")
     .eq("scan_date", todayEt);
 
-  // Guests: guest_checkins where day_et=today ET
-  const guestCountPromise = supabase
+  if (vipCountRes.error) {
+    return NextResponse.json({ ok: false, error: vipCountRes.error.message }, { status: 500 });
+  }
+
+  // Guest check-ins: guest_checkins where day_et=today ET
+  const guestCountRes = await supabase
     .from("guest_checkins")
     .select("*", { count: "exact", head: true })
     .eq("day_et", todayEt);
 
-  const [vipCountRes, guestCountRes] = await Promise.all([vipCountPromise, guestCountPromise]);
-
-  if (vipCountRes.error) {
-    return NextResponse.json({ ok: false, error: vipCountRes.error.message }, { status: 500 });
-  }
   if (guestCountRes.error) {
     return NextResponse.json({ ok: false, error: guestCountRes.error.message }, { status: 500 });
   }
 
-  const vipCount = vipCountRes.count ?? 0;
-  const guestCount = guestCountRes.count ?? 0;
+  const vip = vipCountRes.count ?? 0;
+  const guest = guestCountRes.count ?? 0;
 
-  // Keep recent lightweight (optional; UI can ignore)
+  // Recent feed is optional. Keep it light and safe (UI can ignore it).
   const vipRecentRes = await supabase
     .from("rewards_scans")
     .select("created_at, source, points")
@@ -97,8 +98,8 @@ export async function GET(req: NextRequest) {
     vipRecentRes.data?.map((r) => ({
       atIso: String(r.created_at),
       label: "VIP",
-      source: (r as any).source ?? null,
-      points: (r as any).points ?? null,
+      source: (r as unknown as { source?: string | null }).source ?? null,
+      points: (r as unknown as { points?: number | null }).points ?? null,
     })) ?? [];
 
   const guestRecent: RecentItem[] =
@@ -115,9 +116,9 @@ export async function GET(req: NextRequest) {
     ok: true,
     asOfIso,
     dateEt: todayEt,
-    total: vipCount + guestCount,
-    vip: vipCount,
-    guest: guestCount,
+    total: vip + guest,
+    vip,
+    guest,
     recent,
   };
 
