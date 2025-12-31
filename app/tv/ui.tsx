@@ -99,10 +99,10 @@ function prettyLoc(loc: string) {
 }
 
 /**
- * Auto-fit scaler:
- * - Renders a fixed 1920x1080 "stage"
- * - Scales stage to fit the actual viewport (accounts for TV overscan / browser chrome)
- * - Guarantees NO scrolling / NO cutoff
+ * Auto-fit scaler (FIXED):
+ * - Renders a fixed 1920x1080 stage
+ * - Scales DOWN on small viewports, scales UP on large (4K) viewports
+ * - Safe padding protects against TV overscan / kiosk browser chrome
  */
 function useStageScale(stageW: number, stageH: number, safePaddingPx: number) {
   const [scale, setScale] = useState(1);
@@ -112,14 +112,16 @@ function useStageScale(stageW: number, stageH: number, safePaddingPx: number) {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
 
-      // Safe padding helps against TV overscan / kiosk chrome
       const availW = Math.max(1, vw - safePaddingPx * 2);
       const availH = Math.max(1, vh - safePaddingPx * 2);
 
+      // ✅ Allow upscale (this is the fix)
       const s = Math.min(availW / stageW, availH / stageH);
 
-      // Never upscale above 1 (keeps crispness and avoids giant overflow)
-      setScale(Math.min(1, s));
+      // Guard against bizarre values
+      const safe = Number.isFinite(s) && s > 0 ? s : 1;
+
+      setScale(safe);
     };
 
     compute();
@@ -238,9 +240,10 @@ export default function TvKioskClient(props: {
 
   const locLabel = prettyLoc(locationLabel);
 
-  // 16:9 stage (safe padding protects against overscan/cropping)
   const STAGE_W = 1920;
   const STAGE_H = 1080;
+
+  // If a TV is cropping edges, increase to 40.
   const scale = useStageScale(STAGE_W, STAGE_H, 28);
 
   return (
@@ -300,7 +303,7 @@ export default function TvKioskClient(props: {
 
                 <div className="min-w-0">
                   <p className="text-[12px] uppercase tracking-[0.34em] text-slate-300">Sugarshack Downtown</p>
-                  <h1 className="mt-2 text-[56px] font-extrabold leading-[1.0]">CHECK IN & GET COUNTED</h1>
+                  <h1 className="mt-2 text-[56px] font-extrabold leading-[1.0]">CHECK IN &amp; GET COUNTED</h1>
                   <p className="mt-2 text-[20px] text-slate-200">
                     Guest is fast. <span className="text-amber-300 font-extrabold">VIP unlocks rewards</span>.
                   </p>
@@ -311,7 +314,8 @@ export default function TvKioskClient(props: {
                     </span>
                     <span className="opacity-50">•</span>
                     <span>
-                      As of <span className="text-slate-200 font-semibold">{asOfIso ? formatTime(asOfIso, etTz) : "—"}</span>
+                      As of{" "}
+                      <span className="text-slate-200 font-semibold">{asOfIso ? formatTime(asOfIso, etTz) : "—"}</span>
                     </span>
                     <span className="opacity-50">•</span>
                     <span className="text-slate-300 font-semibold">{locLabel}</span>
@@ -370,12 +374,9 @@ export default function TvKioskClient(props: {
 
             {/* BOTTOM: TWO LANES */}
             <div className="mt-6 grid grid-cols-2 gap-6">
-              {/* Need app */}
               <div className="rounded-[28px] border border-slate-800 bg-slate-900/45 px-8 py-7">
                 <p className="text-[14px] uppercase tracking-[0.34em] text-slate-400">STILL NEED THE APP?</p>
-                <p className="mt-3 text-[40px] font-extrabold leading-tight">
-                  Don’t miss out — get VIP rewards 🎁
-                </p>
+                <p className="mt-3 text-[40px] font-extrabold leading-tight">Don’t miss out — get VIP rewards 🎁</p>
                 <p className="mt-2 text-[18px] text-slate-300">
                   Scan with your camera to install + see steps. iPhone now • Android soon.
                 </p>
@@ -396,12 +397,9 @@ export default function TvKioskClient(props: {
                 </div>
               </div>
 
-              {/* Got app */}
               <div className="rounded-[28px] border border-slate-800 bg-slate-900/45 px-8 py-7">
                 <p className="text-[14px] uppercase tracking-[0.34em] text-slate-400">GOT THE APP?</p>
-                <p className="mt-3 text-[40px] font-extrabold leading-tight">
-                  I’m ready — scan to check in ✅
-                </p>
+                <p className="mt-3 text-[40px] font-extrabold leading-tight">I’m ready — scan to check in ✅</p>
                 <p className="mt-2 text-[18px] text-slate-300">
                   Open app → <span className="font-extrabold text-slate-100">Check In</span> →{" "}
                   <span className="font-extrabold text-slate-100">Scan QR</span>
