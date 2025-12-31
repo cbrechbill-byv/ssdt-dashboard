@@ -1,41 +1,43 @@
 // PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\tv\page.tsx
 // /tv kiosk page (no login required if key matches CHECKIN_BOARD_KEY)
-// Fetches totals from GET /api/tv
+//
+// ✅ Production-safe:
+// - Query Supabase directly (no /api fetch hop)
+// - Use SERVER-ONLY service role client so RLS/auth cookies can't block reads
+// - ET-aligned "today" using rewards_scans.scan_date (date) + guest_checkins.day_et (date)
 
 import { redirect } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
 const ET_TZ = "America/New_York";
 
-type TvApiResponse = {
-  ok: boolean;
-  asOfIso: string;
-  dateEt: string; // YYYY-MM-DD
-  total: number;
-  vip: number;
-  guest: number;
-  recent: Array<
-    | { atIso: string; label: "VIP"; source?: string | null; points?: number | null }
-    | { atIso: string; label: "Guest" }
-  >;
-};
+function getEtYmd(now = new Date()): string {
+  return now.toLocaleDateString("en-CA", {
+    timeZone: ET_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
 
-async function loadTvData(): Promise<TvApiResponse | null> {
-  // Build base URL for server-side fetch
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL
-      ? process.env.VERCEL_URL.startsWith("http")
-        ? process.env.VERCEL_URL
-        : `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000");
+type RecentItem =
+  | { atIso: string; label: "VIP"; source?: string | null; points?: number | null }
+  | { atIso: string; label: "Guest" };
 
-  const res = await fetch(`${baseUrl}/api/tv`, { cache: "no-store" });
-  if (!res.ok) return null;
+function getAdminSupabase() {
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
 
-  const json = (await res.json()) as TvApiResponse;
-  return json;
+  if (!url || !key) {
+    // Fail closed: better to block than show incorrect counts.
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  }
+
+  return createClient(url, key, {
+    auth: { persistSession: false },
+  });
 }
 
 export default async function TvPage(props: {
@@ -51,13 +53,59 @@ export default async function TvPage(props: {
   // If key doesn't match, require login
   if (providedKey !== kioskKey) redirect("/login");
 
-  const data = await loadTvData();
+  const supabase = getAdminSupabase();
 
-  const total = data?.total ?? 0;
-  const vip = data?.vip ?? 0;
-  const guest = data?.guest ?? 0;
-  const dateEt = data?.dateEt ?? "";
-  const asOfIso = data?.asOfIso ?? null;
+  const todayEt = getEtYmd();
+  const asOfIso = new Date().toISOString();
+
+  // --- VIP check-ins today (rewards_scans) ---
+  const { data: vipRows, error: vipErr } = await supabase
+    .from("rewards_scans")
+    .select("id, scanned_at, source, points, scan_date")
+    .eq("source", "qr_checkin")
+    .eq("scan_date", todayEt) // scan_date is date; YYYY-MM-DD string is OK
+    .order("scanned_at", { ascending: false })
+    .limit(80);
+
+  if (vipErr) console.error("[tv] rewards_scans error", vipErr);
+
+  const vipCount = (vipRows ?? []).length;
+
+  const vipRecent: RecentItem[] =
+    (vipRows ?? []).map((r: any) => ({
+      atIso: r.scanned_at,
+      label: "VIP" as const,
+      source: r.source ?? null,
+      points: r.points ?? null,
+    })) ?? [];
+
+  // --- Guest check-ins today (guest_checkins) ---
+  const { data: guestRows, error: guestErr } = await supabase
+    .from("guest_checkins")
+    .select("id, scanned_at, checked_in_at, day_et")
+    .eq("day_et", todayEt) // day_et is date; YYYY-MM-DD string is OK
+    .order("scanned_at", { ascending: false })
+    .order("checked_in_at", { ascending: false })
+    .limit(80);
+
+  if (guestErr) console.error("[tv] guest_checkins error", guestErr);
+
+  const guestCount = (guestRows ?? []).length;
+
+  const guestRecent: RecentItem[] =
+    (guestRows ?? [])
+      .map((r: any) => ({
+        atIso: (r.scanned_at ?? r.checked_in_at) as string | null,
+        label: "Guest" as const,
+      }))
+      .filter((x: any) => !!x.atIso) ?? [];
+
+  const recent = [...vipRecent, ...guestRecent]
+    .filter((r) => r.atIso)
+    .sort((a, b) => new Date(b.atIso).getTime() - new Date(a.atIso).getTime())
+    .slice(0, 20);
+
+  const total = vipCount + guestCount;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white px-10 py-10">
@@ -76,11 +124,10 @@ export default async function TvPage(props: {
             <p className="mt-2 text-slate-300">
               Live count · Updates every 5 seconds · Timezone: {ET_TZ}
             </p>
-            {dateEt && (
-              <p className="mt-1 text-[12px] text-slate-400">
-                Date (ET): <span className="font-semibold text-slate-200">{dateEt}</span>
-              </p>
-            )}
+            <p className="mt-1 text-[12px] text-slate-400">
+              Date (ET):{" "}
+              <span className="font-semibold text-slate-200">{todayEt}</span>
+            </p>
           </div>
 
           <div className="text-right">
@@ -98,7 +145,7 @@ export default async function TvPage(props: {
             <p className="text-[12px] uppercase tracking-[0.22em] text-slate-300">
               VIP Check-Ins
             </p>
-            <p className="mt-3 text-5xl font-bold tabular-nums">{vip}</p>
+            <p className="mt-3 text-5xl font-bold tabular-nums">{vipCount}</p>
             <p className="mt-2 text-slate-400 text-sm">
               Rewards check-ins (source: qr_checkin)
             </p>
@@ -108,7 +155,7 @@ export default async function TvPage(props: {
             <p className="text-[12px] uppercase tracking-[0.22em] text-slate-300">
               Guest Check-Ins
             </p>
-            <p className="mt-3 text-5xl font-bold tabular-nums">{guest}</p>
+            <p className="mt-3 text-5xl font-bold tabular-nums">{guestCount}</p>
             <p className="mt-2 text-slate-400 text-sm">
               Guest check-ins (no phone required)
             </p>
@@ -123,11 +170,10 @@ export default async function TvPage(props: {
             <p className="mt-2 text-slate-300">
               VIPs earn points. Guests can still check in — then upgrade anytime.
             </p>
-            {asOfIso && (
-              <p className="mt-4 text-[12px] text-slate-500">
-                As of: {new Date(asOfIso).toLocaleString("en-US", { timeZone: ET_TZ })}
-              </p>
-            )}
+            <p className="mt-4 text-[12px] text-slate-500">
+              As of:{" "}
+              {new Date(asOfIso).toLocaleString("en-US", { timeZone: ET_TZ })}
+            </p>
           </div>
 
           <div className="rounded-3xl border border-slate-800 bg-slate-900/40 p-6">
@@ -135,23 +181,23 @@ export default async function TvPage(props: {
               Recent activity
             </p>
 
-            {!data?.recent?.length ? (
-              <p className="mt-3 text-sm text-slate-400">No recent check-ins yet.</p>
+            {recent.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-400">
+                No recent check-ins yet.
+              </p>
             ) : (
               <ul className="mt-3 space-y-2">
-                {data.recent.slice(0, 10).map((r, idx) => (
+                {recent.slice(0, 10).map((r, idx) => (
                   <li key={idx} className="flex items-center justify-between gap-3">
                     <span className="text-sm font-semibold">
                       {r.label === "VIP" ? "VIP" : "Guest"}
                     </span>
                     <span className="text-[12px] text-slate-400">
-                      {r.atIso
-                        ? new Date(r.atIso).toLocaleTimeString("en-US", {
-                            timeZone: ET_TZ,
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })
-                        : "—"}
+                      {new Date(r.atIso).toLocaleTimeString("en-US", {
+                        timeZone: ET_TZ,
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
                     </span>
                   </li>
                 ))}
