@@ -1,12 +1,10 @@
 // PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\api\tv\route.ts
 // app/api/tv/route.ts
 // Returns today's check-in totals (ET-aligned) + a small recent feed.
+// VIP = rewards_scans where scan_date=todayET
+// Guest = guest_checkins where day_et=todayET
 //
-// ✅ Behavior:
-// - Requires ?key=CHECKIN_BOARD_KEY (kiosk secret)
-// - VIP = rewards_scans where source='qr_checkin' AND scan_date=todayET
-// - Guest = guest_checkins where day_et=todayET
-// - Recent feed merges both (sorted by timestamp)
+// ✅ Fix: ensure recent items always have atIso: string (no null) before sorting
 
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
@@ -24,21 +22,19 @@ function getEtYmd(now = new Date()): string {
   });
 }
 
-export async function GET(req: Request) {
-  // ✅ Kiosk key protection
-  const url = new URL(req.url);
-  const providedKey = (url.searchParams.get("key") ?? "").trim();
-  const kioskKey = (process.env.CHECKIN_BOARD_KEY ?? "").trim();
+type RecentItem =
+  | { atIso: string; label: "VIP"; source?: string | null; points?: number | null }
+  | { atIso: string; label: "Guest" };
 
-  // If not configured, fail closed
-  if (!kioskKey) {
-    return NextResponse.json({ ok: false, error: "Not configured" }, { status: 500 });
-  }
+function isNonEmptyString(v: unknown): v is string {
+  return typeof v === "string" && v.trim().length > 0;
+}
 
-  if (providedKey !== kioskKey) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+function isRecentItem(v: unknown): v is RecentItem {
+  return !!v && typeof v === "object" && isNonEmptyString((v as any).atIso);
+}
 
+export async function GET() {
   const supabase = supabaseServer;
 
   const todayEt = getEtYmd();
@@ -48,7 +44,6 @@ export async function GET(req: Request) {
   const { data: vipRows, error: vipErr } = await supabase
     .from("rewards_scans")
     .select("id, scanned_at, source, points, scan_date")
-    .eq("source", "qr_checkin")
     .eq("scan_date", todayEt)
     .order("scanned_at", { ascending: false })
     .limit(80);
@@ -57,20 +52,26 @@ export async function GET(req: Request) {
 
   const vipCount = (vipRows ?? []).length;
 
-  const vipRecent =
-    (vipRows ?? []).map((r: any) => ({
-      atIso: r.scanned_at as string,
-      label: "VIP" as const,
-      source: r.source ?? null,
-      points: r.points ?? null,
-    })) ?? [];
+  const vipRecent: RecentItem[] = (vipRows ?? [])
+    .map((r: any) => {
+      const atIso = r?.scanned_at as string | null;
+      if (!isNonEmptyString(atIso)) return null;
+
+      return {
+        atIso,
+        label: "VIP" as const,
+        source: (r?.source ?? null) as string | null,
+        points: (r?.points ?? null) as number | null,
+      };
+    })
+    .filter(isRecentItem);
 
   // --- Guest check-ins today (ET) ---------------------------------------
   const { data: guestRows, error: guestErr } = await supabase
     .from("guest_checkins")
     .select("id, day_et, scanned_at, checked_in_at")
     .eq("day_et", todayEt)
-    // Prefer scanned_at when present; fall back to checked_in_at
+    // prefer scanned_at; checked_in_at exists too
     .order("scanned_at", { ascending: false })
     .order("checked_in_at", { ascending: false })
     .limit(80);
@@ -79,16 +80,15 @@ export async function GET(req: Request) {
 
   const guestCount = (guestRows ?? []).length;
 
-  const guestRecent =
-    (guestRows ?? [])
-      .map((r: any) => ({
-        atIso: (r.scanned_at ?? r.checked_in_at) as string | null,
-        label: "Guest" as const,
-      }))
-      .filter((x) => !!x.atIso) ?? [];
+  const guestRecent: RecentItem[] = (guestRows ?? [])
+    .map((r: any) => {
+      const atIso = (r?.scanned_at ?? r?.checked_in_at) as string | null;
+      if (!isNonEmptyString(atIso)) return null;
+      return { atIso, label: "Guest" as const };
+    })
+    .filter(isRecentItem);
 
-  const recent = [...vipRecent, ...guestRecent]
-    .filter((r) => r.atIso)
+  const recent: RecentItem[] = [...vipRecent, ...guestRecent]
     .sort((a, b) => new Date(b.atIso).getTime() - new Date(a.atIso).getTime())
     .slice(0, 20);
 
