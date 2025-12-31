@@ -1,4 +1,10 @@
 // PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\tv\page.tsx
+// /tv kiosk page (no login required if key matches CHECKIN_BOARD_KEY)
+//
+// ✅ Uses client UI (ui.tsx) for smooth updates + confetti
+// ✅ Gate access by query key
+// ✅ ET date shown as MM/DD/YYYY
+
 import { redirect } from "next/navigation";
 import TvKioskClient from "./ui";
 
@@ -14,50 +20,50 @@ function firstParam(v: string | string[] | undefined): string | undefined {
 }
 
 function formatEtDateMDY(now = new Date()): string {
-  // Always ET, always MM/DD/YYYY
-  return new Intl.DateTimeFormat("en-US", {
+  // Force ET display
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: ET_TZ,
+    year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    year: "numeric",
-  }).format(now);
-}
+  }).formatToParts(now);
 
-function getKioskEnvKey(): string | null {
-  // Primary (new / desired)
-  const primary = process.env.CHECKIN_BOARD_KEY?.trim();
-  if (primary) return primary;
+  const mm = parts.find((p) => p.type === "month")?.value ?? "01";
+  const dd = parts.find((p) => p.type === "day")?.value ?? "01";
+  const yyyy = parts.find((p) => p.type === "year")?.value ?? "1970";
 
-  // Backward compatibility (older name some code may have used)
-  const fallback = process.env.CHECKIN_BOARD_KEY?.trim();
-  if (fallback) return fallback;
-
-  return null;
+  return `${mm}/${dd}/${yyyy}`;
 }
 
 export default async function TvPage(props: { searchParams?: SearchParams }) {
   const sp = (await props.searchParams) ?? {};
-  const urlKey = firstParam(sp.key) ?? "";
+
+  const kioskKey = firstParam(sp.key) ?? "";
+  const requiredKey = process.env.CHECKIN_BOARD_KEY ?? "";
+
+  // Hard gate: must include correct key
+  if (!requiredKey || kioskKey !== requiredKey) {
+    redirect("/login");
+  }
+
+  // Optional: location label from URL (for display only)
+  // Example: /tv?key=...&loc=front-bar
   const loc = firstParam(sp.loc) ?? "entrance";
-
-  const envKey = getKioskEnvKey();
-
-  // If env not configured or key mismatch, treat as unauthorized.
-  // Your "/" likely routes to login — so it will look like "it sent me to login."
-  if (!envKey || urlKey !== envKey) redirect("/");
 
   const etDateMdy = formatEtDateMDY(new Date());
 
   return (
     <TvKioskClient
-      kioskKey={urlKey}
+      kioskKey={kioskKey}
       etDateMdy={etDateMdy}
       etTz={ET_TZ}
       goalBase={500}
-      goalStep={100}
+      goalStep={50}
       goalAdvanceAtPct={90}
       showLogoSrc="/ssdt-logo.png"
-      helpQrSrc="/appstore-qr.png"
+      // ✅ CAMERA SCAN QR → /checkin help page (you already saved this file)
+      helpQrSrc="/qr/ssdt_checkin_qr.png"
+      // ✅ IN-APP SCAN QR → MUST be the SAME venue QR your app expects (from scan.js flow)
       venueQrSrc="/SSDTVIP-CHECKIN.png"
       locationLabel={loc}
     />
