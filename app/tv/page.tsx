@@ -39,6 +39,10 @@ function getAdminSupabase() {
   });
 }
 
+function hasIso(r: RecentItem | null | undefined): r is RecentItem {
+  return !!r && typeof r.atIso === "string" && r.atIso.length > 0;
+}
+
 export default async function TvPage(props: {
   searchParams?: Promise<{ key?: string }>;
 }) {
@@ -65,14 +69,20 @@ export default async function TvPage(props: {
 
   if (vipErr) console.error("[tv] rewards_scans error", vipErr);
 
-  const vipCount = (vipRows ?? []).length;
+  const vipRecent: RecentItem[] = (vipRows ?? [])
+    .map((r: any) => {
+      const atIso = (r.scanned_at as string | null) ?? null;
+      if (!atIso) return null;
+      return {
+        atIso,
+        label: "VIP" as const,
+        source: (r.source ?? null) as string | null,
+        points: (r.points ?? null) as number | null,
+      } as RecentItem;
+    })
+    .filter(hasIso);
 
-  const vipRecent: RecentItem[] = (vipRows ?? []).map((r: any) => ({
-    atIso: r.scanned_at as string,
-    label: "VIP" as const,
-    source: (r.source ?? null) as string | null,
-    points: (r.points ?? null) as number | null,
-  }));
+  const vipCount = (vipRows ?? []).length;
 
   // --- Guest check-ins today (guest_checkins) ---
   const { data: guestRows, error: guestErr } = await supabase
@@ -85,18 +95,23 @@ export default async function TvPage(props: {
 
   if (guestErr) console.error("[tv] guest_checkins error", guestErr);
 
-  const guestCount = (guestRows ?? []).length;
-
-  // ✅ strict TS-safe: build array with nulls, then type-guard filter them out
   const guestRecent: RecentItem[] = (guestRows ?? [])
     .map((r: any) => {
-      const atIso = (r.scanned_at ?? r.checked_in_at) as string | null;
-      if (!atIso) return null;
-      return { atIso, label: "Guest" as const };
-    })
-    .filter((x): x is { atIso: string; label: "Guest" } => x !== null);
+      const atIso =
+        (r.scanned_at as string | null) ??
+        (r.checked_in_at as string | null) ??
+        null;
 
+      if (!atIso) return null;
+      return { atIso, label: "Guest" as const } as RecentItem;
+    })
+    .filter(hasIso);
+
+  const guestCount = (guestRows ?? []).length;
+
+  // --- Combined recent feed (typed, no nulls) ---
   const recent: RecentItem[] = [...vipRecent, ...guestRecent]
+    .filter(hasIso)
     .sort((a, b) => new Date(b.atIso).getTime() - new Date(a.atIso).getTime())
     .slice(0, 20);
 
@@ -180,10 +195,7 @@ export default async function TvPage(props: {
             ) : (
               <ul className="mt-3 space-y-2">
                 {recent.slice(0, 10).map((r, idx) => (
-                  <li
-                    key={idx}
-                    className="flex items-center justify-between gap-3"
-                  >
+                  <li key={idx} className="flex items-center justify-between gap-3">
                     <span className="text-sm font-semibold">
                       {r.label === "VIP" ? "VIP" : "Guest"}
                     </span>
