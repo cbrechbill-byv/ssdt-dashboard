@@ -47,8 +47,6 @@ function computeDynamicGoal(params: {
 
   let goal = base;
 
-  // Keep pushing the goal upward as you approach it (or exceed it)
-  // Hard stop to avoid infinite loops in bizarre data situations
   for (let i = 0; i < 200; i++) {
     const threshold = Math.floor(goal * (advanceAtPct / 100));
     if (total >= threshold) {
@@ -58,7 +56,6 @@ function computeDynamicGoal(params: {
     break;
   }
 
-  // Ensure goal is always > total (so the bar never looks "overfilled")
   if (goal <= total) {
     const bumps = Math.ceil((total - goal + 1) / step);
     goal += bumps * step;
@@ -69,7 +66,6 @@ function computeDynamicGoal(params: {
 
 type ConfettiSize = "normal" | "big";
 
-// Tiny confetti without dependencies
 function burstConfetti(container: HTMLElement, size: ConfettiSize) {
   const colors = ["#FBBF24", "#34D399", "#22D3EE", "#A78BFA", "#FB7185", "#FFFFFF"];
 
@@ -118,7 +114,6 @@ export default function TvKioskClient(props: {
   etDateMdy: string;
   etTz: string;
 
-  // Gamified goals
   goalBase: number;
   goalStep: number;
   goalAdvanceAtPct: number;
@@ -173,7 +168,6 @@ export default function TvKioskClient(props: {
       if (!res.ok) throw new Error(`API ${res.status}`);
       const json = (await res.json()) as TvApiResponse;
 
-      // Compute dynamic goal for this poll
       const nextTotal = json?.total ?? 0;
       const nextGoal = computeDynamicGoal({
         total: nextTotal,
@@ -182,7 +176,6 @@ export default function TvKioskClient(props: {
         advanceAtPct: goalAdvanceAtPct,
       });
 
-      // On the very first load, set refs without effects
       if (!didInitRef.current) {
         didInitRef.current = true;
         lastTotalRef.current = nextTotal;
@@ -197,13 +190,11 @@ export default function TvKioskClient(props: {
       const totalIncreased = nextTotal > prevTotal;
       const goalLeveledUp = nextGoal > prevGoal;
 
-      // Update refs BEFORE effects so next cycle is correct
       lastTotalRef.current = nextTotal;
       lastGoalRef.current = nextGoal;
 
       setData(json);
 
-      // Effects: goal level-up takes priority (big celebration)
       if (confettiRef.current) {
         if (goalLeveledUp) {
           showLevelUp(nextGoal);
@@ -247,9 +238,30 @@ export default function TvKioskClient(props: {
   const remainingToGoal = Math.max(0, dynamicGoal - total);
 
   return (
-    <div className="min-h-screen md:h-[100svh] md:overflow-hidden text-white">
-      {/* Animations CSS */}
+    <div className="tv-root min-h-screen md:h-[100dvh] md:overflow-hidden text-white">
+      {/* Responsive sizing variables based on viewport height.
+          - Works on 1080p + 4K + laptops.
+          - On short displays (e.g., 768p), everything shrinks without scrolling.
+      */}
       <style jsx global>{`
+        .tv-root {
+          --pad: clamp(10px, 1.6vh, 18px);
+          --gap: clamp(10px, 1.4vh, 16px);
+          --logo: clamp(56px, 7vh, 120px);
+          --total: clamp(38px, 5.2vh, 90px);
+          --h1: clamp(22px, 3.2vh, 48px);
+          --body: clamp(12px, 1.6vh, 18px);
+          --qr: clamp(240px, 34vh, 460px);
+          --appqr: clamp(90px, 13vh, 130px);
+        }
+        @media (max-height: 820px) {
+          .tv-root {
+            --pad: clamp(8px, 1.2vh, 14px);
+            --gap: clamp(8px, 1.1vh, 12px);
+            --qr: clamp(220px, 32vh, 380px);
+          }
+        }
+
         @keyframes ssdtLevelUpIn {
           0% { transform: translateY(10px) scale(0.98); opacity: 0; }
           25% { transform: translateY(0px) scale(1.02); opacity: 1; }
@@ -287,12 +299,12 @@ export default function TvKioskClient(props: {
         </div>
       )}
 
-      <div className="min-h-screen md:h-[100svh] bg-gradient-to-br from-black via-slate-950 to-[#0b1220] px-3 py-3 sm:px-5 sm:py-5 md:px-6 md:py-5">
+      <div className="min-h-screen md:h-[100dvh] bg-gradient-to-br from-black via-slate-950 to-[#0b1220] px-[var(--pad)] py-[var(--pad)]">
         <div className="mx-auto w-full max-w-7xl md:h-full md:flex md:flex-col md:min-h-0">
           {/* HEADER */}
-          <div className="flex items-start justify-between gap-3 md:gap-6">
-            <div className="flex items-start gap-3 md:gap-5 min-w-0">
-              <div className="relative shrink-0 h-[clamp(56px,7vh,110px)] w-[clamp(56px,7vh,110px)]">
+          <div className="flex items-start justify-between gap-[var(--gap)]">
+            <div className="flex items-start gap-[var(--gap)] min-w-0">
+              <div className="relative shrink-0 h-[var(--logo)] w-[var(--logo)]">
                 <Image
                   src={showLogoSrc}
                   alt="Sugarshack Downtown"
@@ -307,11 +319,11 @@ export default function TvKioskClient(props: {
                   Sugarshack Downtown
                 </p>
 
-                <h1 className="mt-1 font-extrabold leading-[1.05] text-[clamp(22px,3.1vw,46px)]">
+                <h1 className="mt-1 font-extrabold leading-[1.05] text-[length:var(--h1)]">
                   CHECK IN & GET COUNTED
                 </h1>
 
-                <p className="mt-1 text-slate-200 text-[clamp(13px,1.35vw,18px)]">
+                <p className="mt-1 text-slate-200 text-[length:var(--body)]">
                   <span className="font-extrabold">Camera QR installs the app.</span> Check-in happens{" "}
                   <span className="font-extrabold">inside the app</span>.
                 </p>
@@ -338,14 +350,14 @@ export default function TvKioskClient(props: {
             {/* Total */}
             <div className="text-right shrink-0">
               <p className="text-[11px] uppercase tracking-[0.32em] text-slate-400">Total today</p>
-              <p className="font-extrabold tabular-nums text-amber-300 text-[clamp(40px,5.6vw,84px)] leading-none">
+              <p className="font-extrabold tabular-nums text-amber-300 leading-none text-[length:var(--total)]">
                 {total}
               </p>
             </div>
           </div>
 
-          {/* Gamified goal bar */}
-          <div className="mt-2 md:mt-3 rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-2.5">
+          {/* Goal */}
+          <div className="mt-[var(--gap)] rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-2.5">
             <div className="flex items-center justify-between gap-4">
               <p className="text-slate-200 font-extrabold text-[clamp(12px,1.1vw,14px)]">
                 Next goal: <span className="text-emerald-300 tabular-nums">{dynamicGoal}</span>
@@ -361,19 +373,16 @@ export default function TvKioskClient(props: {
                 style={{ width: `${goalPct}%` }}
               />
             </div>
-            <p className="mt-1 text-[11px] text-slate-500">
-              Goal increases automatically as we get close — keep it rolling 🔥
-            </p>
           </div>
 
           {/* MAIN */}
-          <div className="mt-3 md:mt-4 grid gap-3 md:gap-5 md:flex-1 md:min-h-0 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+          <div className="mt-[var(--gap)] grid gap-[var(--gap)] md:flex-1 md:min-h-0 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
             {/* LEFT */}
             <div className="rounded-3xl border border-slate-800 bg-slate-900/45 p-4 sm:p-5 md:p-6 md:min-h-0">
               <p className="font-extrabold leading-tight text-[clamp(16px,2.1vw,34px)]">
                 Install app → Login → Check In → Scan QR ✅
               </p>
-              <p className="mt-1 text-slate-200 text-[clamp(12px,1.25vw,16px)]">
+              <p className="mt-1 text-slate-200 text-[length:var(--body)]">
                 Rewards • perks • VIP surprises — get counted tonight.
               </p>
 
@@ -428,35 +437,41 @@ export default function TvKioskClient(props: {
               </p>
             </div>
 
-            {/* RIGHT */}
+            {/* RIGHT (QR scales by viewport height) */}
             <div className="rounded-3xl border border-slate-800 bg-slate-900/45 p-4 sm:p-5 md:p-6 md:min-h-0 flex flex-col">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300">
-                  Venue Check-In QR
-                </p>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300">Venue Check-In QR</p>
                 <p className="text-[11px] text-slate-500">Scan inside app</p>
               </div>
 
-              <div className="mt-3 rounded-2xl border border-slate-700 bg-black/40 p-3 flex items-center justify-center md:flex-1 md:min-h-0">
-                <Image
-                  src={checkinQrSrc}
-                  alt="Venue Check-In QR"
-                  width={360}
-                  height={360}
-                  className="rounded-xl max-w-full h-auto"
-                  priority
-                />
+              {/* QR hero container: always square, scales with viewport height */}
+              <div className="mt-[var(--gap)] flex items-center justify-center md:flex-1 md:min-h-0">
+                <div className="rounded-2xl border border-slate-700 bg-black/40 p-3">
+                  <div className="relative h-[var(--qr)] w-[var(--qr)] max-w-[46vw] max-h-[46vw]">
+                    <Image
+                      src={checkinQrSrc}
+                      alt="Venue Check-In QR"
+                      fill
+                      className="rounded-xl object-contain"
+                      priority
+                    />
+                  </div>
+                  <div className="mt-2 text-center text-[12px] text-slate-200 font-extrabold">
+                    Scan this <span className="text-amber-300">inside the app</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-3 rounded-2xl border border-slate-800 bg-black/20 p-3">
+              {/* App Store QR smaller, also scales */}
+              <div className="mt-[var(--gap)] rounded-2xl border border-slate-800 bg-black/20 p-3">
                 <p className="text-[11px] uppercase tracking-[0.24em] text-slate-300">Need the app?</p>
-                <p className="mt-1 text-slate-200 font-extrabold text-[clamp(12px,1.15vw,15px)]">
-                  {appStoreLabel}
-                </p>
+                <p className="mt-1 text-slate-200 font-extrabold text-[clamp(12px,1.15vw,15px)]">{appStoreLabel}</p>
 
                 <div className="mt-2 flex items-center gap-3">
                   <div className="rounded-xl border border-slate-800 bg-black/30 p-2">
-                    <Image src={appStoreQrSrc} alt="App Store QR" width={110} height={110} className="rounded-lg" />
+                    <div className="relative h-[var(--appqr)] w-[var(--appqr)]">
+                      <Image src={appStoreQrSrc} alt="App Store QR" fill className="rounded-lg object-contain" />
+                    </div>
                   </div>
 
                   <p className="text-slate-200 text-[clamp(12px,1.15vw,15px)]">
