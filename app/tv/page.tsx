@@ -5,6 +5,7 @@
 // - Query Supabase directly (no /api fetch hop)
 // - Use SERVER-ONLY service role client so RLS/auth cookies can't block reads
 // - ET-aligned "today" using rewards_scans.scan_date (date) + guest_checkins.day_et (date)
+// - Fix: strict TS guard so atIso is ALWAYS a string before sorting
 
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
@@ -39,8 +40,9 @@ function getAdminSupabase() {
   });
 }
 
-function hasIso(r: RecentItem | null | undefined): r is RecentItem {
-  return !!r && typeof r.atIso === "string" && r.atIso.length > 0;
+// ✅ Real TS type guard
+function hasAtIso(x: RecentItem | null): x is RecentItem {
+  return !!x && typeof x.atIso === "string" && x.atIso.length > 0;
 }
 
 export default async function TvPage(props: {
@@ -69,20 +71,20 @@ export default async function TvPage(props: {
 
   if (vipErr) console.error("[tv] rewards_scans error", vipErr);
 
+  const vipCount = (vipRows ?? []).length;
+
   const vipRecent: RecentItem[] = (vipRows ?? [])
     .map((r: any) => {
-      const atIso = (r.scanned_at as string | null) ?? null;
+      const atIso = (r.scanned_at ?? null) as string | null;
       if (!atIso) return null;
       return {
         atIso,
         label: "VIP" as const,
         source: (r.source ?? null) as string | null,
         points: (r.points ?? null) as number | null,
-      } as RecentItem;
+      } satisfies RecentItem;
     })
-    .filter(hasIso);
-
-  const vipCount = (vipRows ?? []).length;
+    .filter(hasAtIso);
 
   // --- Guest check-ins today (guest_checkins) ---
   const { data: guestRows, error: guestErr } = await supabase
@@ -95,23 +97,18 @@ export default async function TvPage(props: {
 
   if (guestErr) console.error("[tv] guest_checkins error", guestErr);
 
-  const guestRecent: RecentItem[] = (guestRows ?? [])
-    .map((r: any) => {
-      const atIso =
-        (r.scanned_at as string | null) ??
-        (r.checked_in_at as string | null) ??
-        null;
-
-      if (!atIso) return null;
-      return { atIso, label: "Guest" as const } as RecentItem;
-    })
-    .filter(hasIso);
-
   const guestCount = (guestRows ?? []).length;
 
-  // --- Combined recent feed (typed, no nulls) ---
+  const guestRecent: RecentItem[] = (guestRows ?? [])
+    .map((r: any) => {
+      const atIso = (r.scanned_at ?? r.checked_in_at ?? null) as string | null;
+      if (!atIso) return null;
+      return { atIso, label: "Guest" as const } satisfies RecentItem;
+    })
+    .filter(hasAtIso);
+
+  // ✅ Now recent is guaranteed to have atIso: string
   const recent: RecentItem[] = [...vipRecent, ...guestRecent]
-    .filter(hasIso)
     .sort((a, b) => new Date(b.atIso).getTime() - new Date(a.atIso).getTime())
     .slice(0, 20);
 
