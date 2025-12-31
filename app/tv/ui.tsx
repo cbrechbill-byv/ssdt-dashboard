@@ -58,7 +58,6 @@ function burstConfetti(container: HTMLElement) {
     p.style.pointerEvents = "none";
     p.style.filter = "drop-shadow(0 10px 18px rgba(0,0,0,0.35))";
 
-    // animation
     p.animate(
       [
         { transform: `translate(0px, 0px) rotate(${rotate}deg)`, opacity: 1 },
@@ -80,6 +79,28 @@ function burstConfetti(container: HTMLElement) {
   }
 }
 
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    onChange();
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    }
+    // Safari fallback
+    // eslint-disable-next-line deprecation/deprecation
+    mql.addListener(onChange);
+    // eslint-disable-next-line deprecation/deprecation
+    return () => mql.removeListener(onChange);
+  }, [query]);
+
+  return matches;
+}
+
 export default function TvKioskClient(props: {
   kioskKey: string;
   etDateMdy: string;
@@ -98,6 +119,8 @@ export default function TvKioskClient(props: {
 
   const lastTotalRef = useRef<number>(0);
   const confettiRef = useRef<HTMLDivElement | null>(null);
+
+  const isLg = useMediaQuery("(min-width: 1024px)");
 
   async function load() {
     try {
@@ -131,21 +154,21 @@ export default function TvKioskClient(props: {
   const asOfIso = data?.asOfIso ?? null;
 
   const goalPct = useMemo(() => clampPct(goalTotal > 0 ? (total / goalTotal) * 100 : 0), [total, goalTotal]);
-  const remaining = Math.max(0, goalTotal - total);
 
-  const recent = (data?.recent ?? []).slice(0, 8);
+  const recentCount = isLg ? 8 : 5;
+  const recent = (data?.recent ?? []).slice(0, recentCount);
 
   return (
-    <div className="min-h-screen text-white">
+    <div className="min-h-screen lg:h-[100svh] lg:overflow-hidden text-white">
       {/* Confetti layer */}
       <div ref={confettiRef} className="pointer-events-none fixed inset-0 z-50" />
 
-      <div className="min-h-screen bg-gradient-to-br from-black via-slate-950 to-[#0b1220] px-10 py-10">
-        <div className="mx-auto max-w-6xl">
-          {/* HEADER */}
-          <div className="flex items-start justify-between gap-10">
-            <div className="flex items-start gap-8 min-w-0">
-              <div className="relative h-24 w-24 md:h-28 md:w-28 shrink-0">
+      <div className="min-h-screen lg:h-[100svh] bg-gradient-to-br from-black via-slate-950 to-[#0b1220] px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-6">
+        <div className="mx-auto w-full max-w-7xl lg:h-full lg:flex lg:flex-col">
+          {/* HEADER (TV-safe: wraps, clamps, never clips) */}
+          <div className="flex items-start justify-between gap-4 lg:gap-8">
+            <div className="flex items-start gap-4 lg:gap-6 min-w-0">
+              <div className="relative shrink-0 h-[clamp(64px,7vh,120px)] w-[clamp(64px,7vh,120px)]">
                 <Image
                   src={showLogoSrc}
                   alt="Sugarshack Downtown"
@@ -156,23 +179,34 @@ export default function TvKioskClient(props: {
               </div>
 
               <div className="min-w-0">
-                <p className="text-[12px] uppercase tracking-[0.34em] text-slate-300">
+                <p className="text-[11px] sm:text-[12px] uppercase tracking-[0.34em] text-slate-300">
                   Sugarshack Downtown
                 </p>
 
-                {/* NO truncate: allow wrap */}
-                <h1 className="mt-2 text-4xl md:text-6xl font-extrabold leading-tight">
+                <h1 className="mt-1 font-extrabold leading-[1.05] text-[clamp(26px,3.6vw,56px)]">
                   CHECK IN & GET COUNTED
                 </h1>
 
-                <p className="mt-2 text-slate-200 text-lg md:text-xl">
-                  Scan the QR • Instant check-in • Unlock rewards 🎉
+                <p className="mt-1 text-slate-200 text-[clamp(14px,1.5vw,22px)]">
+                  **Install the app first**, then scan to check in for rewards 🎉
                 </p>
 
-                <p className="mt-1 text-[12px] text-slate-400">
-                  ET Date:{" "}
-                  <span className="font-semibold text-slate-200">{etDateMdy}</span> • Updates every 5s
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-[12px] text-slate-400">
+                  <span>
+                    ET Date: <span className="font-semibold text-slate-200">{etDateMdy}</span>
+                  </span>
+                  <span className="opacity-50">•</span>
+                  <span>
+                    Updates every <span className="font-semibold text-slate-200">5s</span>
+                  </span>
+                  <span className="opacity-50">•</span>
+                  <span>
+                    As of{" "}
+                    <span className="text-slate-200 font-semibold">
+                      {asOfIso ? formatTime(asOfIso, etTz) : "—"}
+                    </span>
+                  </span>
+                </div>
 
                 {err && (
                   <p className="mt-2 text-sm text-rose-300">
@@ -182,91 +216,79 @@ export default function TvKioskClient(props: {
               </div>
             </div>
 
-            {/* TOTAL */}
+            {/* TOTAL (big, always visible, TV-safe) */}
             <div className="text-right shrink-0">
-              <p className="text-[12px] uppercase tracking-[0.34em] text-slate-400">
-                Total check-ins today
+              <p className="text-[11px] sm:text-[12px] uppercase tracking-[0.34em] text-slate-400">
+                Total today
               </p>
-              <p className="text-6xl md:text-8xl font-extrabold tabular-nums text-amber-300 drop-shadow-[0_12px_40px_rgba(251,191,36,0.15)]">
+              <p className="font-extrabold tabular-nums text-amber-300 drop-shadow-[0_12px_40px_rgba(251,191,36,0.15)] text-[clamp(44px,6.2vw,96px)] leading-none">
                 {total}
-              </p>
-              <p className="mt-2 text-[12px] text-slate-400">
-                As of{" "}
-                <span className="text-slate-200 font-semibold">
-                  {asOfIso ? formatTime(asOfIso, etTz) : "—"}
-                </span>
               </p>
             </div>
           </div>
 
-          {/* GOAL */}
-          <div className="mt-8 rounded-3xl border border-slate-800 bg-slate-900/40 p-6">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="text-[12px] uppercase tracking-[0.28em] text-slate-300">
-                  Tonight’s Goal
-                </p>
-                <p className="mt-2 text-2xl md:text-3xl font-extrabold">
-                  Road to <span className="text-emerald-300">{goalTotal}</span> check-ins
-                </p>
-                <p className="mt-1 text-slate-300 text-lg">
-                  {remaining === 0 ? "Goal hit — keep it going! 🚀" : `${remaining} to go — let’s do this!`}
-                </p>
-              </div>
-
-              <div className="text-right">
-                <p className="text-[12px] uppercase tracking-[0.28em] text-slate-400">
-                  Progress
-                </p>
-                <p className="mt-1 text-3xl font-extrabold tabular-nums text-emerald-300">
-                  {goalPct.toFixed(0)}%
-                </p>
-              </div>
+          {/* TV-safe compact progress bar (keeps “pop” without adding vertical bulk) */}
+          <div className="mt-3 lg:mt-4 rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-slate-200 font-extrabold text-[clamp(12px,1.2vw,16px)]">
+                Tonight’s goal: <span className="text-emerald-300">{goalTotal}</span>
+              </p>
+              <p className="text-slate-300 font-semibold tabular-nums text-[clamp(12px,1.2vw,16px)]">
+                {goalPct.toFixed(0)}%
+              </p>
             </div>
-
-            <div className="mt-4 h-4 w-full rounded-full bg-slate-800 overflow-hidden">
+            <div className="mt-2 h-3 w-full rounded-full bg-slate-800 overflow-hidden">
               <div
-                className="h-4 rounded-full bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 transition-all"
+                className="h-3 rounded-full bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 transition-all"
                 style={{ width: `${goalPct}%` }}
               />
             </div>
           </div>
 
-          {/* MAIN GRID */}
-          <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            {/* LEFT: SCAN + QR + APP INSTALL CTA */}
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/45 p-8">
-              <div className="flex flex-col gap-6">
+          {/* MAIN (fills remaining height on TV) */}
+          <div className="mt-4 lg:mt-5 grid gap-4 lg:gap-6 lg:flex-1 lg:min-h-0 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+            {/* LEFT: QR + Steps */}
+            <div className="rounded-3xl border border-slate-800 bg-slate-900/45 p-5 sm:p-6 lg:p-7 lg:min-h-0">
+              <div className="flex flex-col gap-4 lg:gap-5 h-full">
                 <div>
-                  <p className="text-3xl md:text-5xl font-extrabold leading-tight">
-                    SCAN TO CHECK IN ✅
+                  <p className="font-extrabold leading-tight text-[clamp(18px,2.4vw,44px)]">
+                    INSTALL APP → CHECK IN → SCAN QR ✅
                   </p>
-                  <p className="mt-3 text-lg md:text-2xl text-slate-200">
-                    Get counted tonight — unlock perks, rewards, and VIP surprises.
+                  <p className="mt-1 text-slate-200 text-[clamp(13px,1.5vw,22px)]">
+                    Get counted tonight — earn rewards, perks, and VIP surprises.
                   </p>
                 </div>
 
-                <div className="grid gap-6 md:grid-cols-[280px_1fr] items-center">
-                  <div className="rounded-2xl border border-slate-700 bg-black/30 p-4 w-fit">
+                <div className="grid gap-4 lg:gap-6 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)] items-center">
+                  {/* BIG CHECK-IN QR */}
+                  <div className="rounded-2xl border border-slate-700 bg-black/40 p-3 w-fit">
+                    <div className="text-center text-[11px] uppercase tracking-[0.28em] text-slate-300 mb-2">
+                      Venue Check-In QR
+                    </div>
                     <Image
                       src={checkinQrSrc}
-                      alt="Check-in QR"
-                      width={260}
-                      height={260}
+                      alt="Venue Check-In QR"
+                      width={isLg ? 300 : 240}
+                      height={isLg ? 300 : 240}
                       className="rounded-xl"
                       priority
                     />
+                    <div className="mt-2 text-center text-[12px] text-slate-200 font-extrabold">
+                      Scan this **inside the app**
+                    </div>
                   </div>
 
+                  {/* Steps + App Store QR */}
                   <div className="min-w-0">
-                    <p className="text-[12px] uppercase tracking-[0.28em] text-slate-300">
-                      How to check in
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300">
+                      3 quick steps
                     </p>
-                    <ol className="mt-3 space-y-2 text-xl md:text-2xl">
+
+                    <ol className="mt-2 space-y-1.5 text-[clamp(14px,1.6vw,24px)]">
                       <li className="flex gap-3">
                         <span className="text-amber-300 font-black">1.</span>
                         <span>
-                          <span className="font-extrabold">Install the app</span> (scan the App Store QR below)
+                          <span className="font-extrabold">Install the app first</span> (scan App Store QR)
                         </span>
                       </li>
                       <li className="flex gap-3">
@@ -278,80 +300,102 @@ export default function TvKioskClient(props: {
                       <li className="flex gap-3">
                         <span className="text-amber-300 font-black">3.</span>
                         <span>
-                          Tap <span className="font-extrabold">Scan QR</span> → you’re checked in 🎉
+                          Tap <span className="font-extrabold">Scan QR</span> → you’re counted 🎉
                         </span>
                       </li>
                     </ol>
 
-                    <div className="mt-6 rounded-2xl border border-slate-800 bg-black/20 p-5">
-                      <p className="text-[12px] uppercase tracking-[0.28em] text-slate-300">
-                        Don’t have the app?
-                      </p>
-                      <p className="mt-2 text-lg md:text-xl text-slate-200 font-extrabold">
-                        {appStoreLabel}
-                      </p>
-                      <p className="mt-1 text-slate-300">
-                        Earn rewards • Track check-ins • Unlock VIP perks
+                    {/* App install box */}
+                    <div className="mt-4 rounded-2xl border border-slate-800 bg-black/20 p-4">
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300">
+                        Don’t have the app yet?
                       </p>
 
-                      <div className="mt-4 flex items-center gap-4">
-                        <div className="rounded-xl border border-slate-800 bg-black/30 p-3">
+                      <p className="mt-1 text-slate-200 font-extrabold text-[clamp(14px,1.5vw,20px)]">
+                        {appStoreLabel}
+                      </p>
+
+                      <p className="mt-1 text-slate-300 text-[clamp(12px,1.2vw,16px)]">
+                        Rewards • VIP perks • Track your check-ins
+                      </p>
+
+                      <div className="mt-3 flex items-center gap-4">
+                        <div className="rounded-xl border border-slate-800 bg-black/30 p-2.5">
                           <Image
                             src={appStoreQrSrc}
                             alt="App Store QR"
-                            width={120}
-                            height={120}
+                            width={isLg ? 128 : 110}
+                            height={isLg ? 128 : 110}
                             className="rounded-lg"
                           />
                         </div>
-                        <p className="text-base text-slate-200">
+
+                        <p className="text-slate-200 text-[clamp(12px,1.2vw,16px)]">
                           Scan to install now.
-                          <span className="block text-sm text-slate-400 mt-1">
-                            Then come back and scan the big Check-In QR.
+                          <span className="block text-slate-400 mt-1 text-[clamp(11px,1.0vw,14px)]">
+                            Then open the app and scan the big Venue QR.
                           </span>
                         </p>
                       </div>
                     </div>
 
-                    <p className="mt-4 text-[12px] text-slate-400">
-                      Staff script: “Install the app, open Check In, then scan the QR — it takes 10 seconds.”
+                    <p className="mt-3 text-[11px] text-slate-400">
+                      Staff script: “Install the app, tap Check In, then Scan QR — 10 seconds.”
                     </p>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* RIGHT: BREAKDOWN + RECENT */}
-            <div className="space-y-6">
-              <div className="rounded-3xl border border-slate-800 bg-slate-900/45 p-6">
-                <p className="text-[12px] uppercase tracking-[0.28em] text-slate-300">
+            {/* RIGHT: Cards + Recent (right side becomes height-managed on TV) */}
+            <div className="space-y-4 lg:space-y-6 lg:min-h-0">
+              {/* Breakdown */}
+              <div className="rounded-3xl border border-slate-800 bg-slate-900/45 p-5 sm:p-6">
+                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300">
                   Breakdown
                 </p>
 
-                <div className="mt-4 grid gap-4">
+                <div className="mt-3 grid grid-cols-3 gap-3">
                   <div className="rounded-2xl border border-slate-800 bg-black/20 p-4">
-                    <p className="text-slate-300 text-sm uppercase tracking-[0.18em]">VIP</p>
-                    <p className="mt-1 text-5xl font-extrabold tabular-nums text-amber-300">{vip}</p>
-                    <p className="mt-1 text-[12px] text-slate-400">Rewards check-ins</p>
+                    <p className="text-slate-300 text-[11px] uppercase tracking-[0.18em]">Total</p>
+                    <p className="mt-1 font-extrabold tabular-nums text-amber-300 text-[clamp(24px,2.6vw,44px)] leading-none">
+                      {total}
+                    </p>
                   </div>
 
                   <div className="rounded-2xl border border-slate-800 bg-black/20 p-4">
-                    <p className="text-slate-300 text-sm uppercase tracking-[0.18em]">Guest</p>
-                    <p className="mt-1 text-5xl font-extrabold tabular-nums text-teal-300">{guest}</p>
-                    <p className="mt-1 text-[12px] text-slate-400">No phone required</p>
+                    <p className="text-slate-300 text-[11px] uppercase tracking-[0.18em]">VIP</p>
+                    <p className="mt-1 font-extrabold tabular-nums text-amber-300 text-[clamp(24px,2.6vw,44px)] leading-none">
+                      {vip}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-400">Rewards</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-black/20 p-4">
+                    <p className="text-slate-300 text-[11px] uppercase tracking-[0.18em]">Guest</p>
+                    <p className="mt-1 font-extrabold tabular-nums text-teal-300 text-[clamp(24px,2.6vw,44px)] leading-none">
+                      {guest}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-400">Not logged in</p>
                   </div>
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-slate-800 bg-slate-900/45 p-6">
-                <p className="text-[12px] uppercase tracking-[0.28em] text-slate-300">
-                  Recent check-ins
-                </p>
+              {/* Recent check-ins (this is the ONLY internal scroll area on TV) */}
+              <div className="rounded-3xl border border-slate-800 bg-slate-900/45 p-5 sm:p-6 lg:min-h-0">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300">
+                    Recent check-ins
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    ET time
+                  </p>
+                </div>
 
                 {recent.length === 0 ? (
                   <p className="mt-3 text-sm text-slate-400">No recent check-ins yet.</p>
                 ) : (
-                  <ul className="mt-4 space-y-2">
+                  <ul className="mt-3 space-y-2 lg:max-h-[calc(100svh-520px)] lg:overflow-auto pr-1">
                     {recent.map((r, idx) => (
                       <li
                         key={`${r.label}-${r.atIso}-${idx}`}
@@ -364,7 +408,8 @@ export default function TvKioskClient(props: {
                         >
                           {r.label}
                         </span>
-                        <span className="text-[12px] text-slate-300 font-semibold">
+
+                        <span className="text-[12px] text-slate-200 font-semibold tabular-nums">
                           {formatTime(r.atIso, etTz)}
                         </span>
                       </li>
@@ -379,7 +424,7 @@ export default function TvKioskClient(props: {
             </div>
           </div>
 
-          <p className="mt-10 text-center text-[11px] text-slate-600">
+          <p className="mt-3 text-center text-[11px] text-slate-600">
             Timezone: {etTz} • Live venue display
           </p>
         </div>

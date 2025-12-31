@@ -45,7 +45,7 @@ export default async function TvPage(props: { searchParams?: Promise<{ key?: str
       etDateMdy={etDateMdy}
       etTz={ET_TZ}
       goalTotal={500}
-      appStoreLabel="Download the Sugarshack Downtown App"
+      appStoreLabel="Scan to install the Sugarshack Downtown App"
       showLogoSrc="/ssdt-logo.png"
       checkinQrSrc="/SSDTVIP-CHECKIN.png"
       appStoreQrSrc="/appstore-qr.png"
