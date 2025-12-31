@@ -33,34 +33,22 @@ function formatTime(iso: string, timeZone: string) {
   });
 }
 
-// Gamified goal: advances when you're close, so it never "caps"
-function computeDynamicGoal(params: {
-  total: number;
-  base: number;
-  step: number;
-  advanceAtPct: number; // e.g. 90 => advance when >= 90% of goal
-}): number {
+function computeDynamicGoal(params: { total: number; base: number; step: number; advanceAtPct: number }): number {
   const total = Math.max(0, Math.floor(params.total || 0));
   const base = Math.max(1, Math.floor(params.base || 1));
   const step = Math.max(1, Math.floor(params.step || 1));
   const advanceAtPct = Math.max(1, Math.min(99, Math.floor(params.advanceAtPct || 90)));
 
   let goal = base;
-
   for (let i = 0; i < 200; i++) {
     const threshold = Math.floor(goal * (advanceAtPct / 100));
-    if (total >= threshold) {
-      goal += step;
-      continue;
-    }
-    break;
+    if (total >= threshold) goal += step;
+    else break;
   }
-
   if (goal <= total) {
     const bumps = Math.ceil((total - goal + 1) / step);
     goal += bumps * step;
   }
-
   return goal;
 }
 
@@ -68,7 +56,6 @@ type ConfettiSize = "normal" | "big";
 
 function burstConfetti(container: HTMLElement, size: ConfettiSize) {
   const colors = ["#FBBF24", "#34D399", "#22D3EE", "#A78BFA", "#FB7185", "#FFFFFF"];
-
   const count = size === "big" ? 64 : 22;
   const baseTop = size === "big" ? 8 : 10;
   const baseDuration = size === "big" ? 1200 : 850;
@@ -152,13 +139,8 @@ export default function TvKioskClient(props: {
   function showLevelUp(newGoal: number) {
     setLevelUpGoal(newGoal);
     setLevelUpVisible(true);
-
-    if (levelUpTimerRef.current) {
-      window.clearTimeout(levelUpTimerRef.current);
-    }
-    levelUpTimerRef.current = window.setTimeout(() => {
-      setLevelUpVisible(false);
-    }, 1350);
+    if (levelUpTimerRef.current) window.clearTimeout(levelUpTimerRef.current);
+    levelUpTimerRef.current = window.setTimeout(() => setLevelUpVisible(false), 1350);
   }
 
   async function load() {
@@ -239,26 +221,24 @@ export default function TvKioskClient(props: {
 
   return (
     <div className="tv-root min-h-screen md:h-[100dvh] md:overflow-hidden text-white">
-      {/* Responsive sizing variables based on viewport height.
-          - Works on 1080p + 4K + laptops.
-          - On short displays (e.g., 768p), everything shrinks without scrolling.
+      {/* Layout is built for rollout: most people need to INSTALL first.
+          Two-lane layout prevents overlap: (1) Get the App (camera scan) (2) Check In (inside app scan venue QR)
       */}
       <style jsx global>{`
         .tv-root {
-          --pad: clamp(10px, 1.6vh, 18px);
+          --pad: clamp(10px, 1.5vh, 18px);
           --gap: clamp(10px, 1.4vh, 16px);
-          --logo: clamp(56px, 7vh, 120px);
-          --total: clamp(38px, 5.2vh, 90px);
-          --h1: clamp(22px, 3.2vh, 48px);
-          --body: clamp(12px, 1.6vh, 18px);
-          --qr: clamp(240px, 34vh, 460px);
-          --appqr: clamp(90px, 13vh, 130px);
+          --logo: clamp(52px, 6.5vh, 110px);
+          --h1: clamp(22px, 3.0vh, 44px);
+          --body: clamp(12px, 1.45vh, 17px);
+          --total: clamp(38px, 5.0vh, 88px);
+          --venueQR: clamp(240px, 31vh, 410px);
+          --appQR: clamp(120px, 16vh, 180px);
         }
         @media (max-height: 820px) {
           .tv-root {
-            --pad: clamp(8px, 1.2vh, 14px);
-            --gap: clamp(8px, 1.1vh, 12px);
-            --qr: clamp(220px, 32vh, 380px);
+            --venueQR: clamp(220px, 29vh, 360px);
+            --appQR: clamp(110px, 14vh, 160px);
           }
         }
 
@@ -305,27 +285,19 @@ export default function TvKioskClient(props: {
           <div className="flex items-start justify-between gap-[var(--gap)]">
             <div className="flex items-start gap-[var(--gap)] min-w-0">
               <div className="relative shrink-0 h-[var(--logo)] w-[var(--logo)]">
-                <Image
-                  src={showLogoSrc}
-                  alt="Sugarshack Downtown"
-                  fill
-                  className="object-contain drop-shadow-[0_12px_30px_rgba(0,0,0,0.75)]"
-                  priority
-                />
+                <Image src={showLogoSrc} alt="Sugarshack Downtown" fill className="object-contain" priority />
               </div>
 
               <div className="min-w-0">
                 <p className="text-[11px] sm:text-[12px] uppercase tracking-[0.32em] text-slate-300">
                   Sugarshack Downtown
                 </p>
-
                 <h1 className="mt-1 font-extrabold leading-[1.05] text-[length:var(--h1)]">
                   CHECK IN & GET COUNTED
                 </h1>
 
                 <p className="mt-1 text-slate-200 text-[length:var(--body)]">
-                  <span className="font-extrabold">Camera QR installs the app.</span> Check-in happens{" "}
-                  <span className="font-extrabold">inside the app</span>.
+                  Fast + easy. <span className="font-extrabold">Guest login is OK.</span> VIP gets rewards & perks.
                 </p>
 
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-400">
@@ -356,7 +328,7 @@ export default function TvKioskClient(props: {
             </div>
           </div>
 
-          {/* Goal */}
+          {/* Goal (compact) */}
           <div className="mt-[var(--gap)] rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-2.5">
             <div className="flex items-center justify-between gap-4">
               <p className="text-slate-200 font-extrabold text-[clamp(12px,1.1vw,14px)]">
@@ -375,112 +347,123 @@ export default function TvKioskClient(props: {
             </div>
           </div>
 
-          {/* MAIN */}
-          <div className="mt-[var(--gap)] grid gap-[var(--gap)] md:flex-1 md:min-h-0 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-            {/* LEFT */}
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/45 p-4 sm:p-5 md:p-6 md:min-h-0">
-              <p className="font-extrabold leading-tight text-[clamp(16px,2.1vw,34px)]">
-                Install app → Login → Check In → Scan QR ✅
-              </p>
-              <p className="mt-1 text-slate-200 text-[length:var(--body)]">
-                Rewards • perks • VIP surprises — get counted tonight.
-              </p>
-
-              <ol className="mt-3 space-y-1.5 text-[clamp(13px,1.35vw,18px)]">
-                <li className="flex gap-3">
-                  <span className="text-amber-300 font-black">1.</span>
-                  <span>
-                    <span className="font-extrabold">Install the app first</span> (scan the App Store QR)
-                  </span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="text-amber-300 font-black">2.</span>
-                  <span>
-                    Open app → <span className="font-extrabold">Login as Guest</span> or{" "}
-                    <span className="font-extrabold">VIP</span>
-                  </span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="text-amber-300 font-black">3.</span>
-                  <span>
-                    Tap <span className="font-extrabold">Check In</span> →{" "}
-                    <span className="font-extrabold">Scan QR</span>
-                  </span>
-                </li>
-              </ol>
-
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <div className="rounded-2xl border border-slate-800 bg-black/20 p-3">
-                  <p className="text-slate-300 text-[10px] uppercase tracking-[0.16em]">Total</p>
-                  <p className="mt-1 font-extrabold tabular-nums text-amber-300 text-[clamp(20px,2.2vw,34px)] leading-none">
-                    {total}
+          {/* MAIN: Two-lane rollout layout (no overlap, no stacking chaos) */}
+          <div className="mt-[var(--gap)] grid gap-[var(--gap)] md:flex-1 md:min-h-0 md:grid-cols-2">
+            {/* LANE A: GET THE APP (most important at rollout) */}
+            <div className="rounded-3xl border border-slate-800 bg-slate-900/45 p-4 sm:p-5 md:p-6 md:min-h-0 flex flex-col">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300">Step 1</p>
+                  <p className="mt-1 font-extrabold text-[clamp(18px,2.2vw,34px)] leading-tight">
+                    GET THE APP
+                  </p>
+                  <p className="mt-1 text-slate-200 text-[length:var(--body)]">
+                    Scan with your <span className="font-extrabold">camera</span> to install.
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-slate-800 bg-black/20 p-3">
-                  <p className="text-slate-300 text-[10px] uppercase tracking-[0.16em]">VIP</p>
-                  <p className="mt-1 font-extrabold tabular-nums text-amber-300 text-[clamp(20px,2.2vw,34px)] leading-none">
-                    {vip}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-slate-800 bg-black/20 p-3">
-                  <p className="text-slate-300 text-[10px] uppercase tracking-[0.16em]">Guest</p>
-                  <p className="mt-1 font-extrabold tabular-nums text-teal-300 text-[clamp(20px,2.2vw,34px)] leading-none">
-                    {guest}
-                  </p>
+                {/* App Store QR */}
+                <div className="shrink-0 rounded-2xl border border-slate-800 bg-black/30 p-2">
+                  <div className="relative h-[var(--appQR)] w-[var(--appQR)]">
+                    <Image src={appStoreQrSrc} alt="App Store QR" fill className="object-contain rounded-xl" />
+                  </div>
                 </div>
               </div>
 
-              <p className="mt-3 text-[11px] text-slate-500">
-                Staff script: “Install the app, login, tap Check In, then Scan QR.”
-              </p>
+              <div className="mt-4 rounded-2xl border border-slate-800 bg-black/20 p-4">
+                <p className="text-slate-200 font-extrabold text-[clamp(14px,1.5vw,20px)]">{appStoreLabel}</p>
+                <p className="mt-1 text-slate-300 text-[clamp(12px,1.2vw,16px)]">
+                  Then open the app and choose:
+                  <span className="block mt-1 text-slate-200 font-semibold">
+                    Login as <span className="text-teal-300 font-extrabold">Guest</span> (fast) or{" "}
+                    <span className="text-amber-300 font-extrabold">VIP</span> (rewards)
+                  </span>
+                </p>
+              </div>
+
+              {/* Rollout reality: no phone / no delay */}
+              <div className="mt-auto pt-4">
+                <div className="rounded-2xl border border-slate-800 bg-black/20 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">No phone?</p>
+                  <p className="mt-1 text-slate-200 font-extrabold text-[clamp(14px,1.4vw,18px)]">
+                    No problem — you’re still welcome in.
+                  </p>
+                  <p className="mt-1 text-slate-400 text-[clamp(12px,1.1vw,14px)]">
+                    Staff can help you later at this screen or with a table card inside.
+                  </p>
+                </div>
+              </div>
             </div>
 
-            {/* RIGHT (QR scales by viewport height) */}
+            {/* LANE B: CHECK IN (inside app scan venue QR) */}
             <div className="rounded-3xl border border-slate-800 bg-slate-900/45 p-4 sm:p-5 md:p-6 md:min-h-0 flex flex-col">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300">Venue Check-In QR</p>
-                <p className="text-[11px] text-slate-500">Scan inside app</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300">Step 2</p>
+                  <p className="mt-1 font-extrabold text-[clamp(18px,2.2vw,34px)] leading-tight">
+                    CHECK IN (IN THE APP)
+                  </p>
+                  <p className="mt-1 text-slate-200 text-[length:var(--body)]">
+                    Open app → <span className="font-extrabold">Check In</span> → <span className="font-extrabold">Scan QR</span>
+                  </p>
+                </div>
+
+                {/* Compact counts (useful for staff + hype, but small footprint) */}
+                <div className="shrink-0 grid grid-cols-3 gap-2">
+                  <div className="rounded-2xl border border-slate-800 bg-black/20 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Total</p>
+                    <p className="font-extrabold tabular-nums text-amber-300 text-[clamp(16px,1.9vw,28px)] leading-none">
+                      {total}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-black/20 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.16em] text-slate-400">VIP</p>
+                    <p className="font-extrabold tabular-nums text-amber-300 text-[clamp(16px,1.9vw,28px)] leading-none">
+                      {vip}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-black/20 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Guest</p>
+                    <p className="font-extrabold tabular-nums text-teal-300 text-[clamp(16px,1.9vw,28px)] leading-none">
+                      {guest}
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              {/* QR hero container: always square, scales with viewport height */}
-              <div className="mt-[var(--gap)] flex items-center justify-center md:flex-1 md:min-h-0">
-                <div className="rounded-2xl border border-slate-700 bg-black/40 p-3">
-                  <div className="relative h-[var(--qr)] w-[var(--qr)] max-w-[46vw] max-h-[46vw]">
+              {/* Venue QR hero (contained, never overlays anything) */}
+              <div className="mt-4 flex items-center justify-center md:flex-1 md:min-h-0">
+                <div className="rounded-3xl border border-slate-700 bg-black/40 p-4">
+                  <div className="text-center text-[11px] uppercase tracking-[0.28em] text-slate-300">
+                    Venue Check-In QR
+                  </div>
+
+                  <div className="mt-3 relative h-[var(--venueQR)] w-[var(--venueQR)] max-w-[44vw] max-h-[44vw]">
                     <Image
                       src={checkinQrSrc}
                       alt="Venue Check-In QR"
                       fill
-                      className="rounded-xl object-contain"
+                      className="object-contain rounded-2xl bg-white p-3"
                       priority
                     />
                   </div>
-                  <div className="mt-2 text-center text-[12px] text-slate-200 font-extrabold">
+
+                  <div className="mt-3 text-center text-slate-200 font-extrabold text-[clamp(13px,1.35vw,18px)]">
                     Scan this <span className="text-amber-300">inside the app</span>
+                  </div>
+
+                  <div className="mt-1 text-center text-slate-400 text-[clamp(11px,1.05vw,13px)]">
+                    (Camera scan won’t check you in — it only installs the app.)
                   </div>
                 </div>
               </div>
 
-              {/* App Store QR smaller, also scales */}
-              <div className="mt-[var(--gap)] rounded-2xl border border-slate-800 bg-black/20 p-3">
-                <p className="text-[11px] uppercase tracking-[0.24em] text-slate-300">Need the app?</p>
-                <p className="mt-1 text-slate-200 font-extrabold text-[clamp(12px,1.15vw,15px)]">{appStoreLabel}</p>
-
-                <div className="mt-2 flex items-center gap-3">
-                  <div className="rounded-xl border border-slate-800 bg-black/30 p-2">
-                    <div className="relative h-[var(--appqr)] w-[var(--appqr)]">
-                      <Image src={appStoreQrSrc} alt="App Store QR" fill className="rounded-lg object-contain" />
-                    </div>
-                  </div>
-
-                  <p className="text-slate-200 text-[clamp(12px,1.15vw,15px)]">
-                    Scan with your <span className="font-extrabold">camera</span> to install.
-                    <span className="block text-slate-400 mt-1 text-[clamp(11px,1.0vw,13px)]">
-                      Then open app → Check In → Scan QR (big code above).
-                    </span>
-                  </p>
-                </div>
+              {/* Staff script (tight + effective) */}
+              <div className="mt-4 rounded-2xl border border-slate-800 bg-black/20 p-4">
+                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Staff script</p>
+                <p className="mt-1 text-slate-200 font-extrabold text-[clamp(13px,1.3vw,16px)]">
+                  “Scan to install → open app → Guest login is fine → Check In → Scan the Venue QR.”
+                </p>
               </div>
             </div>
           </div>
