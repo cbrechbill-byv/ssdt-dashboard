@@ -4,10 +4,6 @@
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type RecentItem =
-  | { atIso: string; label: "VIP"; source?: string | null; points?: number | null }
-  | { atIso: string; label: "Guest" };
-
 type TvApiResponse = {
   ok: boolean;
   asOfIso: string;
@@ -15,18 +11,11 @@ type TvApiResponse = {
   total: number;
   vip: number;
   guest: number;
-  recent: RecentItem[];
 };
 
 function clampPct(x: number) {
   if (!Number.isFinite(x)) return 0;
   return Math.max(0, Math.min(100, x));
-}
-
-function formatTime(iso: string, timeZone: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleTimeString("en-US", { timeZone, hour: "numeric", minute: "2-digit" });
 }
 
 function computeDynamicGoal(params: { total: number; base: number; step: number; advanceAtPct: number }): number {
@@ -36,7 +25,7 @@ function computeDynamicGoal(params: { total: number; base: number; step: number;
   const advanceAtPct = Math.max(1, Math.min(99, Math.floor(params.advanceAtPct || 90)));
 
   let goal = base;
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 250; i++) {
     const threshold = Math.floor(goal * (advanceAtPct / 100));
     if (total >= threshold) goal += step;
     else break;
@@ -48,8 +37,19 @@ function computeDynamicGoal(params: { total: number; base: number; step: number;
   return goal;
 }
 
-type ConfettiSize = "normal" | "big";
+function formatTime(iso: string, timeZone: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("en-US", { timeZone, hour: "numeric", minute: "2-digit" });
+}
 
+function prettyLoc(loc: string) {
+  const s = (loc || "").replace(/[-_]/g, " ").trim();
+  if (!s) return "Entrance";
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+type ConfettiSize = "normal" | "big";
 function burstConfetti(container: HTMLElement, size: ConfettiSize) {
   const colors = ["#FBBF24", "#34D399", "#22D3EE", "#A78BFA", "#FB7185", "#FFFFFF"];
   const count = size === "big" ? 70 : 26;
@@ -92,57 +92,46 @@ function burstConfetti(container: HTMLElement, size: ConfettiSize) {
   }
 }
 
-function prettyLoc(loc: string) {
-  const s = loc.replace(/[-_]/g, " ").trim();
-  if (!s) return "Entrance";
-  return s.replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function StatCard(props: {
-  label: string;
-  value: number;
-  valueClassName?: string;
-  sub?: string;
-}) {
+function StatMini(props: { label: string; value: number; valueClass: string; sub?: string }) {
   return (
-    <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/50 px-[calc(2.0*var(--u))] py-[calc(1.8*var(--u))]">
-      <p className="uppercase tracking-[0.28em] text-slate-400" style={{ fontSize: "calc(1.1*var(--u))" }}>
+    <div className="rounded-[calc(1.9*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(1.4*var(--u))] py-[calc(1.2*var(--u))]">
+      <div className="uppercase tracking-[0.28em] text-slate-400" style={{ fontSize: "calc(1.05*var(--u))" }}>
         {props.label}
-      </p>
+      </div>
       <div
-        className={`mt-[calc(0.7*var(--u))] font-extrabold tabular-nums leading-none ${props.valueClassName ?? ""}`}
-        style={{ fontSize: "calc(7.0*var(--u))" }}
+        className={`mt-[calc(0.35*var(--u))] font-extrabold tabular-nums leading-none ${props.valueClass}`}
+        style={{ fontSize: "calc(5.7*var(--u))" }}
       >
         {props.value}
       </div>
       {props.sub ? (
-        <p className="mt-[calc(0.55*var(--u))] text-slate-300" style={{ fontSize: "calc(1.25*var(--u))" }}>
+        <div className="mt-[calc(0.45*var(--u))] text-slate-300" style={{ fontSize: "calc(1.25*var(--u))" }}>
           {props.sub}
-        </p>
+        </div>
       ) : null}
     </div>
   );
 }
 
-function StepRow(props: { n: number; title: string; desc: string }) {
+function StepRowBig(props: { n: number; title: string; desc: string }) {
   return (
-    <div className="flex items-start gap-[calc(1.0*var(--u))]">
+    <div className="flex items-start gap-[calc(1.05*var(--u))]">
       <div
-        className="shrink-0 rounded-[calc(1.4*var(--u))] border border-amber-300/30 bg-amber-300/10 text-amber-300 font-extrabold flex items-center justify-center"
+        className="shrink-0 rounded-[calc(1.5*var(--u))] border border-amber-300/35 bg-amber-300/10 text-amber-300 font-extrabold flex items-center justify-center"
         style={{
-          width: "calc(4.2*var(--u))",
-          height: "calc(4.2*var(--u))",
-          fontSize: "calc(2.4*var(--u))",
+          width: "calc(5.2*var(--u))",
+          height: "calc(5.2*var(--u))",
+          fontSize: "calc(3.0*var(--u))",
           lineHeight: 1,
         }}
       >
         {props.n}
       </div>
       <div className="min-w-0">
-        <div className="text-slate-100 font-extrabold" style={{ fontSize: "calc(1.8*var(--u))" }}>
+        <div className="text-slate-100 font-extrabold" style={{ fontSize: "calc(1.95*var(--u))" }}>
           {props.title}
         </div>
-        <div className="text-slate-300" style={{ fontSize: "calc(1.35*var(--u))" }}>
+        <div className="text-slate-300" style={{ fontSize: "calc(1.65*var(--u))" }}>
           {props.desc}
         </div>
       </div>
@@ -150,50 +139,49 @@ function StepRow(props: { n: number; title: string; desc: string }) {
   );
 }
 
-function QrLane(props: {
+function AppLane(props: {
   tone: "need" | "have";
   heading: string;
   headline: string;
+  sub: string;
   bullets: string[];
+  footnote: string;
   qrSrc: string;
   qrAlt: string;
-  footnote: string;
 }) {
   const isHave = props.tone === "have";
   return (
     <div
       className={
         isHave
-          ? "rounded-[calc(2.2*var(--u))] border border-amber-300/25 bg-gradient-to-br from-slate-900/60 via-black/40 to-slate-900/50 px-[calc(2.2*var(--u))] py-[calc(2.0*var(--u))]"
-          : "rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/50 px-[calc(2.2*var(--u))] py-[calc(2.0*var(--u))]"
+          ? "rounded-[calc(2.4*var(--u))] border border-amber-300/35 bg-gradient-to-br from-slate-900/65 via-black/45 to-slate-900/60 px-[calc(2.4*var(--u))] py-[calc(2.0*var(--u))] h-full"
+          : "rounded-[calc(2.4*var(--u))] border border-slate-800 bg-slate-900/55 px-[calc(2.4*var(--u))] py-[calc(2.0*var(--u))] h-full"
       }
     >
-      <div className="flex items-start justify-between gap-[calc(1.6*var(--u))]">
+      <div className="grid grid-cols-[1.2fr_auto] gap-[calc(2.0*var(--u))] items-center h-full">
         <div className="min-w-0">
-          <p
-            className={isHave ? "uppercase tracking-[0.34em] text-amber-200/80" : "uppercase tracking-[0.34em] text-slate-300"}
-            style={{ fontSize: "calc(1.15*var(--u))" }}
+          <div
+            className={isHave ? "uppercase tracking-[0.34em] text-amber-300" : "uppercase tracking-[0.34em] text-slate-200"}
+            style={{ fontSize: "calc(1.25*var(--u))" }}
           >
             {props.heading}
-          </p>
+          </div>
 
-          <div
-            className="mt-[calc(0.7*var(--u))] font-extrabold leading-[1.05]"
-            style={{ fontSize: isHave ? "calc(3.0*var(--u))" : "calc(2.85*var(--u))" }}
-          >
+          <div className="mt-[calc(0.8*var(--u))] font-extrabold leading-[1.03]" style={{ fontSize: "calc(3.9*var(--u))" }}>
             {props.headline}
           </div>
 
-          <div className="mt-[calc(1.0*var(--u))] space-y-[calc(0.55*var(--u))]">
-            {props.bullets.map((b, idx) => (
-              <div key={idx} className="flex items-start gap-[calc(0.7*var(--u))]">
-                <div
-                  className={isHave ? "text-amber-300" : "text-emerald-300"}
-                  style={{ fontSize: "calc(1.5*var(--u))", lineHeight: 1 }}
-                >
+          <div className="mt-[calc(0.65*var(--u))] text-slate-200" style={{ fontSize: "calc(2.0*var(--u))" }}>
+            {props.sub}
+          </div>
+
+          <div className="mt-[calc(0.95*var(--u))] space-y-[calc(0.65*var(--u))]">
+            {props.bullets.map((b, i) => (
+              <div key={i} className="flex items-start gap-[calc(0.8*var(--u))]">
+                <div className={isHave ? "text-amber-300" : "text-emerald-300"} style={{ fontSize: "calc(2.0*var(--u))", lineHeight: 1 }}>
                   •
                 </div>
-                <div className={isHave ? "text-slate-200" : "text-slate-300"} style={{ fontSize: "calc(1.4*var(--u))" }}>
+                <div className={isHave ? "text-slate-100" : "text-slate-200"} style={{ fontSize: "calc(1.85*var(--u))" }}>
                   {b}
                 </div>
               </div>
@@ -203,25 +191,19 @@ function QrLane(props: {
           <div
             className={
               isHave
-                ? "mt-[calc(1.1*var(--u))] rounded-[calc(1.8*var(--u))] border border-amber-300/20 bg-black/35 px-[calc(1.4*var(--u))] py-[calc(1.0*var(--u))]"
-                : "mt-[calc(1.1*var(--u))] rounded-[calc(1.8*var(--u))] border border-slate-800 bg-black/30 px-[calc(1.4*var(--u))] py-[calc(1.0*var(--u))]"
+                ? "mt-[calc(1.05*var(--u))] rounded-[calc(1.9*var(--u))] border border-amber-300/25 bg-black/40 px-[calc(1.6*var(--u))] py-[calc(1.05*var(--u))]"
+                : "mt-[calc(1.05*var(--u))] rounded-[calc(1.9*var(--u))] border border-slate-800 bg-black/35 px-[calc(1.6*var(--u))] py-[calc(1.05*var(--u))]"
             }
           >
-            <div className="text-slate-100 font-extrabold" style={{ fontSize: "calc(1.45*var(--u))" }}>
+            <div className="font-extrabold text-slate-100" style={{ fontSize: "calc(1.85*var(--u))" }}>
               {props.footnote}
             </div>
           </div>
         </div>
 
-        {/* SAME SIZE QR for BOTH lanes */}
-        <div className="shrink-0 rounded-[calc(2.0*var(--u))] bg-white p-[calc(1.0*var(--u))]">
-          <div
-            className="relative"
-            style={{
-              width: "calc(16.0*var(--u))",
-              height: "calc(16.0*var(--u))",
-            }}
-          >
+        <div className="shrink-0 rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.15*var(--u))]">
+          {/* SAME SIZE QR FOR BOTH (slightly smaller to prevent bottom cut-off) */}
+          <div className="relative" style={{ width: "calc(17.2*var(--u))", height: "calc(17.2*var(--u))" }}>
             <Image src={props.qrSrc} alt={props.qrAlt} fill className="object-contain" priority={isHave} />
           </div>
         </div>
@@ -240,12 +222,11 @@ export default function TvKioskClient(props: {
   goalAdvanceAtPct: number;
 
   showLogoSrc: string;
-  helpQrSrc: string; // camera scan -> should go to /checkin
-  venueQrSrc: string; // in-app scan -> check-in token QR
+  helpQrSrc: string;
+  venueQrSrc: string;
   locationLabel: string;
 }) {
-  const { kioskKey, etDateMdy, etTz, goalBase, goalStep, goalAdvanceAtPct, showLogoSrc, helpQrSrc, venueQrSrc, locationLabel } =
-    props;
+  const { kioskKey, etDateMdy, etTz, goalBase, goalStep, goalAdvanceAtPct, showLogoSrc, helpQrSrc, venueQrSrc, locationLabel } = props;
 
   const [data, setData] = useState<TvApiResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -275,12 +256,7 @@ export default function TvKioskClient(props: {
       const json = (await res.json()) as TvApiResponse;
 
       const nextTotal = json?.total ?? 0;
-      const nextGoal = computeDynamicGoal({
-        total: nextTotal,
-        base: goalBase,
-        step: goalStep,
-        advanceAtPct: goalAdvanceAtPct,
-      });
+      const nextGoal = computeDynamicGoal({ total: nextTotal, base: goalBase, step: goalStep, advanceAtPct: goalAdvanceAtPct });
 
       if (!didInitRef.current) {
         didInitRef.current = true;
@@ -327,31 +303,31 @@ export default function TvKioskClient(props: {
   const total = data?.total ?? 0;
   const vip = data?.vip ?? 0;
   const guest = data?.guest ?? 0;
-  const asOfIso = data?.asOfIso ?? null;
+  const asOfIso = data?.asOfIso ?? "";
 
-  const dynamicGoal = useMemo(
-    () => computeDynamicGoal({ total, base: goalBase, step: goalStep, advanceAtPct: goalAdvanceAtPct }),
-    [total, goalBase, goalStep, goalAdvanceAtPct]
-  );
+  const dynamicGoal = useMemo(() => computeDynamicGoal({ total, base: goalBase, step: goalStep, advanceAtPct: goalAdvanceAtPct }), [
+    total,
+    goalBase,
+    goalStep,
+    goalAdvanceAtPct,
+  ]);
 
   const goalPct = useMemo(() => clampPct(dynamicGoal > 0 ? (total / dynamicGoal) * 100 : 0), [total, dynamicGoal]);
   const remainingToGoal = Math.max(0, dynamicGoal - total);
-
   const locLabel = prettyLoc(locationLabel);
 
   return (
     <div className="fixed inset-0 overflow-hidden text-white">
       <style jsx global>{`
-        :root {
-          --u: min(1vw, 1vh);
-        }
+        :root { --u: min(1vw, 1vh); }
 
+        /* ✅ Smaller overscan padding so nothing clips */
         .tvSafe {
           padding:
-            calc(2.3 * var(--u) + env(safe-area-inset-top))
-            calc(2.8 * var(--u) + env(safe-area-inset-right))
-            calc(2.3 * var(--u) + env(safe-area-inset-bottom))
-            calc(2.8 * var(--u) + env(safe-area-inset-left));
+            calc(1.6 * var(--u) + env(safe-area-inset-top))
+            calc(2.0 * var(--u) + env(safe-area-inset-right))
+            calc(1.6 * var(--u) + env(safe-area-inset-bottom))
+            calc(2.0 * var(--u) + env(safe-area-inset-left));
         }
 
         @keyframes ssdtLevelUpIn {
@@ -367,7 +343,6 @@ export default function TvKioskClient(props: {
         }
       `}</style>
 
-      {/* Background */}
       <div className="absolute inset-0 bg-gradient-to-br from-black via-slate-950 to-[#0b1220]" />
       <div className="pointer-events-none absolute inset-0 opacity-35">
         <div className="absolute -top-[12vh] left-[10vw] h-[34vh] w-[34vh] rounded-full bg-amber-400 blur-[120px]" />
@@ -388,10 +363,7 @@ export default function TvKioskClient(props: {
               <p className="uppercase tracking-[0.34em] text-slate-300" style={{ fontSize: "calc(1.1*var(--u))" }}>
                 Sugarshack Downtown
               </p>
-              <p
-                className="mt-[calc(1*var(--u))] font-extrabold leading-none text-amber-300"
-                style={{ fontSize: "calc(7.4*var(--u))" }}
-              >
+              <p className="mt-[calc(1*var(--u))] font-extrabold leading-none text-amber-300" style={{ fontSize: "calc(7.4*var(--u))" }}>
                 LEVEL UP!
               </p>
               <p className="mt-[calc(0.8*var(--u))] text-slate-200 font-extrabold" style={{ fontSize: "calc(2.2*var(--u))" }}>
@@ -402,166 +374,165 @@ export default function TvKioskClient(props: {
         </div>
       )}
 
-      {/* Layout */}
       <div className="relative h-[100svh] w-full tvSafe">
-        <div className="mx-auto h-full w-full max-w-[1850px]">
-          <div className="grid h-full grid-rows-[auto_auto_1fr_auto] gap-[calc(1.3*var(--u))]">
+        <div className="mx-auto h-full w-full max-w-[1900px]">
+          {/* ✅ Tighten gaps slightly to guarantee no clipping */}
+          <div className="grid h-full grid-rows-[auto_auto_minmax(0,1.1fr)_minmax(0,0.9fr)] gap-[calc(0.9*var(--u))]">
             {/* HEADER */}
-            <div className="flex items-start justify-between gap-[calc(1.6*var(--u))]">
-              <div className="flex items-start gap-[calc(1.8*var(--u))] min-w-0">
-                {/* BIGGER LOGO */}
+            <div className="flex items-start justify-between gap-[calc(2.0*var(--u))]">
+              <div className="flex items-start gap-[calc(2.2*var(--u))] min-w-0">
+                {/* ✅ Bigger logo */}
                 <div
                   className="relative shrink-0"
                   style={{
-                    width: "calc(9.2*var(--u))",
-                    height: "calc(9.2*var(--u))",
-                    minWidth: "calc(9.2*var(--u))",
+                    width: "calc(18.0*var(--u))",
+                    height: "calc(18.0*var(--u))",
+                    minWidth: "calc(18.0*var(--u))",
                   }}
                 >
                   <Image src={showLogoSrc} alt="Sugarshack Downtown" fill className="object-contain" priority />
                 </div>
 
                 <div className="min-w-0">
-                  <p className="uppercase tracking-[0.34em] text-slate-300" style={{ fontSize: "calc(1.1*var(--u))" }}>
-                    Sugarshack Downtown
-                  </p>
-
-                  {/* Required: split title across two lines */}
-                  <div className="mt-[calc(0.55*var(--u))] leading-[0.9] font-extrabold">
-                    <div style={{ fontSize: "calc(6.0*var(--u))" }}>CHECK IN</div>
-                    <div style={{ fontSize: "calc(5.2*var(--u))" }}>GET COUNTED</div>
+                  <div className="font-extrabold leading-[0.95]">
+                    <div style={{ fontSize: "calc(6.3*var(--u))" }}>CHECK IN</div>
+                    <div style={{ fontSize: "calc(5.4*var(--u))" }} className="text-amber-300">
+                      GET COUNTED
+                    </div>
                   </div>
 
-                  <p className="mt-[calc(0.9*var(--u))] text-slate-200" style={{ fontSize: "calc(1.65*var(--u))" }}>
-                    New app. New perks.{" "}
-                    <span className="text-amber-300 font-extrabold">VIP gets the good stuff</span> — don’t miss out.
-                  </p>
+                  <div className="mt-[calc(0.85*var(--u))] flex flex-wrap items-center gap-[calc(0.9*var(--u))]">
+                    <div
+                      className="rounded-[calc(1.6*var(--u))] border border-slate-800 bg-black/25 px-[calc(1.2*var(--u))] py-[calc(0.7*var(--u))]"
+                      style={{ fontSize: "calc(1.7*var(--u))" }}
+                    >
+                      <span className="text-slate-200 font-extrabold">New app. New perks.</span>{" "}
+                      <span className="text-amber-300 font-extrabold">VIP gets the good stuff</span>{" "}
+                      <span className="text-slate-200 font-extrabold">— don’t miss out.</span>
+                    </div>
+                  </div>
 
-                  <div className="mt-[calc(0.85*var(--u))] flex flex-wrap items-center gap-x-[calc(0.9*var(--u))] gap-y-[calc(0.5*var(--u))] text-slate-400">
-                    <span style={{ fontSize: "calc(1.05*var(--u))" }}>
+                  <div className="mt-[calc(0.75*var(--u))] flex flex-wrap items-center gap-x-[calc(0.9*var(--u))] gap-y-[calc(0.5*var(--u))] text-slate-400">
+                    <span style={{ fontSize: "calc(1.15*var(--u))" }}>
                       ET: <span className="font-semibold text-slate-200">{etDateMdy}</span>
                     </span>
                     <span className="opacity-50">•</span>
-                    <span style={{ fontSize: "calc(1.05*var(--u))" }}>
+                    <span style={{ fontSize: "calc(1.15*var(--u))" }}>
                       As of <span className="font-semibold text-slate-200">{asOfIso ? formatTime(asOfIso, etTz) : "—"}</span>
                     </span>
                     <span className="opacity-50">•</span>
-                    <span className="text-slate-200 font-semibold" style={{ fontSize: "calc(1.05*var(--u))" }}>
+                    <span className="text-slate-200 font-semibold" style={{ fontSize: "calc(1.15*var(--u))" }}>
                       {locLabel}
                     </span>
                     <span className="opacity-50">•</span>
-                    <span style={{ fontSize: "calc(1.05*var(--u))" }}>Auto-updates 5s</span>
+                    <span style={{ fontSize: "calc(1.15*var(--u))" }}>Auto-updates 5s</span>
                   </div>
 
-                  {err && (
-                    <p className="mt-[calc(0.7*var(--u))] text-rose-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                  {err ? (
+                    <p className="mt-[calc(0.7*var(--u))] text-rose-300" style={{ fontSize: "calc(1.3*var(--u))" }}>
                       Data loading issue: {err}
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
-              {/* TOTAL TODAY */}
               <div className="shrink-0 text-right">
-                <p className="uppercase tracking-[0.34em] text-slate-400" style={{ fontSize: "calc(1.1*var(--u))" }}>
+                <div className="uppercase tracking-[0.34em] text-slate-400" style={{ fontSize: "calc(1.2*var(--u))" }}>
                   TOTAL TODAY
-                </p>
-                <div className="font-extrabold tabular-nums text-amber-300 leading-none" style={{ fontSize: "calc(11.0*var(--u))" }}>
+                </div>
+                <div className="font-extrabold tabular-nums text-amber-300 leading-none" style={{ fontSize: "calc(12.2*var(--u))" }}>
                   {total}
                 </div>
               </div>
             </div>
 
-            {/* GOAL */}
-            <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/50 px-[calc(2.2*var(--u))] py-[calc(1.9*var(--u))]">
+            {/* TONIGHT'S GOAL */}
+            <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/50 px-[calc(2.2*var(--u))] py-[calc(1.55*var(--u))]">
               <div className="flex items-end justify-between gap-[calc(1.2*var(--u))]">
                 <div>
-                  <div className="text-slate-200 font-extrabold" style={{ fontSize: "calc(2.35*var(--u))" }}>
+                  <div className="text-slate-200 font-extrabold" style={{ fontSize: "calc(2.4*var(--u))" }}>
                     Tonight’s Goal: <span className="text-emerald-300 tabular-nums">{dynamicGoal}</span>{" "}
                     <span className="text-slate-400 font-semibold">({remainingToGoal} to go)</span>
                   </div>
-                  <div className="text-slate-300 font-semibold" style={{ fontSize: "calc(1.3*var(--u))" }}>
+                  <div className="text-slate-300 font-semibold" style={{ fontSize: "calc(1.45*var(--u))" }}>
                     Hit the goal → the goal levels up 🔥 Bigger confetti when it advances 🎉
                   </div>
                 </div>
-                <div className="text-slate-200 font-extrabold tabular-nums" style={{ fontSize: "calc(2.35*var(--u))" }}>
+                <div className="text-slate-200 font-extrabold tabular-nums" style={{ fontSize: "calc(2.4*var(--u))" }}>
                   {goalPct.toFixed(0)}%
                 </div>
               </div>
 
-              <div className="mt-[calc(1.15*var(--u))] h-[calc(2.15*var(--u))] w-full rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 transition-all"
-                  style={{ width: `${goalPct}%` }}
-                />
+              <div className="mt-[calc(0.95*var(--u))] h-[calc(2.05*var(--u))] w-full rounded-full bg-slate-800 overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 transition-all" style={{ width: `${goalPct}%` }} />
               </div>
             </div>
 
-            {/* MIDDLE: BIG COUNTS + VIP MOMENT (side-by-side) */}
-            <div className="min-h-0 grid grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.35fr)] gap-[calc(1.3*var(--u))]">
-              <StatCard label="VIP" value={vip} valueClassName="text-amber-300" sub="Rewards • perks • surprises" />
-              <StatCard label="GUEST" value={guest} valueClassName="text-teal-300" sub="Fast check-in (VIP later)" />
-              <StatCard label="TOTAL" value={total} valueClassName="text-amber-300" sub="Get counted tonight" />
-
-              {/* VIP MOMENT */}
-              <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-gradient-to-br from-slate-900/60 via-black/35 to-slate-900/50 px-[calc(2.2*var(--u))] py-[calc(2.0*var(--u))] min-h-0">
-                <p className="uppercase tracking-[0.34em] text-slate-400" style={{ fontSize: "calc(1.1*var(--u))" }}>
-                  VIP MOMENT
-                </p>
-
-                <div className="mt-[calc(0.9*var(--u))] font-extrabold leading-[1.05]" style={{ fontSize: "calc(3.05*var(--u))" }}>
-                  VIP gets perks, rewards & surprises.
-                  <span className="text-amber-300"> Guests miss out.</span>
-                </div>
-
-                <div className="mt-[calc(1.2*var(--u))] space-y-[calc(0.9*var(--u))]">
-                  <StepRow n={1} title="Install the app" desc="Camera scan the “I NEED THE APP” QR below." />
-                  <StepRow n={2} title="Login (Guest is OK)" desc="VIP is where the rewards live." />
-                  <StepRow n={3} title="Check In → Scan QR" desc="Use the scanner inside the app to get counted." />
-                </div>
-
-                <div className="mt-[calc(1.25*var(--u))] rounded-[calc(1.8*var(--u))] border border-slate-800 bg-black/30 px-[calc(1.6*var(--u))] py-[calc(1.2*var(--u))]">
-                  <div className="text-slate-100 font-extrabold" style={{ fontSize: "calc(1.55*var(--u))" }}>
-                    Tonight’s vibe:
-                  </div>
-                  <div className="text-slate-300" style={{ fontSize: "calc(1.35*var(--u))" }}>
-                    Check in now → build your VIP history → unlock more later 🎁
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* BOTTOM: TWO CLEAR LANES (side-by-side) */}
-            <div className="grid grid-cols-2 gap-[calc(1.3*var(--u))]">
-              <QrLane
+            {/* ROW 3: NEED/HAVE APP */}
+            <div className="grid grid-cols-2 gap-[calc(0.9*var(--u))] min-h-0 items-stretch">
+              <AppLane
                 tone="need"
                 heading="I NEED THE APP"
                 headline="Scan this with your CAMERA"
-                bullets={[
-                  "This takes you to the quick install + steps page",
-                  "iPhone app now • Android coming soon",
-                  "Then open the app to check in",
-                ]}
-                qrSrc={helpQrSrc}
-                qrAlt="Install / Help QR"
+                sub="Install the app + learn how to check in"
+                bullets={["This takes you to the quick install + steps page", "iPhone app now • Android coming soon", "Then open the app to check in"]}
                 footnote="Camera scan = install/help (does NOT check you in yet)"
+                qrSrc={helpQrSrc}
+                qrAlt="Get the App QR"
               />
 
-              <QrLane
+              <AppLane
                 tone="have"
                 heading="I HAVE THE APP"
-                headline="Scan to get counted ✅"
-                bullets={[
-                  "Open app → Check In → Scan QR",
-                  "This is the VIP way to check in",
-                  "Build VIP history + rewards",
-                ]}
+                headline="OPEN THE APP + SCAN (IN THE APP)"
+                sub="Use the Sugarshack Downtown App scanner to get counted"
+                bullets={["Open the App → Login VIP/Guest", "Tap Check In → Tap Scan QR", "This opens the camera INSIDE the app"]}
+                footnote="Important: phone camera scan won’t check you in — use the in-app scanner"
                 qrSrc={venueQrSrc}
                 qrAlt="Venue Check-In QR"
-                footnote="Must scan INSIDE the app (camera scan won’t check you in)"
               />
             </div>
+
+            {/* ROW 4: COUNTS + VIP MOMENT (same height, no clip) */}
+            <div className="grid grid-cols-2 gap-[calc(0.9*var(--u))] min-h-0 items-stretch">
+              <div className="rounded-[calc(2.4*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(2.2*var(--u))] py-[calc(1.7*var(--u))] h-full">
+                <div className="uppercase tracking-[0.34em] text-slate-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                  COUNTS
+                </div>
+                <div className="mt-[calc(0.85*var(--u))] grid grid-cols-3 gap-[calc(0.9*var(--u))]">
+                  <StatMini label="VIP" value={vip} valueClass="text-amber-300" sub="Rewards • perks" />
+                  <StatMini label="GUEST" value={guest} valueClass="text-teal-300" sub="Fast check-in" />
+                  <StatMini label="TOTAL" value={total} valueClass="text-amber-300" sub="Get counted" />
+                </div>
+                <div className="mt-[calc(0.85*var(--u))] text-slate-300" style={{ fontSize: "calc(1.45*var(--u))" }}>
+                  Tip: VIP is where the perks live 🎁
+                </div>
+              </div>
+
+              <div className="rounded-[calc(2.4*var(--u))] border border-slate-800 bg-gradient-to-br from-slate-900/60 via-black/40 to-slate-900/55 px-[calc(2.2*var(--u))] py-[calc(1.7*var(--u))] h-full">
+                <div className="uppercase tracking-[0.34em] text-slate-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                  VIP MOMENT
+                </div>
+
+                <div className="mt-[calc(0.8*var(--u))] font-extrabold leading-[1.05]" style={{ fontSize: "calc(3.05*var(--u))" }}>
+                  VIP gets perks, rewards &amp; surprises.
+                  <span className="text-amber-300"> Guests miss out.</span>
+                </div>
+
+                <div className="mt-[calc(0.75*var(--u))] text-slate-200" style={{ fontSize: "calc(1.85*var(--u))" }}>
+                  Check in tonight to join the count — then upgrade to VIP for the good stuff 🎁
+                </div>
+
+                {/* ✅ tighter spacing so it never clips */}
+                <div className="mt-[calc(0.9*var(--u))] space-y-[calc(0.75*var(--u))]">
+                  <StepRowBig n={1} title="Install the app" desc="Camera scan “I NEED THE APP” QR." />
+                  <StepRowBig n={2} title="Login (Guest is OK)" desc="VIP is where the rewards live." />
+                  <StepRowBig n={3} title="Check In → Scan QR" desc="Use the scanner inside the app to get counted." />
+                </div>
+              </div>
+            </div>
           </div>
+          {/* /grid */}
         </div>
       </div>
     </div>
