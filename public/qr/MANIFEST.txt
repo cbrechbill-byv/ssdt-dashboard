@@ -1,0 +1,29 @@
+entrance:
+  venue payload: SSDTVIP-CHECKIN-ENTRANCE
+  help url: https://ssdtapp.byvenuecreative.com/checkin?loc=entrance
+  venue file: venue-entrance.png
+  help file: help-entrance.png
+
+front-bar:
+  venue payload: SSDTVIP-CHECKIN-FRONTBAR
+  help url: https://ssdtapp.byvenuecreative.com/checkin?loc=front-bar
+  venue file: venue-front-bar.png
+  help file: help-front-bar.png
+
+back-bar:
+  venue payload: SSDTVIP-CHECKIN-BACKBAR
+  help url: https://ssdtapp.byvenuecreative.com/checkin?loc=back-bar
+  venue file: venue-back-bar.png
+  help file: help-back-bar.png
+
+pergola:
+  venue payload: SSDTVIP-CHECKIN-PERGOLA
+  help url: https://ssdtapp.byvenuecreative.com/checkin?loc=pergola
+  venue file: venue-pergola.png
+  help file: help-pergola.png
+
+tables:
+  venue payload: SSDTVIP-CHECKIN-TABLES
+  help url: https://ssdtapp.byvenuecreative.com/checkin?loc=tables
+  venue file: venue-tables.png
+  help file: help-tables.png

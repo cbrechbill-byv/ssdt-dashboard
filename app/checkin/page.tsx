@@ -26,70 +26,109 @@ export default async function CheckinHelpPage(props: { searchParams?: SearchPara
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-slate-950 to-[#0b1220] text-white">
-      <div className="mx-auto w-full max-w-xl px-5 py-8">
+      {/* Subtle background glow */}
+      <div className="pointer-events-none fixed inset-0 opacity-30">
+        <div className="absolute -top-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-amber-400 blur-[110px]" />
+        <div className="absolute bottom-[-120px] right-[-120px] h-80 w-80 rounded-full bg-teal-400 blur-[140px]" />
+      </div>
+
+      <div className="relative mx-auto w-full max-w-md px-4 py-6">
+        {/* Header */}
         <div className="flex items-center gap-4">
-          <div className="relative h-14 w-14">
+          <div className="relative h-16 w-16 shrink-0">
             <Image src="/ssdt-logo.png" alt="Sugarshack Downtown" fill className="object-contain" priority />
           </div>
+
           <div className="min-w-0">
             <p className="text-[11px] uppercase tracking-[0.34em] text-slate-300">Sugarshack Downtown</p>
-            <h1 className="mt-1 text-2xl font-extrabold leading-tight">Check In Tonight 🎉</h1>
-            {loc ? <p className="mt-1 text-sm text-slate-300">Location: <span className="font-semibold text-slate-100">{loc}</span></p> : null}
+            <h1 className="mt-1 text-3xl font-extrabold leading-tight">Check In & Get Counted</h1>
+            <p className="mt-1 text-sm text-slate-300">
+              Guest is fast ✅ <span className="text-amber-300 font-extrabold">VIP unlocks rewards</span> 🎁
+            </p>
+
+            {loc ? (
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-800 bg-black/30 px-3 py-1 text-xs text-slate-200">
+                <span className="text-slate-400">Location</span>
+                <span className="font-extrabold">{loc}</span>
+              </div>
+            ) : null}
           </div>
         </div>
 
-        <div className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/45 p-5">
-          <p className="text-sm text-slate-200 font-semibold">
-            You can check in as <span className="text-teal-300 font-extrabold">Guest</span> (fast) or{" "}
-            <span className="text-amber-300 font-extrabold">VIP</span> (rewards + perks).
+        {/* Primary CTA */}
+        <div className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/45 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
+          <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Step 1</p>
+          <p className="mt-1 text-xl font-extrabold">Install the app (iPhone)</p>
+          <p className="mt-1 text-sm text-slate-300">
+            Tap below to open the App Store and install in seconds.
           </p>
-
-          <div className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-base">
-            <div className="font-black text-amber-300">1</div>
-            <div>
-              <div className="font-extrabold">Install the app (iPhone)</div>
-              <div className="text-slate-300 text-sm">Tap the button below or scan the App Store QR.</div>
-            </div>
-
-            <div className="font-black text-amber-300">2</div>
-            <div>
-              <div className="font-extrabold">Open the app + log in</div>
-              <div className="text-slate-300 text-sm">Guest is fine. VIP unlocks surprises + rewards.</div>
-            </div>
-
-            <div className="font-black text-amber-300">3</div>
-            <div>
-              <div className="font-extrabold">Check In → Scan QR</div>
-              <div className="text-slate-300 text-sm">Use the Scan QR button inside the Check In menu.</div>
-            </div>
-          </div>
 
           <a
             href={APP_STORE_URL}
-            className="mt-5 block w-full rounded-2xl bg-amber-300 px-4 py-3 text-center font-extrabold text-black active:scale-[0.99]"
+            className="mt-4 block w-full rounded-2xl bg-amber-300 px-4 py-3 text-center text-[16px] font-extrabold text-black active:scale-[0.99]"
           >
-            Open in the App Store
+            Open in the App Store →
           </a>
 
-          <div className="mt-4 rounded-2xl border border-slate-800 bg-black/20 p-4">
+          <div className="mt-3 rounded-2xl border border-slate-800 bg-black/25 p-4">
             <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Android</p>
             <p className="mt-1 text-slate-200 font-extrabold">Coming soon.</p>
+          </div>
+        </div>
+
+        {/* Steps (simple + not busy) */}
+        <div className="mt-5 rounded-3xl border border-slate-800 bg-slate-900/35 p-5">
+          <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">After install</p>
+
+          <div className="mt-3 space-y-3">
+            <div className="flex gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-300/15 text-amber-300 font-extrabold">
+                2
+              </div>
+              <div>
+                <p className="font-extrabold text-slate-100">Open the app + log in</p>
+                <p className="text-sm text-slate-300">
+                  Choose <span className="font-extrabold text-teal-300">Guest</span> (fast) or{" "}
+                  <span className="font-extrabold text-amber-300">VIP</span> (rewards + perks).
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-300/15 text-amber-300 font-extrabold">
+                3
+              </div>
+              <div>
+                <p className="font-extrabold text-slate-100">Check In → Scan QR</p>
+                <p className="text-sm text-slate-300">
+                  In the app, tap <span className="font-extrabold">Check In</span>, then{" "}
+                  <span className="font-extrabold">Scan QR</span> on the venue screen.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-800 bg-black/25 p-4">
+            <p className="text-sm text-slate-200 font-extrabold">
+              Important: your phone camera scan does <span className="text-amber-300">not</span> check you in.
+            </p>
             <p className="mt-1 text-sm text-slate-400">
-              For tonight: iPhone app only — staff can still help you check in.
+              You must scan the <span className="font-semibold text-slate-200">Venue QR</span> inside the app.
             </p>
           </div>
         </div>
 
-        <div className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/30 p-5">
+        {/* No phone note */}
+        <div className="mt-5 rounded-3xl border border-slate-800 bg-slate-900/25 p-5">
           <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">No phone?</p>
           <p className="mt-1 text-slate-200 font-extrabold">No problem — you’re still welcome in.</p>
           <p className="mt-1 text-sm text-slate-400">
-            You won’t be denied entry. Staff can help you at the TV screen or with a table card inside.
+            You won’t be denied entry. Staff can help you check in inside the venue.
           </p>
         </div>
 
         <p className="mt-6 text-center text-[11px] text-slate-500">
-          Tip: After install, open the app → Check In → Scan QR.
+          Tip: Install → Open app → Check In → Scan QR
         </p>
       </div>
     </div>

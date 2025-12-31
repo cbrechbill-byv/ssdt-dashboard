@@ -4,7 +4,7 @@
 // ✅ Uses client UI (ui.tsx) for smooth updates + confetti
 // ✅ Gate access by query key
 // ✅ ET date shown as MM/DD/YYYY
-// ✅ Gamified check-in goal (auto-advances, never caps)
+// ✅ Supports location variants via ?loc=entrance|front-bar|back-bar|pergola|tables
 
 import { redirect } from "next/navigation";
 import TvKioskClient from "./ui";
@@ -27,16 +27,26 @@ function formatEtDateMDY(now = new Date()): string {
   return `${mm}/${dd}/${yy}`;
 }
 
-export default async function TvPage(props: { searchParams?: Promise<{ key?: string }> }) {
+function firstParam(v: string | string[] | undefined): string | undefined {
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
+
+type SearchParams = Promise<{ key?: string; loc?: string }>;
+
+export default async function TvPage(props: { searchParams?: SearchParams }) {
   const sp = (await props.searchParams) ?? {};
-  const providedKey = (sp.key ?? "").trim();
+  const providedKey = (firstParam(sp.key) ?? "").trim();
   const kioskKey = (process.env.CHECKIN_BOARD_KEY ?? "").trim();
 
-  // If kiosk key isn't configured, don't expose the page.
   if (!kioskKey) redirect("/login");
-
-  // If key doesn't match, require login
   if (providedKey !== kioskKey) redirect("/login");
+
+  const locRaw = (firstParam(sp.loc) ?? "entrance").trim().toLowerCase();
+
+  // Allowed locations only (prevents bad inputs)
+  const allowed = new Set(["entrance", "front-bar", "back-bar", "pergola", "tables"]);
+  const loc = allowed.has(locRaw) ? locRaw : "entrance";
 
   const etDateMdy = formatEtDateMDY();
 
@@ -45,14 +55,14 @@ export default async function TvPage(props: { searchParams?: Promise<{ key?: str
       kioskKey={kioskKey}
       etDateMdy={etDateMdy}
       etTz={ET_TZ}
-      // 🎯 Gamified goals (auto-advance as we get close)
       goalBase={500}
       goalStep={250}
       goalAdvanceAtPct={90}
-      appStoreLabel="Scan to install the Sugarshack Downtown App"
       showLogoSrc="/ssdt-logo.png"
-      checkinQrSrc="/SSDTVIP-CHECKIN.png"
-      appStoreQrSrc="/appstore-qr.png"
+      // NEW: location-aware QR assets (place in /public/qr/)
+      helpQrSrc={`/qr/help-${loc}.png`}
+      venueQrSrc={`/qr/venue-${loc}.png`}
+      locationLabel={loc}
     />
   );
 }
