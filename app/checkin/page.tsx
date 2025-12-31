@@ -11,15 +11,16 @@ export default function CheckinHelpPage() {
     <main className="min-h-screen bg-black text-white">
       <div className="mx-auto w-full max-w-md px-4 py-6">
         {/* Header */}
-        <header className="flex items-center gap-4">
-          <div className="relative h-14 w-14 shrink-0">
+        <header className="flex items-center gap-5">
+          {/* Bigger logo to match “Get the App” */}
+          <div className="relative h-[140px] w-[140px] shrink-0">
             <Image
               src="/ssdt-logo.png"
               alt="Sugarshack Downtown"
               fill
               className="object-contain"
               priority
-              sizes="56px"
+              sizes="88px"
             />
           </div>
 
