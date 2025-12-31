@@ -25,7 +25,7 @@ export default function CheckinHelpPage() {
           </div>
 
           <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-[0.34em] text-slate-300">Sugarshack Downtown</p>
+            
             <h1 className="mt-1 text-3xl font-extrabold leading-tight">Get the App</h1>
             <p className="mt-1 text-sm text-slate-300">
               Check in tonight. <span className="text-amber-300 font-extrabold">VIP unlocks perks + surprises</span> 🎁
