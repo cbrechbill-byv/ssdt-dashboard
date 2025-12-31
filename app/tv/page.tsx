@@ -5,6 +5,7 @@
 // - Query Supabase directly (no /api fetch hop)
 // - Use SERVER-ONLY service role client so RLS/auth cookies can't block reads
 // - ET-aligned "today" using rewards_scans.scan_date (date) + guest_checkins.day_et (date)
+// - No nulls in recent arrays (uses flatMap) => avoids Vercel TS compile loops
 
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
@@ -71,20 +72,19 @@ export default async function TvPage(props: {
 
   const vipCount = (vipRows ?? []).length;
 
-  // ✅ IMPORTANT: map can return null -> filter with a type guard
-  const vipRecent: RecentItem[] = (vipRows ?? [])
-    .map((r: any) => {
-      const atIso = r?.scanned_at as unknown;
-      if (!isNonEmptyString(atIso)) return null;
-
-      return {
+  // ✅ No nulls: flatMap emits [] or [RecentItem]
+  const vipRecent: RecentItem[] = (vipRows ?? []).flatMap((r: any) => {
+    const atIso = r?.scanned_at as unknown;
+    if (!isNonEmptyString(atIso)) return [];
+    return [
+      {
         atIso,
         label: "VIP" as const,
         source: (r?.source ?? null) as string | null,
         points: (r?.points ?? null) as number | null,
-      };
-    })
-    .filter((x): x is RecentItem => x !== null);
+      },
+    ];
+  });
 
   // --- Guest check-ins today (guest_checkins) ---
   const { data: guestRows, error: guestErr } = await supabase
@@ -99,15 +99,13 @@ export default async function TvPage(props: {
 
   const guestCount = (guestRows ?? []).length;
 
-  const guestRecent: RecentItem[] = (guestRows ?? [])
-    .map((r: any) => {
-      const atIso = (r?.scanned_at ?? r?.checked_in_at) as unknown;
-      if (!isNonEmptyString(atIso)) return null;
-      return { atIso, label: "Guest" as const };
-    })
-    .filter((x): x is RecentItem => x !== null);
+  const guestRecent: RecentItem[] = (guestRows ?? []).flatMap((r: any) => {
+    const atIso = (r?.scanned_at ?? r?.checked_in_at) as unknown;
+    if (!isNonEmptyString(atIso)) return [];
+    return [{ atIso, label: "Guest" as const }];
+  });
 
-  // ✅ after the filter, atIso is guaranteed string
+  // ✅ atIso is always string now
   const recent: RecentItem[] = [...vipRecent, ...guestRecent]
     .sort((a, b) => new Date(b.atIso).getTime() - new Date(a.atIso).getTime())
     .slice(0, 20);
