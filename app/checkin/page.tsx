@@ -1,5 +1,6 @@
 // PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\checkin\page.tsx
 import Image from "next/image";
+import Link from "next/link";
 
 export const dynamic = "force-static";
 
@@ -7,18 +8,19 @@ const APP_STORE_URL = "https://apps.apple.com/us/app/sugarshack-downtown-app/id6
 
 export default function CheckinHelpPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-slate-950 to-[#0b1220] text-white">
-      {/* Subtle background glow */}
-      <div className="pointer-events-none fixed inset-0 opacity-30">
-        <div className="absolute -top-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-amber-400 blur-[110px]" />
-        <div className="absolute bottom-[-120px] right-[-120px] h-80 w-80 rounded-full bg-teal-400 blur-[140px]" />
-      </div>
-
-      <div className="relative mx-auto w-full max-w-md px-4 py-6">
+    <main className="min-h-screen bg-black text-white">
+      <div className="mx-auto w-full max-w-md px-4 py-6">
         {/* Header */}
-        <div className="flex items-center gap-4">
-          <div className="relative h-16 w-16 shrink-0">
-            <Image src="/ssdt-logo.png" alt="Sugarshack Downtown" fill className="object-contain" priority />
+        <header className="flex items-center gap-4">
+          <div className="relative h-14 w-14 shrink-0">
+            <Image
+              src="/ssdt-logo.png"
+              alt="Sugarshack Downtown"
+              fill
+              className="object-contain"
+              priority
+              sizes="56px"
+            />
           </div>
 
           <div className="min-w-0">
@@ -28,14 +30,15 @@ export default function CheckinHelpPage() {
               Check in tonight. <span className="text-amber-300 font-extrabold">VIP unlocks perks + surprises</span> 🎁
             </p>
           </div>
-        </div>
+        </header>
 
         {/* Primary CTA */}
-        <div className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/45 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
+        <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/40 p-5">
           <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Step 1</p>
           <p className="mt-1 text-xl font-extrabold">Install the app (iPhone)</p>
-          <p className="mt-1 text-sm text-slate-300">Tap below to open the App Store and install in seconds.</p>
+          <p className="mt-1 text-sm text-slate-300">Tap below to open the App Store and install.</p>
 
+          {/* Use a plain anchor (most reliable on mobile Safari / in-app browsers) */}
           <a
             href={APP_STORE_URL}
             target="_blank"
@@ -45,19 +48,28 @@ export default function CheckinHelpPage() {
             Open in the App Store →
           </a>
 
-          <div className="mt-3 rounded-2xl border border-slate-800 bg-black/25 p-4">
+          {/* Backup link if an embedded browser blocks target=_blank */}
+          <p className="mt-3 text-xs text-slate-400">
+            If the button doesn’t open,{" "}
+            <Link href={APP_STORE_URL} prefetch={false} className="text-amber-300 underline underline-offset-4">
+              tap here
+            </Link>
+            .
+          </p>
+
+          <div className="mt-4 rounded-2xl border border-slate-800 bg-black/25 p-4">
             <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Android</p>
             <p className="mt-1 text-slate-200 font-extrabold">Coming soon.</p>
           </div>
-        </div>
+        </section>
 
         {/* Steps */}
-        <div className="mt-5 rounded-3xl border border-slate-800 bg-slate-900/35 p-5">
+        <section className="mt-5 rounded-3xl border border-slate-800 bg-slate-900/30 p-5">
           <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Then</p>
 
           <div className="mt-3 space-y-3">
             <div className="flex gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-300/15 text-amber-300 font-extrabold">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-300/15 text-amber-300 font-extrabold">
                 2
               </div>
               <div>
@@ -70,7 +82,7 @@ export default function CheckinHelpPage() {
             </div>
 
             <div className="flex gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-300/15 text-amber-300 font-extrabold">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-300/15 text-amber-300 font-extrabold">
                 3
               </div>
               <div>
@@ -89,17 +101,17 @@ export default function CheckinHelpPage() {
             </p>
             <p className="mt-1 text-sm text-slate-400">You must scan the Venue QR inside the app.</p>
           </div>
-        </div>
+        </section>
 
         {/* No phone note */}
-        <div className="mt-5 rounded-3xl border border-slate-800 bg-slate-900/25 p-5">
+        <section className="mt-5 rounded-3xl border border-slate-800 bg-slate-900/20 p-5">
           <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">No phone?</p>
           <p className="mt-1 text-slate-200 font-extrabold">No problem — you’re still welcome in.</p>
           <p className="mt-1 text-sm text-slate-400">Staff can help you check in inside the venue.</p>
-        </div>
+        </section>
 
         <p className="mt-6 text-center text-[11px] text-slate-500">Tip: Install → Open app → Check In → Scan QR</p>
       </div>
-    </div>
+    </main>
   );
 }
