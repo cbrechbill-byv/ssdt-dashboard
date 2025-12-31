@@ -4,6 +4,7 @@
 // ✅ Uses client UI (ui.tsx) for smooth updates + confetti
 // ✅ Gate access by query key
 // ✅ ET date shown as MM/DD/YYYY
+// ✅ Gamified check-in goal (auto-advances, never caps)
 
 import { redirect } from "next/navigation";
 import TvKioskClient from "./ui";
@@ -44,7 +45,10 @@ export default async function TvPage(props: { searchParams?: Promise<{ key?: str
       kioskKey={kioskKey}
       etDateMdy={etDateMdy}
       etTz={ET_TZ}
-      goalTotal={500}
+      // 🎯 Gamified goals (auto-advance as we get close)
+      goalBase={500}
+      goalStep={250}
+      goalAdvanceAtPct={90}
       appStoreLabel="Scan to install the Sugarshack Downtown App"
       showLogoSrc="/ssdt-logo.png"
       checkinQrSrc="/SSDTVIP-CHECKIN.png"
