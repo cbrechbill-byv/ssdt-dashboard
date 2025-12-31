@@ -94,18 +94,18 @@ function burstConfetti(container: HTMLElement, size: ConfettiSize) {
 
 function StatMini(props: { label: string; value: number; valueClass: string; sub?: string }) {
   return (
-    <div className="rounded-[calc(1.9*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(1.35*var(--u))] py-[calc(1.1*var(--u))]">
-      <div className="uppercase tracking-[0.28em] text-slate-400" style={{ fontSize: "calc(1.02*var(--u))" }}>
+    <div className="rounded-[calc(1.9*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(1.4*var(--u))] py-[calc(1.2*var(--u))]">
+      <div className="uppercase tracking-[0.28em] text-slate-400" style={{ fontSize: "calc(1.05*var(--u))" }}>
         {props.label}
       </div>
       <div
-        className={`mt-[calc(0.3*var(--u))] font-extrabold tabular-nums leading-none ${props.valueClass}`}
-        style={{ fontSize: "calc(5.35*var(--u))" }}
+        className={`mt-[calc(0.35*var(--u))] font-extrabold tabular-nums leading-none ${props.valueClass}`}
+        style={{ fontSize: "calc(5.5*var(--u))" }}
       >
         {props.value}
       </div>
       {props.sub ? (
-        <div className="mt-[calc(0.4*var(--u))] text-slate-300" style={{ fontSize: "calc(1.18*var(--u))" }}>
+        <div className="mt-[calc(0.45*var(--u))] text-slate-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
           {props.sub}
         </div>
       ) : null}
@@ -117,21 +117,21 @@ function StepRowBig(props: { n: number; title: string; desc: string }) {
   return (
     <div className="flex items-start gap-[calc(1.0*var(--u))]">
       <div
-        className="shrink-0 rounded-[calc(1.45*var(--u))] border border-amber-300/35 bg-amber-300/10 text-amber-300 font-extrabold flex items-center justify-center"
+        className="shrink-0 rounded-[calc(1.5*var(--u))] border border-amber-300/35 bg-amber-300/10 text-amber-300 font-extrabold flex items-center justify-center"
         style={{
-          width: "calc(4.7*var(--u))",
-          height: "calc(4.7*var(--u))",
-          fontSize: "calc(2.7*var(--u))",
+          width: "calc(5.0*var(--u))",
+          height: "calc(5.0*var(--u))",
+          fontSize: "calc(2.9*var(--u))",
           lineHeight: 1,
         }}
       >
         {props.n}
       </div>
       <div className="min-w-0">
-        <div className="text-slate-100 font-extrabold" style={{ fontSize: "calc(1.75*var(--u))" }}>
+        <div className="text-slate-100 font-extrabold" style={{ fontSize: "calc(1.85*var(--u))" }}>
           {props.title}
         </div>
-        <div className="text-slate-300" style={{ fontSize: "calc(1.45*var(--u))" }}>
+        <div className="text-slate-300" style={{ fontSize: "calc(1.55*var(--u))" }}>
           {props.desc}
         </div>
       </div>
@@ -154,57 +154,58 @@ function AppLane(props: {
     <div
       className={
         isHave
-          ? "rounded-[calc(2.4*var(--u))] border border-amber-300/35 bg-gradient-to-br from-slate-900/65 via-black/45 to-slate-900/60 px-[calc(2.4*var(--u))] py-[calc(1.9*var(--u))] h-full"
-          : "rounded-[calc(2.4*var(--u))] border border-slate-800 bg-slate-900/55 px-[calc(2.4*var(--u))] py-[calc(1.9*var(--u))] h-full"
+          ? "rounded-[calc(2.4*var(--u))] border border-amber-300/35 bg-gradient-to-br from-slate-900/65 via-black/45 to-slate-900/60 px-[calc(2.3*var(--u))] py-[calc(1.95*var(--u))] h-full overflow-hidden"
+          : "rounded-[calc(2.4*var(--u))] border border-slate-800 bg-slate-900/55 px-[calc(2.3*var(--u))] py-[calc(1.95*var(--u))] h-full overflow-hidden"
       }
     >
       <div className="grid grid-cols-[1.2fr_auto] gap-[calc(1.9*var(--u))] items-center h-full">
         <div className="min-w-0">
           <div
             className={isHave ? "uppercase tracking-[0.34em] text-amber-300" : "uppercase tracking-[0.34em] text-slate-200"}
-            style={{ fontSize: "calc(1.22*var(--u))" }}
+            style={{ fontSize: "calc(1.2*var(--u))" }}
           >
             {props.heading}
           </div>
 
-          <div className="mt-[calc(0.75*var(--u))] font-extrabold leading-[1.02]" style={{ fontSize: "calc(3.75*var(--u))" }}>
+          {/* Slightly reduced so 720p never collides */}
+          <div className="mt-[calc(0.75*var(--u))] font-extrabold leading-[1.03]" style={{ fontSize: "calc(3.55*var(--u))" }}>
             {props.headline}
           </div>
 
-          <div className="mt-[calc(0.6*var(--u))] text-slate-200" style={{ fontSize: "calc(1.9*var(--u))" }}>
+          <div className="mt-[calc(0.6*var(--u))] text-slate-200" style={{ fontSize: "calc(1.85*var(--u))" }}>
             {props.sub}
           </div>
 
           <div className="mt-[calc(0.9*var(--u))] space-y-[calc(0.6*var(--u))]">
             {props.bullets.map((b, i) => (
               <div key={i} className="flex items-start gap-[calc(0.75*var(--u))]">
-                <div className={isHave ? "text-amber-300" : "text-emerald-300"} style={{ fontSize: "calc(1.9*var(--u))", lineHeight: 1 }}>
+                <div className={isHave ? "text-amber-300" : "text-emerald-300"} style={{ fontSize: "calc(1.85*var(--u))", lineHeight: 1 }}>
                   •
                 </div>
-                <div className={isHave ? "text-slate-100" : "text-slate-200"} style={{ fontSize: "calc(1.72*var(--u))" }}>
+                <div className={isHave ? "text-slate-100" : "text-slate-200"} style={{ fontSize: "calc(1.7*var(--u))" }}>
                   {b}
                 </div>
               </div>
             ))}
           </div>
 
-          {/* ✅ Make footnote smaller + tighter so it doesn't bloat height when it wraps */}
+          {/* Footnote slightly smaller to avoid wrapping into Row 4 */}
           <div
             className={
               isHave
-                ? "mt-[calc(1.0*var(--u))] rounded-[calc(1.9*var(--u))] border border-amber-300/25 bg-black/40 px-[calc(1.5*var(--u))] py-[calc(0.9*var(--u))]"
-                : "mt-[calc(1.0*var(--u))] rounded-[calc(1.9*var(--u))] border border-slate-800 bg-black/35 px-[calc(1.5*var(--u))] py-[calc(0.9*var(--u))]"
+                ? "mt-[calc(1.0*var(--u))] rounded-[calc(1.9*var(--u))] border border-amber-300/25 bg-black/40 px-[calc(1.4*var(--u))] py-[calc(1.0*var(--u))]"
+                : "mt-[calc(1.0*var(--u))] rounded-[calc(1.9*var(--u))] border border-slate-800 bg-black/35 px-[calc(1.4*var(--u))] py-[calc(1.0*var(--u))]"
             }
           >
-            <div className="font-extrabold text-slate-100 leading-[1.15]" style={{ fontSize: "calc(1.55*var(--u))" }}>
+            <div className="font-extrabold text-slate-100" style={{ fontSize: "calc(1.55*var(--u))", lineHeight: 1.15 }}>
               {props.footnote}
             </div>
           </div>
         </div>
 
-        <div className="shrink-0 rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.05*var(--u))]">
-          {/* ✅ Slightly smaller QR keeps layout stable across TVs */}
-          <div className="relative" style={{ width: "calc(16.6*var(--u))", height: "calc(16.6*var(--u))" }}>
+        <div className="shrink-0 rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.1*var(--u))]">
+          {/* SAME SIZE QR FOR BOTH (slightly reduced so 720p fits cleanly) */}
+          <div className="relative" style={{ width: "calc(17.0*var(--u))", height: "calc(17.0*var(--u))" }}>
             <Image src={props.qrSrc} alt={props.qrAlt} fill className="object-contain" priority={isHave} />
           </div>
         </div>
@@ -227,7 +228,8 @@ export default function TvKioskClient(props: {
   venueQrSrc: string;
   locationLabel: string;
 }) {
-  const { kioskKey, etDateMdy, etTz, goalBase, goalStep, goalAdvanceAtPct, showLogoSrc, helpQrSrc, venueQrSrc, locationLabel } = props;
+  const { kioskKey, etDateMdy, etTz, goalBase, goalStep, goalAdvanceAtPct, showLogoSrc, helpQrSrc, venueQrSrc, locationLabel } =
+    props;
 
   const [data, setData] = useState<TvApiResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -306,12 +308,10 @@ export default function TvKioskClient(props: {
   const guest = data?.guest ?? 0;
   const asOfIso = data?.asOfIso ?? "";
 
-  const dynamicGoal = useMemo(() => computeDynamicGoal({ total, base: goalBase, step: goalStep, advanceAtPct: goalAdvanceAtPct }), [
-    total,
-    goalBase,
-    goalStep,
-    goalAdvanceAtPct,
-  ]);
+  const dynamicGoal = useMemo(
+    () => computeDynamicGoal({ total, base: goalBase, step: goalStep, advanceAtPct: goalAdvanceAtPct }),
+    [total, goalBase, goalStep, goalAdvanceAtPct]
+  );
 
   const goalPct = useMemo(() => clampPct(dynamicGoal > 0 ? (total / dynamicGoal) * 100 : 0), [total, dynamicGoal]);
   const remainingToGoal = Math.max(0, dynamicGoal - total);
@@ -320,15 +320,15 @@ export default function TvKioskClient(props: {
   return (
     <div className="fixed inset-0 overflow-hidden text-white">
       <style jsx global>{`
-        :root { --u: min(1vw, 1vh); }
+        /* Slightly smaller unit so 720p + TV browser chrome never collides */
+        :root { --u: calc(min(1vw, 1vh) * 0.92); }
 
-        /* Slightly tighter safe padding to prevent bottom clipping */
         .tvSafe {
           padding:
-            calc(1.5 * var(--u) + env(safe-area-inset-top))
-            calc(1.9 * var(--u) + env(safe-area-inset-right))
-            calc(1.5 * var(--u) + env(safe-area-inset-bottom))
-            calc(1.9 * var(--u) + env(safe-area-inset-left));
+            calc(2.1 * var(--u) + env(safe-area-inset-top))
+            calc(2.6 * var(--u) + env(safe-area-inset-right))
+            calc(2.1 * var(--u) + env(safe-area-inset-bottom))
+            calc(2.6 * var(--u) + env(safe-area-inset-left));
         }
 
         @keyframes ssdtLevelUpIn {
@@ -377,17 +377,17 @@ export default function TvKioskClient(props: {
 
       <div className="relative h-[100svh] w-full tvSafe">
         <div className="mx-auto h-full w-full max-w-[1900px]">
-          {/* ✅ More separation between Row 3 and Row 4, plus more height for Row 4 */}
-          <div className="grid h-full grid-rows-[auto_auto_minmax(0,1.02fr)_minmax(0,0.98fr)] gap-[calc(1.15*var(--u))]">
+          {/* More spacing between Row 3 and Row 4 + slightly more room for Row 4 */}
+          <div className="grid h-full grid-rows-[auto_auto_minmax(0,1.08fr)_minmax(0,0.92fr)] gap-[calc(1.35*var(--u))]">
             {/* HEADER */}
             <div className="flex items-start justify-between gap-[calc(2.0*var(--u))]">
               <div className="flex items-start gap-[calc(2.2*var(--u))] min-w-0">
                 <div
                   className="relative shrink-0"
                   style={{
-                    width: "calc(18.0*var(--u))",
-                    height: "calc(18.0*var(--u))",
-                    minWidth: "calc(18.0*var(--u))",
+                    width: "calc(15.0*var(--u))",
+                    height: "calc(15.0*var(--u))",
+                    minWidth: "calc(15.0*var(--u))",
                   }}
                 >
                   <Image src={showLogoSrc} alt="Sugarshack Downtown" fill className="object-contain" priority />
@@ -401,7 +401,7 @@ export default function TvKioskClient(props: {
                     </div>
                   </div>
 
-                  <div className="mt-[calc(0.85*var(--u))] flex flex-wrap items-center gap-[calc(0.9*var(--u))]">
+                  <div className="mt-[calc(0.9*var(--u))] flex flex-wrap items-center gap-[calc(0.9*var(--u))]">
                     <div
                       className="rounded-[calc(1.6*var(--u))] border border-slate-800 bg-black/25 px-[calc(1.2*var(--u))] py-[calc(0.7*var(--u))]"
                       style={{ fontSize: "calc(1.7*var(--u))" }}
@@ -412,7 +412,7 @@ export default function TvKioskClient(props: {
                     </div>
                   </div>
 
-                  <div className="mt-[calc(0.75*var(--u))] flex flex-wrap items-center gap-x-[calc(0.9*var(--u))] gap-y-[calc(0.5*var(--u))] text-slate-400">
+                  <div className="mt-[calc(0.8*var(--u))] flex flex-wrap items-center gap-x-[calc(0.9*var(--u))] gap-y-[calc(0.5*var(--u))] text-slate-400">
                     <span style={{ fontSize: "calc(1.15*var(--u))" }}>
                       ET: <span className="font-semibold text-slate-200">{etDateMdy}</span>
                     </span>
@@ -447,7 +447,7 @@ export default function TvKioskClient(props: {
             </div>
 
             {/* TONIGHT'S GOAL */}
-            <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/50 px-[calc(2.2*var(--u))] py-[calc(1.55*var(--u))]">
+            <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/50 px-[calc(2.2*var(--u))] py-[calc(1.7*var(--u))]">
               <div className="flex items-end justify-between gap-[calc(1.2*var(--u))]">
                 <div>
                   <div className="text-slate-200 font-extrabold" style={{ fontSize: "calc(2.4*var(--u))" }}>
@@ -463,19 +463,23 @@ export default function TvKioskClient(props: {
                 </div>
               </div>
 
-              <div className="mt-[calc(0.95*var(--u))] h-[calc(2.05*var(--u))] w-full rounded-full bg-slate-800 overflow-hidden">
+              <div className="mt-[calc(1.0*var(--u))] h-[calc(2.05*var(--u))] w-full rounded-full bg-slate-800 overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 transition-all" style={{ width: `${goalPct}%` }} />
               </div>
             </div>
 
             {/* ROW 3: NEED/HAVE APP */}
-            <div className="grid grid-cols-2 gap-[calc(1.05*var(--u))] min-h-0 items-stretch">
+            <div className="grid grid-cols-2 gap-[calc(1.35*var(--u))] min-h-0 items-stretch">
               <AppLane
                 tone="need"
                 heading="I NEED THE APP"
                 headline="Scan this with your CAMERA"
                 sub="Install the app + learn how to check in"
-                bullets={["This takes you to the quick install + steps page", "iPhone app now • Android coming soon", "Then open the app to check in"]}
+                bullets={[
+                  "This takes you to the quick install + steps page",
+                  "iPhone app now • Android coming soon",
+                  "Then open the app to check in",
+                ]}
                 footnote="Camera scan = install/help (does NOT check you in yet)"
                 qrSrc={helpQrSrc}
                 qrAlt="Get the App QR"
@@ -486,50 +490,48 @@ export default function TvKioskClient(props: {
                 heading="I HAVE THE APP"
                 headline="OPEN THE APP + SCAN (IN THE APP)"
                 sub="Use the Sugarshack Downtown App scanner to get counted"
-                bullets={["Open the App → Login VIP/Guest", "Tap Check In → Tap Scan QR", "This opens the camera INSIDE the app"]}
+                bullets={[
+                  "Open the App → Login VIP/Guest",
+                  "Tap Check In → Tap Scan QR",
+                  "This opens the camera INSIDE the app",
+                ]}
                 footnote="Important: phone camera scan won’t check you in — use the in-app scanner"
                 qrSrc={venueQrSrc}
                 qrAlt="Venue Check-In QR"
               />
             </div>
 
-            {/* ROW 4: COUNTS + VIP MOMENT */}
-            <div className="grid grid-cols-2 gap-[calc(1.05*var(--u))] min-h-0 items-stretch">
-              {/* COUNTS BOX (vertically centered) */}
-              <div className="rounded-[calc(2.4*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(2.2*var(--u))] py-[calc(1.6*var(--u))] h-full flex flex-col">
+            {/* ROW 4: COUNTS + VIP MOMENT (same height, guaranteed no overlap) */}
+            <div className="grid grid-cols-2 gap-[calc(1.35*var(--u))] min-h-0 items-stretch">
+              <div className="rounded-[calc(2.4*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(2.0*var(--u))] py-[calc(1.8*var(--u))] h-full overflow-hidden">
                 <div className="uppercase tracking-[0.34em] text-slate-300" style={{ fontSize: "calc(1.15*var(--u))" }}>
                   COUNTS
                 </div>
-
-                <div className="flex-1 flex flex-col justify-center">
-                  <div className="mt-[calc(0.75*var(--u))] grid grid-cols-3 gap-[calc(0.85*var(--u))]">
-                    <StatMini label="VIP" value={vip} valueClass="text-amber-300" sub="Rewards • perks" />
-                    <StatMini label="GUEST" value={guest} valueClass="text-teal-300" sub="Fast check-in" />
-                    <StatMini label="TOTAL" value={total} valueClass="text-amber-300" sub="Get counted" />
-                  </div>
-
-                  <div className="mt-[calc(0.8*var(--u))] text-slate-300" style={{ fontSize: "calc(1.38*var(--u))" }}>
-                    Tip: VIP is where the perks live 🎁
-                  </div>
+                <div className="mt-[calc(0.9*var(--u))] grid grid-cols-3 gap-[calc(0.9*var(--u))]">
+                  <StatMini label="VIP" value={vip} valueClass="text-amber-300" sub="Rewards • perks" />
+                  <StatMini label="GUEST" value={guest} valueClass="text-teal-300" sub="Fast check-in" />
+                  <StatMini label="TOTAL" value={total} valueClass="text-amber-300" sub="Get counted" />
+                </div>
+                <div className="mt-[calc(0.9*var(--u))] text-slate-300" style={{ fontSize: "calc(1.35*var(--u))" }}>
+                  Tip: VIP is where the perks live 🎁
                 </div>
               </div>
 
-              {/* VIP MOMENT BOX (tightened so it never clips) */}
-              <div className="rounded-[calc(2.4*var(--u))] border border-slate-800 bg-gradient-to-br from-slate-900/60 via-black/40 to-slate-900/55 px-[calc(2.2*var(--u))] py-[calc(1.6*var(--u))] h-full">
+              <div className="rounded-[calc(2.4*var(--u))] border border-slate-800 bg-gradient-to-br from-slate-900/60 via-black/40 to-slate-900/55 px-[calc(2.0*var(--u))] py-[calc(1.8*var(--u))] h-full overflow-hidden">
                 <div className="uppercase tracking-[0.34em] text-slate-300" style={{ fontSize: "calc(1.15*var(--u))" }}>
                   VIP MOMENT
                 </div>
 
-                <div className="mt-[calc(0.7*var(--u))] font-extrabold leading-[1.03]" style={{ fontSize: "calc(2.75*var(--u))" }}>
+                <div className="mt-[calc(0.85*var(--u))] font-extrabold leading-[1.05]" style={{ fontSize: "calc(3.05*var(--u))" }}>
                   VIP gets perks, rewards &amp; surprises.
                   <span className="text-amber-300"> Guests miss out.</span>
                 </div>
 
-                <div className="mt-[calc(0.6*var(--u))] text-slate-200 leading-[1.15]" style={{ fontSize: "calc(1.7*var(--u))" }}>
+                <div className="mt-[calc(0.75*var(--u))] text-slate-200" style={{ fontSize: "calc(1.75*var(--u))" }}>
                   Check in tonight to join the count — then upgrade to VIP for the good stuff 🎁
                 </div>
 
-                <div className="mt-[calc(0.8*var(--u))] space-y-[calc(0.6*var(--u))]">
+                <div className="mt-[calc(0.95*var(--u))] space-y-[calc(0.9*var(--u))]">
                   <StepRowBig n={1} title="Install the app" desc="Camera scan “I NEED THE APP” QR." />
                   <StepRowBig n={2} title="Login (Guest is OK)" desc="VIP is where the rewards live." />
                   <StepRowBig n={3} title="Check In → Scan QR" desc="Use the scanner inside the app to get counted." />
