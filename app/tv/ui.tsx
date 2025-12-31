@@ -52,16 +52,16 @@ type ConfettiSize = "normal" | "big";
 
 function burstConfetti(container: HTMLElement, size: ConfettiSize) {
   const colors = ["#FBBF24", "#34D399", "#22D3EE", "#A78BFA", "#FB7185", "#FFFFFF"];
-  const count = size === "big" ? 64 : 22;
+  const count = size === "big" ? 70 : 26;
   const baseTop = size === "big" ? 6 : 10;
-  const baseDuration = size === "big" ? 1200 : 850;
+  const baseDuration = size === "big" ? 1350 : 900;
 
   for (let i = 0; i < count; i++) {
     const p = document.createElement("div");
-    const px = size === "big" ? 8 + Math.random() * 10 : 6 + Math.random() * 8;
-    const left = 5 + Math.random() * 90;
-    const delay = Math.random() * (size === "big" ? 120 : 60);
-    const duration = baseDuration + Math.random() * (size === "big" ? 900 : 650);
+    const px = size === "big" ? 8 + Math.random() * 12 : 6 + Math.random() * 8;
+    const left = 4 + Math.random() * 92;
+    const delay = Math.random() * (size === "big" ? 140 : 70);
+    const duration = baseDuration + Math.random() * (size === "big" ? 950 : 650);
     const rotate = Math.random() * 360;
 
     p.style.position = "absolute";
@@ -74,21 +74,21 @@ function burstConfetti(container: HTMLElement, size: ConfettiSize) {
     p.style.transform = `rotate(${rotate}deg)`;
     p.style.opacity = "0.98";
     p.style.pointerEvents = "none";
-    p.style.filter = "drop-shadow(0 12px 22px rgba(0,0,0,0.45))";
+    p.style.filter = "drop-shadow(0 14px 26px rgba(0,0,0,0.55))";
 
-    const drift = (Math.random() - 0.5) * (size === "big" ? 420 : 220);
-    const fall = (size === "big" ? 420 : 240) + Math.random() * (size === "big" ? 380 : 240);
+    const drift = (Math.random() - 0.5) * (size === "big" ? 520 : 260);
+    const fall = (size === "big" ? 520 : 260) + Math.random() * (size === "big" ? 420 : 260);
 
     p.animate(
       [
         { transform: `translate(0px, 0px) rotate(${rotate}deg)`, opacity: 1 },
-        { transform: `translate(${drift}px, ${fall}px) rotate(${rotate + 300}deg)`, opacity: 0 },
+        { transform: `translate(${drift}px, ${fall}px) rotate(${rotate + 320}deg)`, opacity: 0 },
       ],
       { duration, delay, easing: "cubic-bezier(.2,.8,.2,1)", fill: "forwards" }
     );
 
     container.appendChild(p);
-    window.setTimeout(() => p.remove(), duration + delay + 30);
+    window.setTimeout(() => p.remove(), duration + delay + 50);
   }
 }
 
@@ -96,44 +96,6 @@ function prettyLoc(loc: string) {
   const s = loc.replace(/[-_]/g, " ").trim();
   if (!s) return "Entrance";
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-/**
- * Auto-fit scaler (FIXED):
- * - Renders a fixed 1920x1080 stage
- * - Scales DOWN on small viewports, scales UP on large (4K) viewports
- * - Safe padding protects against TV overscan / kiosk browser chrome
- */
-function useStageScale(stageW: number, stageH: number, safePaddingPx: number) {
-  const [scale, setScale] = useState(1);
-
-  useEffect(() => {
-    const compute = () => {
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-
-      const availW = Math.max(1, vw - safePaddingPx * 2);
-      const availH = Math.max(1, vh - safePaddingPx * 2);
-
-      // ✅ Allow upscale (this is the fix)
-      const s = Math.min(availW / stageW, availH / stageH);
-
-      // Guard against bizarre values
-      const safe = Number.isFinite(s) && s > 0 ? s : 1;
-
-      setScale(safe);
-    };
-
-    compute();
-    window.addEventListener("resize", compute);
-    window.addEventListener("orientationchange", compute);
-    return () => {
-      window.removeEventListener("resize", compute);
-      window.removeEventListener("orientationchange", compute);
-    };
-  }, [stageW, stageH, safePaddingPx]);
-
-  return scale;
 }
 
 export default function TvKioskClient(props: {
@@ -181,7 +143,12 @@ export default function TvKioskClient(props: {
       const json = (await res.json()) as TvApiResponse;
 
       const nextTotal = json?.total ?? 0;
-      const nextGoal = computeDynamicGoal({ total: nextTotal, base: goalBase, step: goalStep, advanceAtPct: goalAdvanceAtPct });
+      const nextGoal = computeDynamicGoal({
+        total: nextTotal,
+        base: goalBase,
+        step: goalStep,
+        advanceAtPct: goalAdvanceAtPct,
+      });
 
       if (!didInitRef.current) {
         didInitRef.current = true;
@@ -240,15 +207,21 @@ export default function TvKioskClient(props: {
 
   const locLabel = prettyLoc(locationLabel);
 
-  const STAGE_W = 1920;
-  const STAGE_H = 1080;
-
-  // If a TV is cropping edges, increase to 40.
-  const scale = useStageScale(STAGE_W, STAGE_H, 28);
-
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-black via-slate-950 to-[#0b1220] text-white overflow-hidden">
+    <div className="fixed inset-0 overflow-hidden text-white">
       <style jsx global>{`
+        /* One responsive unit that works for 1080p + 4K + desktops */
+        :root { --u: min(1vw, 1vh); }
+
+        /* Overscan-safe padding */
+        .tvSafe {
+          padding:
+            calc(2.4 * var(--u) + env(safe-area-inset-top))
+            calc(2.8 * var(--u) + env(safe-area-inset-right))
+            calc(2.4 * var(--u) + env(safe-area-inset-bottom))
+            calc(2.8 * var(--u) + env(safe-area-inset-left));
+        }
+
         @keyframes ssdtLevelUpIn {
           0% { transform: translateY(10px) scale(0.98); opacity: 0; }
           25% { transform: translateY(0px) scale(1.02); opacity: 1; }
@@ -257,10 +230,18 @@ export default function TvKioskClient(props: {
         }
         @keyframes ssdtGlowPulse {
           0% { filter: drop-shadow(0 0 0 rgba(251,191,36,0.0)); }
-          50% { filter: drop-shadow(0 0 30px rgba(251,191,36,0.6)); }
+          50% { filter: drop-shadow(0 0 34px rgba(251,191,36,0.65)); }
           100% { filter: drop-shadow(0 0 0 rgba(251,191,36,0.0)); }
         }
       `}</style>
+
+      {/* Background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-black via-slate-950 to-[#0b1220]" />
+      <div className="pointer-events-none absolute inset-0 opacity-35">
+        <div className="absolute -top-[12vh] left-[12vw] h-[32vh] w-[32vh] rounded-full bg-amber-400 blur-[120px]" />
+        <div className="absolute bottom-[-12vh] right-[-10vw] h-[34vh] w-[34vh] rounded-full bg-teal-400 blur-[140px]" />
+        <div className="absolute top-[30vh] right-[30vw] h-[26vh] w-[26vh] rounded-full bg-fuchsia-400 blur-[140px] opacity-50" />
+      </div>
 
       <div ref={confettiRef} className="pointer-events-none fixed inset-0 z-50" />
 
@@ -268,13 +249,17 @@ export default function TvKioskClient(props: {
         <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/35 backdrop-blur-[2px]" />
           <div
-            className="relative rounded-[28px] border border-amber-300/35 bg-gradient-to-br from-slate-950/95 via-black/85 to-slate-950/95 px-12 py-10 text-center"
+            className="relative rounded-[calc(2.2*var(--u))] border border-amber-300/40 bg-gradient-to-br from-slate-950/95 via-black/85 to-slate-950/95 px-[calc(4*var(--u))] py-[calc(3.2*var(--u))] text-center"
             style={{ animation: "ssdtLevelUpIn 1350ms cubic-bezier(.2,.8,.2,1) forwards" }}
           >
             <div style={{ animation: "ssdtGlowPulse 700ms ease-in-out 2" }}>
-              <p className="text-[14px] uppercase tracking-[0.34em] text-slate-300">Sugarshack Downtown</p>
-              <p className="mt-3 font-extrabold text-[84px] leading-none text-amber-300">LEVEL UP!</p>
-              <p className="mt-3 text-slate-200 font-extrabold text-[28px]">
+              <p className="uppercase tracking-[0.34em] text-slate-300" style={{ fontSize: "calc(1.1*var(--u))" }}>
+                Sugarshack Downtown
+              </p>
+              <p className="mt-[calc(1*var(--u))] font-extrabold leading-none text-amber-300" style={{ fontSize: "calc(7.4*var(--u))" }}>
+                LEVEL UP!
+              </p>
+              <p className="mt-[calc(0.8*var(--u))] text-slate-200 font-extrabold" style={{ fontSize: "calc(2.2*var(--u))" }}>
                 New Goal: <span className="text-emerald-300 tabular-nums">{levelUpGoal ?? dynamicGoal}</span>
               </p>
             </div>
@@ -282,68 +267,99 @@ export default function TvKioskClient(props: {
         </div>
       )}
 
-      {/* STAGE WRAPPER (centered + scaled) */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div
-          className="origin-center"
-          style={{
-            width: `${STAGE_W}px`,
-            height: `${STAGE_H}px`,
-            transform: `scale(${scale})`,
-          }}
-        >
-          {/* STAGE CONTENT */}
-          <div className="h-full w-full p-8">
+      {/* Main layout: designed to NEVER scroll/cut off */}
+      <div className="relative h-[100svh] w-full tvSafe">
+        <div className="mx-auto h-full w-full max-w-[1700px]">
+          {/* GRID: header + goal + content */}
+          <div className="grid h-full grid-rows-[auto_auto_1fr] gap-[calc(1.4*var(--u))]">
             {/* HEADER */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-6 min-w-0">
-                <div className="relative h-[120px] w-[120px] shrink-0">
+            <div className="flex items-start justify-between gap-[calc(1.6*var(--u))]">
+              <div className="flex items-start gap-[calc(1.6*var(--u))] min-w-0">
+                <div
+                  className="relative shrink-0"
+                  style={{
+                    width: "calc(7.2*var(--u))",
+                    height: "calc(7.2*var(--u))",
+                    minWidth: "calc(7.2*var(--u))",
+                  }}
+                >
                   <Image src={showLogoSrc} alt="Sugarshack Downtown" fill className="object-contain" priority />
                 </div>
 
                 <div className="min-w-0">
-                  <p className="text-[12px] uppercase tracking-[0.34em] text-slate-300">Sugarshack Downtown</p>
-                  <h1 className="mt-2 text-[56px] font-extrabold leading-[1.0]">CHECK IN &amp; GET COUNTED</h1>
-                  <p className="mt-2 text-[20px] text-slate-200">
-                    Guest is fast. <span className="text-amber-300 font-extrabold">VIP unlocks rewards</span>.
+                  <p className="uppercase tracking-[0.34em] text-slate-300" style={{ fontSize: "calc(1.1*var(--u))" }}>
+                    Sugarshack Downtown
                   </p>
 
-                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-400">
-                    <span>
+                  {/* Required: split title across two lines */}
+                  <div className="mt-[calc(0.6*var(--u))] leading-[0.92] font-extrabold">
+                    <div style={{ fontSize: "calc(5.4*var(--u))" }}>CHECK IN</div>
+                    <div style={{ fontSize: "calc(4.6*var(--u))" }}>GET COUNTED</div>
+                  </div>
+
+                  <p className="mt-[calc(0.8*var(--u))] text-slate-200" style={{ fontSize: "calc(1.55*var(--u))" }}>
+                    Guest is fast.{" "}
+                    <span className="text-amber-300 font-extrabold">VIP unlocks rewards</span> — don’t miss out.
+                  </p>
+
+                  <div className="mt-[calc(0.8*var(--u))] flex flex-wrap items-center gap-x-[calc(0.9*var(--u))] gap-y-[calc(0.5*var(--u))] text-slate-400">
+                    <span style={{ fontSize: "calc(1.05*var(--u))" }}>
                       ET: <span className="font-semibold text-slate-200">{etDateMdy}</span>
                     </span>
                     <span className="opacity-50">•</span>
-                    <span>
-                      As of{" "}
-                      <span className="text-slate-200 font-semibold">{asOfIso ? formatTime(asOfIso, etTz) : "—"}</span>
+                    <span style={{ fontSize: "calc(1.05*var(--u))" }}>
+                      As of <span className="font-semibold text-slate-200">{asOfIso ? formatTime(asOfIso, etTz) : "—"}</span>
                     </span>
                     <span className="opacity-50">•</span>
-                    <span className="text-slate-300 font-semibold">{locLabel}</span>
+                    <span className="text-slate-200 font-semibold" style={{ fontSize: "calc(1.05*var(--u))" }}>
+                      {locLabel}
+                    </span>
                     <span className="opacity-50">•</span>
-                    <span>Auto-updates 5s</span>
+                    <span style={{ fontSize: "calc(1.05*var(--u))" }}>Auto-updates 5s</span>
                   </div>
 
-                  {err && <p className="mt-2 text-[14px] text-rose-300">Data loading issue: {err}</p>}
+                  {err && (
+                    <p className="mt-[calc(0.7*var(--u))] text-rose-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                      Data loading issue: {err}
+                    </p>
+                  )}
                 </div>
               </div>
 
-              <div className="text-right">
-                <p className="text-[14px] uppercase tracking-[0.34em] text-slate-400">TOTAL TODAY</p>
-                <p className="mt-2 font-extrabold tabular-nums text-amber-300 leading-none text-[220px]">{total}</p>
+              {/* TOTAL TODAY (big + exciting) */}
+              <div className="shrink-0 text-right">
+                <p className="uppercase tracking-[0.34em] text-slate-400" style={{ fontSize: "calc(1.1*var(--u))" }}>
+                  TOTAL TODAY
+                </p>
+                <div
+                  className="font-extrabold tabular-nums text-amber-300 leading-none"
+                  style={{ fontSize: "calc(10.4*var(--u))" }}
+                >
+                  {total}
+                </div>
               </div>
             </div>
 
-            {/* GOAL */}
-            <div className="mt-6 rounded-[28px] border border-slate-800 bg-slate-900/40 px-8 py-7">
-              <div className="flex items-center justify-between">
-                <p className="text-[26px] text-slate-200 font-extrabold">
-                  Next goal: <span className="text-emerald-300 tabular-nums">{dynamicGoal}</span>{" "}
-                  <span className="text-slate-400 font-semibold">({remainingToGoal} to go)</span>
-                </p>
-                <p className="text-[26px] text-slate-200 font-extrabold tabular-nums">{goalPct.toFixed(0)}%</p>
+            {/* GOAL BAR (bigger + more hype) */}
+            <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(2.2*var(--u))] py-[calc(1.8*var(--u))]">
+              <div className="flex items-end justify-between gap-[calc(1.2*var(--u))]">
+                <div>
+                  <div className="text-slate-200 font-extrabold" style={{ fontSize: "calc(2.2*var(--u))" }}>
+                    Tonight’s Goal:{" "}
+                    <span className="text-emerald-300 tabular-nums">{dynamicGoal}</span>{" "}
+                    <span className="text-slate-400 font-semibold">({remainingToGoal} to go)</span>
+                  </div>
+                  <div className="text-slate-400 font-semibold" style={{ fontSize: "calc(1.25*var(--u))" }}>
+                    Every check-in counts — help VIP win 🔥
+                  </div>
+                </div>
+
+                <div className="text-slate-200 font-extrabold tabular-nums" style={{ fontSize: "calc(2.2*var(--u))" }}>
+                  {goalPct.toFixed(0)}%
+                </div>
               </div>
 
-              <div className="mt-5 h-[26px] w-full rounded-full bg-slate-800 overflow-hidden">
+              <div className="mt-[calc(1.2*var(--u))] h-[calc(1.9*var(--u))] w-full rounded-full bg-slate-800 overflow-hidden">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 transition-all"
                   style={{ width: `${goalPct}%` }}
@@ -351,75 +367,158 @@ export default function TvKioskClient(props: {
               </div>
             </div>
 
-            {/* COUNTS */}
-            <div className="mt-6 grid grid-cols-3 gap-6">
-              <div className="rounded-[28px] border border-slate-800 bg-slate-900/40 px-8 py-7">
-                <p className="text-[14px] uppercase tracking-[0.28em] text-slate-400">VIP</p>
-                <p className="mt-3 text-[120px] font-extrabold tabular-nums text-amber-300 leading-none">{vip}</p>
-                <p className="mt-2 text-[16px] text-slate-300">Rewards • perks • surprises</p>
-              </div>
-
-              <div className="rounded-[28px] border border-slate-800 bg-slate-900/40 px-8 py-7">
-                <p className="text-[14px] uppercase tracking-[0.28em] text-slate-400">GUEST</p>
-                <p className="mt-3 text-[120px] font-extrabold tabular-nums text-teal-300 leading-none">{guest}</p>
-                <p className="mt-2 text-[16px] text-slate-300">Fast check-in (VIP later)</p>
-              </div>
-
-              <div className="rounded-[28px] border border-slate-800 bg-slate-900/40 px-8 py-7">
-                <p className="text-[14px] uppercase tracking-[0.28em] text-slate-400">TOTAL</p>
-                <p className="mt-3 text-[120px] font-extrabold tabular-nums text-amber-300 leading-none">{total}</p>
-                <p className="mt-2 text-[16px] text-slate-300">Get counted tonight</p>
-              </div>
-            </div>
-
-            {/* BOTTOM: TWO LANES */}
-            <div className="mt-6 grid grid-cols-2 gap-6">
-              <div className="rounded-[28px] border border-slate-800 bg-slate-900/45 px-8 py-7">
-                <p className="text-[14px] uppercase tracking-[0.34em] text-slate-400">STILL NEED THE APP?</p>
-                <p className="mt-3 text-[40px] font-extrabold leading-tight">Don’t miss out — get VIP rewards 🎁</p>
-                <p className="mt-2 text-[18px] text-slate-300">
-                  Scan with your camera to install + see steps. iPhone now • Android soon.
-                </p>
-
-                <div className="mt-6 flex items-center gap-6">
-                  <div className="rounded-[28px] bg-white p-5">
-                    <div className="relative h-[240px] w-[240px]">
-                      <Image src={helpQrSrc} alt="Help / Install QR" fill className="object-contain" />
+            {/* CONTENT */}
+            <div className="grid grid-cols-[0.9fr_1.1fr] gap-[calc(1.4*var(--u))] min-h-0">
+              {/* LEFT: counts + “missing out” message */}
+              <div className="min-h-0 grid grid-rows-[auto_1fr] gap-[calc(1.4*var(--u))]">
+                {/* VIP/GUEST/TOTAL */}
+                <div className="grid grid-cols-3 gap-[calc(1.2*var(--u))]">
+                  <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(1.8*var(--u))] py-[calc(1.6*var(--u))]">
+                    <p className="uppercase tracking-[0.28em] text-slate-400" style={{ fontSize: "calc(1.1*var(--u))" }}>
+                      VIP
+                    </p>
+                    <div className="mt-[calc(0.7*var(--u))] font-extrabold tabular-nums text-amber-300 leading-none" style={{ fontSize: "calc(6.2*var(--u))" }}>
+                      {vip}
                     </div>
+                    <p className="mt-[calc(0.6*var(--u))] text-slate-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                      Rewards + perks
+                    </p>
                   </div>
 
-                  <div className="min-w-0">
-                    <p className="text-[22px] font-extrabold text-slate-200">Camera scan → Get started</p>
-                    <p className="mt-2 text-[16px] text-slate-400">
-                      Install → Open app → Login (Guest OK) → Check In → Scan Venue QR
+                  <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(1.8*var(--u))] py-[calc(1.6*var(--u))]">
+                    <p className="uppercase tracking-[0.28em] text-slate-400" style={{ fontSize: "calc(1.1*var(--u))" }}>
+                      GUEST
+                    </p>
+                    <div className="mt-[calc(0.7*var(--u))] font-extrabold tabular-nums text-teal-300 leading-none" style={{ fontSize: "calc(6.2*var(--u))" }}>
+                      {guest}
+                    </div>
+                    <p className="mt-[calc(0.6*var(--u))] text-slate-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                      Fast check-in
+                    </p>
+                  </div>
+
+                  <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(1.8*var(--u))] py-[calc(1.6*var(--u))]">
+                    <p className="uppercase tracking-[0.28em] text-slate-400" style={{ fontSize: "calc(1.1*var(--u))" }}>
+                      TOTAL
+                    </p>
+                    <div className="mt-[calc(0.7*var(--u))] font-extrabold tabular-nums text-amber-300 leading-none" style={{ fontSize: "calc(6.2*var(--u))" }}>
+                      {total}
+                    </div>
+                    <p className="mt-[calc(0.6*var(--u))] text-slate-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                      Get counted
                     </p>
                   </div>
                 </div>
+
+                {/* Message card */}
+                <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-gradient-to-br from-slate-900/55 via-black/30 to-slate-900/45 px-[calc(2.2*var(--u))] py-[calc(2.0*var(--u))] min-h-0">
+                  <p className="uppercase tracking-[0.34em] text-slate-400" style={{ fontSize: "calc(1.05*var(--u))" }}>
+                    VIP MOMENT
+                  </p>
+                  <div className="mt-[calc(0.8*var(--u))] font-extrabold leading-[1.05]" style={{ fontSize: "calc(3.0*var(--u))" }}>
+                    VIP gets perks, rewards & surprises.
+                    <span className="text-amber-300"> Guests miss out.</span>
+                  </div>
+                  <p className="mt-[calc(0.9*var(--u))] text-slate-200" style={{ fontSize: "calc(1.5*var(--u))" }}>
+                    Check in tonight to join the count — then upgrade to VIP for the good stuff 🎁
+                  </p>
+
+                  <div className="mt-[calc(1.1*var(--u))] rounded-[calc(1.8*var(--u))] border border-slate-800 bg-black/30 px-[calc(1.6*var(--u))] py-[calc(1.2*var(--u))]">
+                    <p className="text-slate-200 font-extrabold" style={{ fontSize: "calc(1.55*var(--u))" }}>
+                      Quick steps:
+                    </p>
+                    <p className="mt-[calc(0.4*var(--u))] text-slate-300" style={{ fontSize: "calc(1.35*var(--u))" }}>
+                      Install app → Login (Guest OK) → Check In → Scan QR
+                    </p>
+                  </div>
+
+                  <p className="mt-[calc(0.9*var(--u))] text-slate-500" style={{ fontSize: "calc(1.15*var(--u))" }}>
+                    No phone? You’re still welcome in — staff can help you check in inside.
+                  </p>
+                </div>
               </div>
 
-              <div className="rounded-[28px] border border-slate-800 bg-slate-900/45 px-8 py-7">
-                <p className="text-[14px] uppercase tracking-[0.34em] text-slate-400">GOT THE APP?</p>
-                <p className="mt-3 text-[40px] font-extrabold leading-tight">I’m ready — scan to check in ✅</p>
-                <p className="mt-2 text-[18px] text-slate-300">
-                  Open app → <span className="font-extrabold text-slate-100">Check In</span> →{" "}
-                  <span className="font-extrabold text-slate-100">Scan QR</span>
-                </p>
+              {/* RIGHT: two lanes (need app / have app) */}
+              <div className="min-h-0 grid grid-rows-2 gap-[calc(1.4*var(--u))]">
+                {/* NEED APP */}
+                <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(2.2*var(--u))] py-[calc(2.0*var(--u))] flex items-center justify-between gap-[calc(1.6*var(--u))]">
+                  <div className="min-w-0">
+                    <p className="uppercase tracking-[0.34em] text-slate-400" style={{ fontSize: "calc(1.05*var(--u))" }}>
+                      I NEED THE APP
+                    </p>
+                    <div className="mt-[calc(0.7*var(--u))] font-extrabold leading-[1.05]" style={{ fontSize: "calc(2.7*var(--u))" }}>
+                      Scan to install + see steps
+                    </div>
+                    <p className="mt-[calc(0.7*var(--u))] text-slate-300" style={{ fontSize: "calc(1.35*var(--u))" }}>
+                      iPhone now • Android coming soon
+                    </p>
 
-                <div className="mt-6 flex items-center justify-center">
-                  <div className="rounded-[32px] bg-white p-6">
-                    <div className="relative h-[380px] w-[380px]">
-                      <Image src={venueQrSrc} alt="Venue QR" fill className="object-contain" priority />
+                    <div className="mt-[calc(0.9*var(--u))] rounded-[calc(1.8*var(--u))] border border-slate-800 bg-black/30 px-[calc(1.4*var(--u))] py-[calc(1.0*var(--u))]">
+                      <p className="text-slate-200 font-extrabold" style={{ fontSize: "calc(1.4*var(--u))" }}>
+                        Camera scan = install/help page
+                      </p>
+                      <p className="mt-[calc(0.3*var(--u))] text-slate-400" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                        (This does not check you in yet)
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 rounded-[calc(2.0*var(--u))] bg-white p-[calc(1.0*var(--u))]">
+                    <div
+                      className="relative"
+                      style={{
+                        width: "calc(13.0*var(--u))",
+                        height: "calc(13.0*var(--u))",
+                      }}
+                    >
+                      <Image src={helpQrSrc} alt="Install / Help QR" fill className="object-contain" />
                     </div>
                   </div>
                 </div>
 
-                <p className="mt-4 text-center text-[14px] text-slate-400">
-                  Must scan inside the app (camera scan won’t check you in).
-                </p>
+                {/* HAVE APP */}
+                <div className="rounded-[calc(2.2*var(--u))] border border-amber-300/25 bg-gradient-to-br from-slate-900/55 via-black/35 to-slate-900/45 px-[calc(2.2*var(--u))] py-[calc(2.0*var(--u))] flex items-center justify-between gap-[calc(1.6*var(--u))]">
+                  <div className="min-w-0">
+                    <p className="uppercase tracking-[0.34em] text-amber-200/80" style={{ fontSize: "calc(1.05*var(--u))" }}>
+                      I HAVE THE APP
+                    </p>
+                    <div className="mt-[calc(0.7*var(--u))] font-extrabold leading-[1.05]" style={{ fontSize: "calc(3.0*var(--u))" }}>
+                      Open app → Check In → Scan QR ✅
+                    </div>
+                    <p className="mt-[calc(0.7*var(--u))] text-slate-200" style={{ fontSize: "calc(1.45*var(--u))" }}>
+                      Scan this <span className="font-extrabold text-amber-300">inside the app</span> to get counted tonight.
+                    </p>
+
+                    <div className="mt-[calc(0.9*var(--u))] rounded-[calc(1.8*var(--u))] border border-amber-300/20 bg-black/35 px-[calc(1.4*var(--u))] py-[calc(1.0*var(--u))]">
+                      <p className="text-slate-200 font-extrabold" style={{ fontSize: "calc(1.4*var(--u))" }}>
+                        VIP tip: Checking in builds your VIP history + rewards.
+                      </p>
+                      <p className="mt-[calc(0.3*var(--u))] text-slate-400" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                        Camera scan won’t check you in — use the in-app scanner.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.1*var(--u))]">
+                    <div
+                      className="relative"
+                      style={{
+                        width: "calc(17.8*var(--u))",
+                        height: "calc(17.8*var(--u))",
+                      }}
+                    >
+                      <Image src={venueQrSrc} alt="Venue Check-In QR" fill className="object-contain" priority />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            {/* Bottom micro footer (optional) */}
+            <div className="hidden md:block text-center text-slate-600" style={{ fontSize: "calc(1.0*var(--u))" }}>
+              {etTz}
+            </div>
           </div>
-          {/* /STAGE CONTENT */}
         </div>
       </div>
     </div>
