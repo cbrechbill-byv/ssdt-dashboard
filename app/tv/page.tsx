@@ -31,7 +31,6 @@ function getAdminSupabase() {
   const key = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
 
   if (!url || !key) {
-    // Fail closed: better to block than show incorrect counts.
     throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   }
 
@@ -47,10 +46,7 @@ export default async function TvPage(props: {
   const providedKey = (sp.key ?? "").trim();
   const kioskKey = (process.env.CHECKIN_BOARD_KEY ?? "").trim();
 
-  // If kiosk key isn't configured, don't expose the page.
   if (!kioskKey) redirect("/login");
-
-  // If key doesn't match, require login
   if (providedKey !== kioskKey) redirect("/login");
 
   const supabase = getAdminSupabase();
@@ -63,7 +59,7 @@ export default async function TvPage(props: {
     .from("rewards_scans")
     .select("id, scanned_at, source, points, scan_date")
     .eq("source", "qr_checkin")
-    .eq("scan_date", todayEt) // scan_date is date; YYYY-MM-DD string is OK
+    .eq("scan_date", todayEt)
     .order("scanned_at", { ascending: false })
     .limit(80);
 
@@ -73,17 +69,17 @@ export default async function TvPage(props: {
 
   const vipRecent: RecentItem[] =
     (vipRows ?? []).map((r: any) => ({
-      atIso: r.scanned_at,
+      atIso: r.scanned_at as string,
       label: "VIP" as const,
-      source: r.source ?? null,
-      points: r.points ?? null,
+      source: (r.source ?? null) as string | null,
+      points: (r.points ?? null) as number | null,
     })) ?? [];
 
   // --- Guest check-ins today (guest_checkins) ---
   const { data: guestRows, error: guestErr } = await supabase
     .from("guest_checkins")
     .select("id, scanned_at, checked_in_at, day_et")
-    .eq("day_et", todayEt) // day_et is date; YYYY-MM-DD string is OK
+    .eq("day_et", todayEt)
     .order("scanned_at", { ascending: false })
     .order("checked_in_at", { ascending: false })
     .limit(80);
@@ -94,11 +90,12 @@ export default async function TvPage(props: {
 
   const guestRecent: RecentItem[] =
     (guestRows ?? [])
-      .map((r: any) => ({
-        atIso: (r.scanned_at ?? r.checked_in_at) as string | null,
-        label: "Guest" as const,
-      }))
-      .filter((x: any) => !!x.atIso) ?? [];
+      .map((r: any) => {
+        const atIso = (r.scanned_at ?? r.checked_in_at) as string | null;
+        if (!atIso) return null;
+        return { atIso, label: "Guest" as const } satisfies RecentItem;
+      })
+      .filter((x): x is RecentItem => x !== null);
 
   const recent = [...vipRecent, ...guestRecent]
     .filter((r) => r.atIso)
@@ -109,7 +106,6 @@ export default async function TvPage(props: {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white px-10 py-10">
-      {/* auto-refresh */}
       <meta httpEquiv="refresh" content="5" />
 
       <div className="mx-auto max-w-6xl">
@@ -182,9 +178,7 @@ export default async function TvPage(props: {
             </p>
 
             {recent.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-400">
-                No recent check-ins yet.
-              </p>
+              <p className="mt-3 text-sm text-slate-400">No recent check-ins yet.</p>
             ) : (
               <ul className="mt-3 space-y-2">
                 {recent.slice(0, 10).map((r, idx) => (
