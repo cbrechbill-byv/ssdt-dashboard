@@ -1,36 +1,11 @@
 // PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\checkin\page.tsx
-"use client";
-
 import Image from "next/image";
-import { Suspense, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+
+export const dynamic = "force-static";
 
 const APP_STORE_URL = "https://apps.apple.com/us/app/sugarshack-downtown-app/id6755752186";
 
-function prettyLoc(loc?: string) {
-  if (!loc) return null;
-  const s = loc.replace(/[-_]/g, " ").trim();
-  if (!s) return null;
-  return s.replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function CheckinHelpInner() {
-  const sp = useSearchParams();
-
-  const loc = useMemo(() => {
-    const raw = sp?.get("loc") ?? undefined;
-    return prettyLoc(raw);
-  }, [sp]);
-
-  const onOpenAppStore = () => {
-    // Fallback for some in-app browsers / QR scanner webviews
-    try {
-      window.location.href = APP_STORE_URL;
-    } catch {
-      // no-op
-    }
-  };
-
+export default function CheckinHelpPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-slate-950 to-[#0b1220] text-white">
       {/* Subtle background glow */}
@@ -48,17 +23,10 @@ function CheckinHelpInner() {
 
           <div className="min-w-0">
             <p className="text-[11px] uppercase tracking-[0.34em] text-slate-300">Sugarshack Downtown</p>
-            <h1 className="mt-1 text-3xl font-extrabold leading-tight">Check In &amp; Get Counted</h1>
+            <h1 className="mt-1 text-3xl font-extrabold leading-tight">Get the App</h1>
             <p className="mt-1 text-sm text-slate-300">
-              Guest is fast ✅ <span className="text-amber-300 font-extrabold">VIP unlocks rewards</span> 🎁
+              Check in tonight. <span className="text-amber-300 font-extrabold">VIP unlocks perks + surprises</span> 🎁
             </p>
-
-            {loc ? (
-              <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-800 bg-black/30 px-3 py-1 text-xs text-slate-200">
-                <span className="text-slate-400">Location</span>
-                <span className="font-extrabold">{loc}</span>
-              </div>
-            ) : null}
           </div>
         </div>
 
@@ -72,7 +40,6 @@ function CheckinHelpInner() {
             href={APP_STORE_URL}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={onOpenAppStore}
             className="mt-4 block w-full rounded-2xl bg-amber-300 px-4 py-3 text-center text-[16px] font-extrabold text-black active:scale-[0.99]"
           >
             Open in the App Store →
@@ -86,7 +53,7 @@ function CheckinHelpInner() {
 
         {/* Steps */}
         <div className="mt-5 rounded-3xl border border-slate-800 bg-slate-900/35 p-5">
-          <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">After install</p>
+          <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Then</p>
 
           <div className="mt-3 space-y-3">
             <div className="flex gap-3">
@@ -120,9 +87,7 @@ function CheckinHelpInner() {
             <p className="text-sm text-slate-200 font-extrabold">
               Important: your phone camera scan does <span className="text-amber-300">not</span> check you in.
             </p>
-            <p className="mt-1 text-sm text-slate-400">
-              You must scan the <span className="font-semibold text-slate-200">Venue QR</span> inside the app.
-            </p>
+            <p className="mt-1 text-sm text-slate-400">You must scan the Venue QR inside the app.</p>
           </div>
         </div>
 
@@ -130,36 +95,11 @@ function CheckinHelpInner() {
         <div className="mt-5 rounded-3xl border border-slate-800 bg-slate-900/25 p-5">
           <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">No phone?</p>
           <p className="mt-1 text-slate-200 font-extrabold">No problem — you’re still welcome in.</p>
-          <p className="mt-1 text-sm text-slate-400">You won’t be denied entry. Staff can help you check in inside the venue.</p>
+          <p className="mt-1 text-sm text-slate-400">Staff can help you check in inside the venue.</p>
         </div>
 
         <p className="mt-6 text-center text-[11px] text-slate-500">Tip: Install → Open app → Check In → Scan QR</p>
       </div>
     </div>
-  );
-}
-
-export default function CheckinHelpPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-gradient-to-br from-black via-slate-950 to-[#0b1220] text-white">
-          <div className="mx-auto w-full max-w-md px-4 py-10">
-            <div className="flex items-center gap-4">
-              <div className="relative h-16 w-16 shrink-0">
-                <Image src="/ssdt-logo.png" alt="Sugarshack Downtown" fill className="object-contain" priority />
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.34em] text-slate-300">Sugarshack Downtown</p>
-                <p className="mt-2 text-2xl font-extrabold">Loading…</p>
-                <p className="mt-1 text-sm text-slate-400">Preparing check-in steps</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      }
-    >
-      <CheckinHelpInner />
-    </Suspense>
   );
 }
