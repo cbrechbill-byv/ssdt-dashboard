@@ -1,29 +1,45 @@
 // PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\c\page.tsx
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import type { Metadata } from "next";
+
+// NOTE: In App Router, prefer metadata export over <head> inside the component.
+export const metadata: Metadata = {
+  // Smart App Banner (Safari iOS)
+  // app-id is your Apple App ID from the App Store URL
+  other: {
+    "apple-itunes-app": "app-id=6755752186",
+  },
+};
 
 export const dynamic = "force-static";
 
 const APP_STORE_URL =
   "https://apps.apple.com/us/app/sugarshack-downtown-app/id6755752186";
 
-// IMPORTANT:
-// Replace this with your actual app URL scheme if you already have one.
-// Examples: "ssdt://checkin" or "sugarshack://checkin" etc.
-const APP_SCHEME_URL = "ssdt://checkin";
+// Your Expo scheme from app.json is "ssdtfresh"
+const APP_SCHEME_URL = "ssdtfresh://checkin";
 
 export default function OneQRLandingPage() {
+  function handleOpenInApp() {
+    // Attempt to open app via URL scheme.
+    // If it fails, fall back to App Store after a short delay.
+    const start = Date.now();
+    window.location.href = APP_SCHEME_URL;
+
+    window.setTimeout(() => {
+      // If user is still here, assume app didn't open.
+      if (Date.now() - start < 1600) {
+        window.location.href = APP_STORE_URL;
+      }
+    }, 1200);
+  }
+
   return (
     <main className="min-h-screen w-full bg-black text-white flex items-center justify-center px-6 py-10">
       <div className="w-full max-w-2xl text-center">
-        {/* Smart App Banner (Safari) */}
-        <head>
-          {/* Replace app-id with the Apple ID if you want a Smart App Banner.
-              NOTE: Some setups prefer adding this via layout metadata instead.
-              If you already have metadata handling, move this there. */}
-          <meta name="apple-itunes-app" content="app-id=6755752186" />
-        </head>
-
         <div className="flex justify-center mb-6">
           <Image
             src="/ssdt-logo.png"
@@ -46,20 +62,7 @@ export default function OneQRLandingPage() {
 
         <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
-            onClick={() => {
-              // Attempt to open the app via URL scheme as a fallback.
-              // If it fails, send to App Store after a short delay.
-              const start = Date.now();
-              window.location.href = APP_SCHEME_URL;
-
-              setTimeout(() => {
-                // If user is still here, assume app didn't open
-                // (This isn't perfect, but works well in practice.)
-                if (Date.now() - start < 1600) {
-                  window.location.href = APP_STORE_URL;
-                }
-              }, 1200);
-            }}
+            onClick={handleOpenInApp}
             className="rounded-xl bg-white text-black font-bold py-4 text-lg sm:text-xl"
           >
             Open in App
@@ -82,10 +85,12 @@ export default function OneQRLandingPage() {
               <span className="font-semibold">1)</span> Login VIP/Guest
             </li>
             <li>
-              <span className="font-semibold">2)</span> Tap <span className="font-semibold">Check In</span>
+              <span className="font-semibold">2)</span> Tap{" "}
+              <span className="font-semibold">Check In</span>
             </li>
             <li>
-              <span className="font-semibold">3)</span> Tap <span className="font-semibold">Scan QR</span>
+              <span className="font-semibold">3)</span> Tap{" "}
+              <span className="font-semibold">Scan QR</span>
             </li>
           </ol>
 
