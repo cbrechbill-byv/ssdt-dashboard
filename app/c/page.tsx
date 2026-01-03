@@ -1,42 +1,22 @@
 // PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\c\page.tsx
-"use client";
-
 import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
+import OneQrClientActions from "./ui";
 
-// NOTE: In App Router, prefer metadata export over <head> inside the component.
+export const dynamic = "force-static";
+
+// Smart App Banner (Safari iOS)
 export const metadata: Metadata = {
-  // Smart App Banner (Safari iOS)
-  // app-id is your Apple App ID from the App Store URL
   other: {
     "apple-itunes-app": "app-id=6755752186",
   },
 };
 
-export const dynamic = "force-static";
-
 const APP_STORE_URL =
   "https://apps.apple.com/us/app/sugarshack-downtown-app/id6755752186";
 
-// Your Expo scheme from app.json is "ssdtfresh"
-const APP_SCHEME_URL = "ssdtfresh://checkin";
-
 export default function OneQRLandingPage() {
-  function handleOpenInApp() {
-    // Attempt to open app via URL scheme.
-    // If it fails, fall back to App Store after a short delay.
-    const start = Date.now();
-    window.location.href = APP_SCHEME_URL;
-
-    window.setTimeout(() => {
-      // If user is still here, assume app didn't open.
-      if (Date.now() - start < 1600) {
-        window.location.href = APP_STORE_URL;
-      }
-    }, 1200);
-  }
-
   return (
     <main className="min-h-screen w-full bg-black text-white flex items-center justify-center px-6 py-10">
       <div className="w-full max-w-2xl text-center">
@@ -60,22 +40,9 @@ export default function OneQRLandingPage() {
           If you don’t, install it first — then come back here and tap Open in App.
         </p>
 
-        <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            onClick={handleOpenInApp}
-            className="rounded-xl bg-white text-black font-bold py-4 text-lg sm:text-xl"
-          >
-            Open in App
-          </button>
-
-          <a
-            href={APP_STORE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-xl bg-white/10 border border-white/20 text-white font-bold py-4 text-lg sm:text-xl"
-          >
-            Install from App Store
-          </a>
+        {/* Client-side interactive buttons live here */}
+        <div className="mt-8">
+          <OneQrClientActions appStoreUrl={APP_STORE_URL} />
         </div>
 
         <div className="mt-10 rounded-2xl border border-white/15 bg-white/5 p-6 text-left">
