@@ -1,5 +1,4 @@
 // PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\api\tv\route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
 
@@ -11,17 +10,23 @@ type RecentItem =
   | { atIso: string; label: "VIP"; source?: string | null; points?: number | null }
   | { atIso: string; label: "Guest" };
 
-type TvApiResponse = {
-  ok: true;
-  asOfIso: string;
-  dateEt: string;
-  total: number;
-  vip: number;
-  guest: number;
-  recent: RecentItem[];
-};
+type TvApiResponse =
+  | {
+      ok: true;
+      asOfIso: string;
+      dateEt: string;
+      total: number;
+      vip: number;
+      guest: number;
+      recent: RecentItem[];
+    }
+  | {
+      ok: false;
+      error: string;
+    };
 
 function getEtYmd(now = new Date()): string {
+  // YYYY-MM-DD in ET
   return now.toLocaleDateString("en-CA", {
     timeZone: ET_TZ,
     year: "numeric",
@@ -30,12 +35,21 @@ function getEtYmd(now = new Date()): string {
   });
 }
 
+function jsonNoStore(body: TvApiResponse, init?: { status?: number }) {
+  const res = NextResponse.json(body, { status: init?.status ?? 200 });
+  // Hard no-cache for TVs / kiosks
+  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
+  return res;
+}
+
 export async function GET(req: NextRequest) {
-  const envKey = process.env.CHECKIN_BOARD_KEY?.trim();
+  const envKey = process.env.CHECKIN_BOARD_KEY?.trim() ?? "";
   const key = req.nextUrl.searchParams.get("key") ?? "";
 
   if (!envKey || key !== envKey) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return jsonNoStore({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   // ✅ Correct usage (NOT a function)
@@ -51,7 +65,7 @@ export async function GET(req: NextRequest) {
     .eq("scan_date", todayEt);
 
   if (vipCountRes.error) {
-    return NextResponse.json({ ok: false, error: vipCountRes.error.message }, { status: 500 });
+    return jsonNoStore({ ok: false, error: vipCountRes.error.message }, { status: 500 });
   }
 
   const guestCountRes = await supabase
@@ -60,7 +74,7 @@ export async function GET(req: NextRequest) {
     .eq("day_et", todayEt);
 
   if (guestCountRes.error) {
-    return NextResponse.json({ ok: false, error: guestCountRes.error.message }, { status: 500 });
+    return jsonNoStore({ ok: false, error: guestCountRes.error.message }, { status: 500 });
   }
 
   const vip = vipCountRes.count ?? 0;
@@ -76,5 +90,5 @@ export async function GET(req: NextRequest) {
     recent: [],
   };
 
-  return NextResponse.json(payload);
+  return jsonNoStore(payload);
 }

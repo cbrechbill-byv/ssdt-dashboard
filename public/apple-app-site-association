@@ -1,0 +1,16 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "V5US796L3L.com.cbrechbill1.sugarshackdowntown",
+        "paths": [
+          "/c",
+          "/c/*",
+          "/checkin",
+          "/checkin/*"
+        ]
+      }
+    ]
+  }
+}

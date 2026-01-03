@@ -148,8 +148,14 @@ function AppLane(props: {
   footnote: string;
   qrSrc: string;
   qrAlt: string;
+
+  // NEW: if true, we force the footnote into a single line (no wrap)
+  // so it never causes any vertical growth that could tighten the grid.
+  footnoteSingleLine?: boolean;
 }) {
   const isHave = props.tone === "have";
+  const footnoteSingleLine = props.footnoteSingleLine ?? false;
+
   return (
     <div
       className={
@@ -189,7 +195,7 @@ function AppLane(props: {
             ))}
           </div>
 
-          {/* Footnote slightly smaller to avoid wrapping into Row 4 */}
+          {/* Footnote: forced single line if requested (prevents wrapping / layout pressure) */}
           <div
             className={
               isHave
@@ -197,7 +203,13 @@ function AppLane(props: {
                 : "mt-[calc(1.0*var(--u))] rounded-[calc(1.9*var(--u))] border border-slate-800 bg-black/35 px-[calc(1.4*var(--u))] py-[calc(1.0*var(--u))]"
             }
           >
-            <div className="font-extrabold text-slate-100" style={{ fontSize: "calc(1.55*var(--u))", lineHeight: 1.15 }}>
+            <div
+              className={`font-extrabold text-slate-100 ${
+                footnoteSingleLine ? "whitespace-nowrap overflow-hidden text-ellipsis" : ""
+              }`}
+              style={{ fontSize: "calc(1.45*var(--u))", lineHeight: 1.15 }}
+              title={footnoteSingleLine ? props.footnote : undefined}
+            >
               {props.footnote}
             </div>
           </div>
@@ -227,9 +239,25 @@ export default function TvKioskClient(props: {
   helpQrSrc: string;
   venueQrSrc: string;
   locationLabel: string;
+
+  // NEW (optional, non-breaking):
+  // If true, both lanes can show the SAME QR (your “one QR” transition mode).
+  // Default false = current behavior.
+  oneQrMode?: boolean;
 }) {
-  const { kioskKey, etDateMdy, etTz, goalBase, goalStep, goalAdvanceAtPct, showLogoSrc, helpQrSrc, venueQrSrc, locationLabel } =
-    props;
+  const {
+    kioskKey,
+    etDateMdy,
+    etTz,
+    goalBase,
+    goalStep,
+    goalAdvanceAtPct,
+    showLogoSrc,
+    helpQrSrc,
+    venueQrSrc,
+    locationLabel,
+    oneQrMode = false,
+  } = props;
 
   const [data, setData] = useState<TvApiResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -317,6 +345,11 @@ export default function TvKioskClient(props: {
   const remainingToGoal = Math.max(0, dynamicGoal - total);
   const locLabel = prettyLoc(locationLabel);
 
+  // In one-QR mode, we intentionally show the same QR in both lanes
+  // (keeps layout familiar while making the scan destination identical).
+  const leftQr = oneQrMode ? venueQrSrc : helpQrSrc;
+  const rightQr = venueQrSrc;
+
   return (
     <div className="fixed inset-0 overflow-hidden text-white">
       <style jsx global>{`
@@ -377,9 +410,9 @@ export default function TvKioskClient(props: {
 
       <div className="relative h-[100svh] w-full tvSafe">
         <div className="mx-auto h-full w-full max-w-[1900px]">
-          {/* More spacing between Row 3 and Row 4 + slightly more room for Row 4 */}
-          <div className="grid h-full grid-rows-[auto_auto_minmax(0,1.08fr)_minmax(0,0.92fr)] gap-[calc(1.35*var(--u))]">
-            {/* HEADER */}
+          {/* Keep the 4-row structure exactly, but protect Row 4 from pressure with safer minmax + overflow */}
+          <div className="grid h-full grid-rows-[auto_auto_minmax(0,1.06fr)_minmax(0,0.94fr)] gap-[calc(1.35*var(--u))]">
+            {/* ROW 1: HEADER */}
             <div className="flex items-start justify-between gap-[calc(2.0*var(--u))]">
               <div className="flex items-start gap-[calc(2.2*var(--u))] min-w-0">
                 <div
@@ -401,6 +434,7 @@ export default function TvKioskClient(props: {
                     </div>
                   </div>
 
+                  {/* REQUIRED sub-line (with VIP phrase amber) */}
                   <div className="mt-[calc(0.9*var(--u))] flex flex-wrap items-center gap-[calc(0.9*var(--u))]">
                     <div
                       className="rounded-[calc(1.6*var(--u))] border border-slate-800 bg-black/25 px-[calc(1.2*var(--u))] py-[calc(0.7*var(--u))]"
@@ -446,7 +480,7 @@ export default function TvKioskClient(props: {
               </div>
             </div>
 
-            {/* TONIGHT'S GOAL */}
+            {/* ROW 2: TONIGHT'S GOAL (UNCHANGED LOGIC) */}
             <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/50 px-[calc(2.2*var(--u))] py-[calc(1.7*var(--u))]">
               <div className="flex items-end justify-between gap-[calc(1.2*var(--u))]">
                 <div>
@@ -468,40 +502,55 @@ export default function TvKioskClient(props: {
               </div>
             </div>
 
-            {/* ROW 3: NEED/HAVE APP */}
+            {/* ROW 3: TWO LANES (can be one-QR transition mode without changing layout) */}
             <div className="grid grid-cols-2 gap-[calc(1.35*var(--u))] min-h-0 items-stretch">
               <AppLane
                 tone="need"
-                heading="I NEED THE APP"
-                headline="Scan this with your CAMERA"
-                sub="Install the app + learn how to check in"
-                bullets={[
-                  "This takes you to the quick install + steps page",
-                  "iPhone app now • Android coming soon",
-                  "Then open the app to check in",
-                ]}
-                footnote="Camera scan = install/help (does NOT check you in yet)"
-                qrSrc={helpQrSrc}
-                qrAlt="Get the App QR"
+                heading={oneQrMode ? "SCAN TO CHECK IN" : "I NEED THE APP"}
+                headline={oneQrMode ? "Scan this QR with your CAMERA" : "Scan this with your CAMERA"}
+                sub={
+                  oneQrMode
+                    ? "One QR → opens the app if installed, otherwise install + continue"
+                    : "Install the app + learn how to check in"
+                }
+                bullets={
+                  oneQrMode
+                    ? [
+                        "If the app is installed, it should open right in",
+                        "If not installed, install first then return",
+                        "VIP gets the good stuff — don’t miss out",
+                      ]
+                    : ["This takes you to the quick install + steps page", "iPhone app now • Android coming soon", "Then open the app to check in"]
+                }
+                footnote={oneQrMode ? "One QR = fastest flow (installs if needed)" : "Camera scan = install/help (does NOT check you in yet)"}
+                qrSrc={leftQr}
+                qrAlt={oneQrMode ? "One QR" : "Get the App QR"}
+                footnoteSingleLine={true}
               />
 
               <AppLane
                 tone="have"
-                heading="I HAVE THE APP"
-                headline="OPEN THE APP + SCAN (IN THE APP)"
-                sub="Use the Sugarshack Downtown App scanner to get counted"
-                bullets={[
-                  "Open the App → Login VIP/Guest",
-                  "Tap Check In → Tap Scan QR",
-                  "This opens the camera INSIDE the app",
-                ]}
+                heading={oneQrMode ? "INSIDE THE APP" : "I HAVE THE APP"}
+                headline={oneQrMode ? "OPEN THE APP + FINISH CHECK IN" : "OPEN THE APP + SCAN (IN THE APP)"}
+                sub={oneQrMode ? "After it opens the app, do these steps:" : "Use the Sugarshack Downtown App scanner to get counted"}
+                bullets={
+                  oneQrMode
+                    ? [
+                        "Open the App → Login VIP/Guest",
+                        "Tap Check In → Tap Scan QR",
+                        "This opens the camera INSIDE the app",
+                      ]
+                    : ["Open the App → Login VIP/Guest", "Tap Check In → Tap Scan QR", "This opens the camera INSIDE the app"]
+                }
+                // REQUIRED: this line must NOT wrap in a way that causes overlap/cutoff
                 footnote="Important: phone camera scan won’t check you in — use the in-app scanner"
-                qrSrc={venueQrSrc}
+                qrSrc={rightQr}
                 qrAlt="Venue Check-In QR"
+                footnoteSingleLine={true}
               />
             </div>
 
-            {/* ROW 4: COUNTS + VIP MOMENT (same height, guaranteed no overlap) */}
+            {/* ROW 4: COUNTS + VIP MOMENT (same height, no overlap) */}
             <div className="grid grid-cols-2 gap-[calc(1.35*var(--u))] min-h-0 items-stretch">
               <div className="rounded-[calc(2.4*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(2.0*var(--u))] py-[calc(1.8*var(--u))] h-full overflow-hidden">
                 <div className="uppercase tracking-[0.34em] text-slate-300" style={{ fontSize: "calc(1.15*var(--u))" }}>
@@ -532,7 +581,7 @@ export default function TvKioskClient(props: {
                 </div>
 
                 <div className="mt-[calc(0.95*var(--u))] space-y-[calc(0.9*var(--u))]">
-                  <StepRowBig n={1} title="Install the app" desc="Camera scan “I NEED THE APP” QR." />
+                  <StepRowBig n={1} title="Install the app" desc="Scan the QR (camera) if you don’t have it yet." />
                   <StepRowBig n={2} title="Login (Guest is OK)" desc="VIP is where the rewards live." />
                   <StepRowBig n={3} title="Check In → Scan QR" desc="Use the scanner inside the app to get counted." />
                 </div>
