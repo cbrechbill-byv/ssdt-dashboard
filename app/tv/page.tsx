@@ -8,7 +8,6 @@
 // Canonical production TV URL:
 // https://ssdtapp.byvenuecreative.com/tv?key=ssdt-tv-2026
 
-import { redirect } from "next/navigation";
 import TvKioskClient from "./ui";
 
 export const dynamic = "force-dynamic";
@@ -43,14 +42,22 @@ export default async function TvPage(props: { searchParams?: SearchParams }) {
   const kioskKey = firstParam(sp.key) ?? "";
   const requiredKey = process.env.CHECKIN_BOARD_KEY ?? "";
 
-  // Hard gate: must include correct key
-  if (!requiredKey || kioskKey !== requiredKey) {
-    redirect("/login");
+  // TV-friendly gate (no redirect)
+  let gateOk = true;
+  let gateReason: "missing_key" | "invalid_key" | "missing_server_key" | undefined = undefined;
+
+  if (!requiredKey) {
+    gateOk = false;
+    gateReason = "missing_server_key";
+  } else if (!kioskKey) {
+    gateOk = false;
+    gateReason = "missing_key";
+  } else if (kioskKey !== requiredKey) {
+    gateOk = false;
+    gateReason = "invalid_key";
   }
 
-  // Optional: location label from URL (for display only)
   const loc = firstParam(sp.loc) ?? "entrance";
-
   const etDateMdy = formatEtDateMDY(new Date());
 
   return (
@@ -58,16 +65,17 @@ export default async function TvPage(props: { searchParams?: SearchParams }) {
       kioskKey={kioskKey}
       etDateMdy={etDateMdy}
       etTz={ET_TZ}
+      // Defaults only — live goal comes from app_settings via /api/tv-goal
       goalBase={500}
       goalStep={50}
       goalAdvanceAtPct={90}
       showLogoSrc="/ssdt-logo.png"
-      // ✅ SINGLE QR image (points to https://ssdtapp.byvenuecreative.com/c)
       helpQrSrc="/qr/ssdt_oneqr_c.png"
       venueQrSrc="/qr/ssdt_oneqr_c.png"
       locationLabel={loc}
-      // ✅ turns on single-QR lane layout
       oneQrMode={true}
+      gateOk={gateOk}
+      gateReason={gateReason}
     />
   );
 }

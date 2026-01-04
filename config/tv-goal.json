@@ -1,0 +1,6 @@
+// PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\config\tv-goal.json
+{
+  "goalBase": 500,
+  "goalStep": 50,
+  "goalAdvanceAtPct": 90
+}

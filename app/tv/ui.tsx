@@ -13,6 +13,15 @@ type TvApiResponse = {
   guest: number;
 };
 
+type TvGoalResponse = {
+  ok: boolean;
+  goalBase?: number;
+  goalStep?: number;
+  goalAdvanceAtPct?: number;
+  updatedAt?: string | null;
+  error?: string;
+};
+
 function clampPct(x: number) {
   if (!Number.isFinite(x)) return 0;
   return Math.max(0, Math.min(100, x));
@@ -184,7 +193,6 @@ function SingleQrLane(props: {
         </div>
 
         <div className="shrink-0 rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.1*var(--u))]">
-          {/* Bigger QR for single-lane mode (best for 20ft readability) */}
           <div className="relative" style={{ width: "calc(20.0*var(--u))", height: "calc(20.0*var(--u))" }}>
             <Image src={props.qrSrc} alt={props.qrAlt} fill className="object-contain" priority />
           </div>
@@ -199,6 +207,7 @@ export default function TvKioskClient(props: {
   etDateMdy: string;
   etTz: string;
 
+  // Defaults (fallbacks). Live goal comes from app_settings via /api/tv-goal
   goalBase: number;
   goalStep: number;
   goalAdvanceAtPct: number;
@@ -209,6 +218,10 @@ export default function TvKioskClient(props: {
   locationLabel: string;
 
   oneQrMode?: boolean;
+
+  // Optional gate props (if you’re using them)
+  gateOk?: boolean;
+  gateReason?: string;
 }) {
   const {
     kioskKey,
@@ -222,10 +235,16 @@ export default function TvKioskClient(props: {
     venueQrSrc,
     locationLabel,
     oneQrMode = false,
+    gateOk = true,
+    gateReason,
   } = props;
 
   const [data, setData] = useState<TvApiResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  // ✅ Live goal state (from app_settings)
+  const [liveGoal, setLiveGoal] = useState<{ base: number; step: number; pct: number } | null>(null);
+  const [goalErr, setGoalErr] = useState<string | null>(null);
 
   const lastTotalRef = useRef<number>(0);
   const lastGoalRef = useRef<number>(0);
@@ -252,7 +271,13 @@ export default function TvKioskClient(props: {
       const json = (await res.json()) as TvApiResponse;
 
       const nextTotal = json?.total ?? 0;
-      const nextGoal = computeDynamicGoal({ total: nextTotal, base: goalBase, step: goalStep, advanceAtPct: goalAdvanceAtPct });
+
+      // ✅ Use live goal if present, else fall back to props
+      const base = liveGoal?.base ?? goalBase;
+      const step = liveGoal?.step ?? goalStep;
+      const pct = liveGoal?.pct ?? goalAdvanceAtPct;
+
+      const nextGoal = computeDynamicGoal({ total: nextTotal, base, step, advanceAtPct: pct });
 
       if (!didInitRef.current) {
         didInitRef.current = true;
@@ -286,11 +311,48 @@ export default function TvKioskClient(props: {
     }
   }
 
+  async function loadGoal() {
+    try {
+      setGoalErr(null);
+      const res = await fetch(`/api/tv-goal`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`Goal API ${res.status}`);
+      const json = (await res.json()) as TvGoalResponse;
+
+      if (!json?.ok) {
+        setGoalErr(json?.error ?? "Failed to load goal");
+        return;
+      }
+
+      const base = Number(json.goalBase);
+      const step = Number(json.goalStep);
+      const pct = Number(json.goalAdvanceAtPct);
+
+      // Guardrails: keep sane values even if someone fat-fingers config
+      const safeBase = Number.isFinite(base) ? Math.max(50, Math.min(50000, Math.floor(base))) : goalBase;
+      const safeStep = Number.isFinite(step) ? Math.max(5, Math.min(5000, Math.floor(step))) : goalStep;
+      const safePct = Number.isFinite(pct) ? Math.max(50, Math.min(99, Math.floor(pct))) : goalAdvanceAtPct;
+
+      setLiveGoal({ base: safeBase, step: safeStep, pct: safePct });
+
+      // When goal changes, force recompute on next load cycle
+      didInitRef.current = false;
+    } catch (e: any) {
+      setGoalErr(e?.message ?? "Goal load error");
+    }
+  }
+
   useEffect(() => {
+    // Load goal immediately, then keep it fresh (every 30s)
+    loadGoal();
+    const g = window.setInterval(loadGoal, 30000);
+
+    // Load counts frequently (every 5s)
     load();
     const t = window.setInterval(load, 5000);
+
     return () => {
       window.clearInterval(t);
+      window.clearInterval(g);
       if (levelUpTimerRef.current) window.clearTimeout(levelUpTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -301,18 +363,42 @@ export default function TvKioskClient(props: {
   const guest = data?.guest ?? 0;
   const asOfIso = data?.asOfIso ?? "";
 
+  const base = liveGoal?.base ?? goalBase;
+  const step = liveGoal?.step ?? goalStep;
+  const pct = liveGoal?.pct ?? goalAdvanceAtPct;
+
   const dynamicGoal = useMemo(
-    () => computeDynamicGoal({ total, base: goalBase, step: goalStep, advanceAtPct: goalAdvanceAtPct }),
-    [total, goalBase, goalStep, goalAdvanceAtPct]
+    () => computeDynamicGoal({ total, base, step, advanceAtPct: pct }),
+    [total, base, step, pct]
   );
 
   const goalPct = useMemo(() => clampPct(dynamicGoal > 0 ? (total / dynamicGoal) * 100 : 0), [total, dynamicGoal]);
   const remainingToGoal = Math.max(0, dynamicGoal - total);
   const locLabel = prettyLoc(locationLabel);
 
-  // Auto one-QR if requested OR if both sources match (safety)
   const effectiveOneQrMode = oneQrMode || helpQrSrc === venueQrSrc;
   const oneQrSrc = venueQrSrc || helpQrSrc;
+
+  // Optional: if you want to show a friendly gate screen instead of redirecting
+  if (!gateOk) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-black text-white p-10">
+        <div className="max-w-3xl text-center">
+          <div className="text-4xl font-extrabold">TV Link Locked</div>
+          <div className="mt-4 text-slate-300 text-xl">
+            {gateReason === "missing_server_key"
+              ? "CHECKIN_BOARD_KEY is not set on the server."
+              : gateReason === "missing_key"
+              ? "Missing ?key=... in the URL."
+              : "Invalid key in the URL."}
+          </div>
+          <div className="mt-6 text-slate-400">
+            Use the canonical link with the correct key.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 overflow-hidden text-white">
@@ -421,6 +507,14 @@ export default function TvKioskClient(props: {
                     </span>
                     <span className="opacity-50">•</span>
                     <span style={{ fontSize: "calc(1.15*var(--u))" }}>Auto-updates 5s</span>
+                    {goalErr ? (
+                      <>
+                        <span className="opacity-50">•</span>
+                        <span className="text-rose-300" style={{ fontSize: "calc(1.15*var(--u))" }}>
+                          Goal config issue
+                        </span>
+                      </>
+                    ) : null}
                   </div>
 
                   {err ? (
@@ -441,7 +535,7 @@ export default function TvKioskClient(props: {
               </div>
             </div>
 
-            {/* ROW 2: TONIGHT'S GOAL (UNCHANGED LOGIC) */}
+            {/* ROW 2: TONIGHT'S GOAL (same behavior) */}
             <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/50 px-[calc(2.2*var(--u))] py-[calc(1.7*var(--u))]">
               <div className="flex items-end justify-between gap-[calc(1.2*var(--u))]">
                 <div>
@@ -463,7 +557,7 @@ export default function TvKioskClient(props: {
               </div>
             </div>
 
-            {/* ROW 3: SINGLE QR (preferred) */}
+            {/* ROW 3: SINGLE QR */}
             {effectiveOneQrMode ? (
               <SingleQrLane
                 qrSrc={oneQrSrc}
@@ -478,7 +572,6 @@ export default function TvKioskClient(props: {
                 footnote="One QR = fastest flow (installs if needed)"
               />
             ) : (
-              // If you ever turn off one-QR mode, you can reintroduce the 2-lane layout later.
               <SingleQrLane
                 qrSrc={helpQrSrc}
                 qrAlt="Get the App QR"
@@ -489,7 +582,7 @@ export default function TvKioskClient(props: {
               />
             )}
 
-            {/* ROW 4: COUNTS + VIP MOMENT (same height, no overlap) */}
+            {/* ROW 4: COUNTS + VIP MOMENT */}
             <div className="grid grid-cols-2 gap-[calc(1.35*var(--u))] min-h-0 items-stretch">
               <div className="rounded-[calc(2.4*var(--u))] border border-slate-800 bg-slate-900/45 px-[calc(2.0*var(--u))] py-[calc(1.8*var(--u))] h-full overflow-hidden">
                 <div className="uppercase tracking-[0.34em] text-slate-300" style={{ fontSize: "calc(1.15*var(--u))" }}>
