@@ -2,13 +2,13 @@
 // /tv kiosk page (no login required if key matches CHECKIN_BOARD_KEY)
 //
 // ✅ Uses client UI (ui.tsx) for smooth updates + confetti
-// ✅ Gate access by query key (TV-safe: no /login redirect)
+// ✅ Gate access by query key
 // ✅ ET date shown as MM/DD/YYYY
 //
-// Optional flags:
-// - one=1  => enables "one QR mode" (both lanes can point to same destination/QR during transition)
-// - loc=front-bar => display-only label
+// Canonical production TV URL:
+// https://ssdtapp.byvenuecreative.com/tv?key=ssdt-tv-2026
 
+import { redirect } from "next/navigation";
 import TvKioskClient from "./ui";
 
 export const dynamic = "force-dynamic";
@@ -37,28 +37,6 @@ function formatEtDateMDY(now = new Date()): string {
   return `${mm}/${dd}/${yyyy}`;
 }
 
-function AccessRequired() {
-  return (
-    <main className="min-h-screen w-full bg-black text-white flex items-center justify-center px-8 py-10">
-      <div className="w-full max-w-2xl rounded-3xl border border-white/15 bg-white/5 p-10 text-center">
-        <div className="text-4xl sm:text-5xl font-extrabold">TV Access Required</div>
-        <p className="mt-4 text-white/80 text-lg sm:text-xl leading-relaxed">
-          This TV board requires a valid kiosk key in the URL.
-        </p>
-        <div className="mt-6 rounded-2xl border border-white/15 bg-black/30 p-5 text-left">
-          <div className="text-white/85 font-bold">Example:</div>
-          <div className="mt-2 font-mono text-white/70 break-all">
-            /tv?key=YOUR_KEY
-          </div>
-          <div className="mt-3 text-white/70">
-            Optional: <span className="font-mono">one=1</span> enables one-QR transition mode.
-          </div>
-        </div>
-      </div>
-    </main>
-  );
-}
-
 export default async function TvPage(props: { searchParams?: SearchParams }) {
   const sp = (await props.searchParams) ?? {};
 
@@ -66,18 +44,12 @@ export default async function TvPage(props: { searchParams?: SearchParams }) {
   const requiredKey = process.env.CHECKIN_BOARD_KEY ?? "";
 
   // Hard gate: must include correct key
-  // TV-safe behavior: show an access screen (no auth redirect)
   if (!requiredKey || kioskKey !== requiredKey) {
-    return <AccessRequired />;
+    redirect("/login");
   }
 
   // Optional: location label from URL (for display only)
-  // Example: /tv?key=...&loc=front-bar
   const loc = firstParam(sp.loc) ?? "entrance";
-
-  // Optional: one QR mode (transition mode)
-  // Example: /tv?key=...&one=1
-  const oneQrMode = (firstParam(sp.one) ?? "") === "1";
 
   const etDateMdy = formatEtDateMDY(new Date());
 
@@ -90,13 +62,12 @@ export default async function TvPage(props: { searchParams?: SearchParams }) {
       goalStep={50}
       goalAdvanceAtPct={90}
       showLogoSrc="/ssdt-logo.png"
-      // CAMERA SCAN QR
-      // NOTE: when you regenerate your TRUE one-QR png, you can point BOTH lanes to that.
-      helpQrSrc="/qr/ssdt_checkin_qr.png"
-      // IN-APP scan QR (current)
-      venueQrSrc="/SSDTVIP-CHECKIN.png"
+      // ✅ SINGLE QR image (points to https://ssdtapp.byvenuecreative.com/c)
+      helpQrSrc="/qr/ssdt_oneqr_c.png"
+      venueQrSrc="/qr/ssdt_oneqr_c.png"
       locationLabel={loc}
-      oneQrMode={oneQrMode}
+      // ✅ turns on single-QR lane layout
+      oneQrMode={true}
     />
   );
 }

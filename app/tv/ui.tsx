@@ -139,76 +139,44 @@ function StepRowBig(props: { n: number; title: string; desc: string }) {
   );
 }
 
-function AppLane(props: {
-  tone: "need" | "have";
-  heading: string;
-  headline: string;
-  sub: string;
-  bullets: string[];
-  footnote: string;
+function SingleQrLane(props: {
   qrSrc: string;
   qrAlt: string;
-
-  // NEW: if true, we force the footnote into a single line (no wrap)
-  // so it never causes any vertical growth that could tighten the grid.
-  footnoteSingleLine?: boolean;
+  title: string;
+  subtitle: string;
+  steps: string[];
+  footnote: string;
 }) {
-  const isHave = props.tone === "have";
-  const footnoteSingleLine = props.footnoteSingleLine ?? false;
-
   return (
-    <div
-      className={
-        isHave
-          ? "rounded-[calc(2.4*var(--u))] border border-amber-300/35 bg-gradient-to-br from-slate-900/65 via-black/45 to-slate-900/60 px-[calc(2.3*var(--u))] py-[calc(1.95*var(--u))] h-full overflow-hidden"
-          : "rounded-[calc(2.4*var(--u))] border border-slate-800 bg-slate-900/55 px-[calc(2.3*var(--u))] py-[calc(1.95*var(--u))] h-full overflow-hidden"
-      }
-    >
-      <div className="grid grid-cols-[1.2fr_auto] gap-[calc(1.9*var(--u))] items-center h-full">
+    <div className="rounded-[calc(2.4*var(--u))] border border-amber-300/35 bg-gradient-to-br from-slate-900/65 via-black/45 to-slate-900/60 px-[calc(2.3*var(--u))] py-[calc(1.95*var(--u))] h-full overflow-hidden">
+      <div className="grid grid-cols-[1.4fr_auto] gap-[calc(2.1*var(--u))] items-center h-full">
         <div className="min-w-0">
-          <div
-            className={isHave ? "uppercase tracking-[0.34em] text-amber-300" : "uppercase tracking-[0.34em] text-slate-200"}
-            style={{ fontSize: "calc(1.2*var(--u))" }}
-          >
-            {props.heading}
+          <div className="uppercase tracking-[0.34em] text-amber-300" style={{ fontSize: "calc(1.25*var(--u))" }}>
+            {props.title}
           </div>
 
-          {/* Slightly reduced so 720p never collides */}
-          <div className="mt-[calc(0.75*var(--u))] font-extrabold leading-[1.03]" style={{ fontSize: "calc(3.55*var(--u))" }}>
-            {props.headline}
+          <div className="mt-[calc(0.75*var(--u))] font-extrabold leading-[1.03]" style={{ fontSize: "calc(3.85*var(--u))" }}>
+            {props.subtitle}
           </div>
 
-          <div className="mt-[calc(0.6*var(--u))] text-slate-200" style={{ fontSize: "calc(1.85*var(--u))" }}>
-            {props.sub}
-          </div>
-
-          <div className="mt-[calc(0.9*var(--u))] space-y-[calc(0.6*var(--u))]">
-            {props.bullets.map((b, i) => (
+          <div className="mt-[calc(0.95*var(--u))] space-y-[calc(0.65*var(--u))]">
+            {props.steps.map((s, i) => (
               <div key={i} className="flex items-start gap-[calc(0.75*var(--u))]">
-                <div className={isHave ? "text-amber-300" : "text-emerald-300"} style={{ fontSize: "calc(1.85*var(--u))", lineHeight: 1 }}>
+                <div className="text-amber-300" style={{ fontSize: "calc(1.85*var(--u))", lineHeight: 1 }}>
                   •
                 </div>
-                <div className={isHave ? "text-slate-100" : "text-slate-200"} style={{ fontSize: "calc(1.7*var(--u))" }}>
-                  {b}
+                <div className="text-slate-100 font-extrabold" style={{ fontSize: "calc(1.75*var(--u))" }}>
+                  {s}
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Footnote: forced single line if requested (prevents wrapping / layout pressure) */}
-          <div
-            className={
-              isHave
-                ? "mt-[calc(1.0*var(--u))] rounded-[calc(1.9*var(--u))] border border-amber-300/25 bg-black/40 px-[calc(1.4*var(--u))] py-[calc(1.0*var(--u))]"
-                : "mt-[calc(1.0*var(--u))] rounded-[calc(1.9*var(--u))] border border-slate-800 bg-black/35 px-[calc(1.4*var(--u))] py-[calc(1.0*var(--u))]"
-            }
-          >
+          <div className="mt-[calc(1.05*var(--u))] rounded-[calc(1.9*var(--u))] border border-amber-300/25 bg-black/40 px-[calc(1.4*var(--u))] py-[calc(1.0*var(--u))]">
             <div
-              className={`font-extrabold text-slate-100 ${
-                footnoteSingleLine ? "whitespace-nowrap overflow-hidden text-ellipsis" : ""
-              }`}
-              style={{ fontSize: "calc(1.45*var(--u))", lineHeight: 1.15 }}
-              title={footnoteSingleLine ? props.footnote : undefined}
+              className="font-extrabold text-slate-100 whitespace-nowrap overflow-hidden text-ellipsis"
+              style={{ fontSize: "calc(1.55*var(--u))", lineHeight: 1.15 }}
+              title={props.footnote}
             >
               {props.footnote}
             </div>
@@ -216,9 +184,9 @@ function AppLane(props: {
         </div>
 
         <div className="shrink-0 rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.1*var(--u))]">
-          {/* SAME SIZE QR FOR BOTH (slightly reduced so 720p fits cleanly) */}
-          <div className="relative" style={{ width: "calc(17.0*var(--u))", height: "calc(17.0*var(--u))" }}>
-            <Image src={props.qrSrc} alt={props.qrAlt} fill className="object-contain" priority={isHave} />
+          {/* Bigger QR for single-lane mode (best for 20ft readability) */}
+          <div className="relative" style={{ width: "calc(20.0*var(--u))", height: "calc(20.0*var(--u))" }}>
+            <Image src={props.qrSrc} alt={props.qrAlt} fill className="object-contain" priority />
           </div>
         </div>
       </div>
@@ -240,9 +208,6 @@ export default function TvKioskClient(props: {
   venueQrSrc: string;
   locationLabel: string;
 
-  // NEW (optional, non-breaking):
-  // If true, both lanes can show the SAME QR (your “one QR” transition mode).
-  // Default false = current behavior.
   oneQrMode?: boolean;
 }) {
   const {
@@ -345,15 +310,13 @@ export default function TvKioskClient(props: {
   const remainingToGoal = Math.max(0, dynamicGoal - total);
   const locLabel = prettyLoc(locationLabel);
 
-  // In one-QR mode, we intentionally show the same QR in both lanes
-  // (keeps layout familiar while making the scan destination identical).
-  const leftQr = oneQrMode ? venueQrSrc : helpQrSrc;
-  const rightQr = venueQrSrc;
+  // Auto one-QR if requested OR if both sources match (safety)
+  const effectiveOneQrMode = oneQrMode || helpQrSrc === venueQrSrc;
+  const oneQrSrc = venueQrSrc || helpQrSrc;
 
   return (
     <div className="fixed inset-0 overflow-hidden text-white">
       <style jsx global>{`
-        /* Slightly smaller unit so 720p + TV browser chrome never collides */
         :root { --u: calc(min(1vw, 1vh) * 0.92); }
 
         .tvSafe {
@@ -410,7 +373,6 @@ export default function TvKioskClient(props: {
 
       <div className="relative h-[100svh] w-full tvSafe">
         <div className="mx-auto h-full w-full max-w-[1900px]">
-          {/* Keep the 4-row structure exactly, but protect Row 4 from pressure with safer minmax + overflow */}
           <div className="grid h-full grid-rows-[auto_auto_minmax(0,1.06fr)_minmax(0,0.94fr)] gap-[calc(1.35*var(--u))]">
             {/* ROW 1: HEADER */}
             <div className="flex items-start justify-between gap-[calc(2.0*var(--u))]">
@@ -434,7 +396,6 @@ export default function TvKioskClient(props: {
                     </div>
                   </div>
 
-                  {/* REQUIRED sub-line (with VIP phrase amber) */}
                   <div className="mt-[calc(0.9*var(--u))] flex flex-wrap items-center gap-[calc(0.9*var(--u))]">
                     <div
                       className="rounded-[calc(1.6*var(--u))] border border-slate-800 bg-black/25 px-[calc(1.2*var(--u))] py-[calc(0.7*var(--u))]"
@@ -502,53 +463,31 @@ export default function TvKioskClient(props: {
               </div>
             </div>
 
-            {/* ROW 3: TWO LANES (can be one-QR transition mode without changing layout) */}
-            <div className="grid grid-cols-2 gap-[calc(1.35*var(--u))] min-h-0 items-stretch">
-              <AppLane
-                tone="need"
-                heading={oneQrMode ? "SCAN TO CHECK IN" : "I NEED THE APP"}
-                headline={oneQrMode ? "Scan this QR with your CAMERA" : "Scan this with your CAMERA"}
-                sub={
-                  oneQrMode
-                    ? "One QR → opens the app if installed, otherwise install + continue"
-                    : "Install the app + learn how to check in"
-                }
-                bullets={
-                  oneQrMode
-                    ? [
-                        "If the app is installed, it should open right in",
-                        "If not installed, install first then return",
-                        "VIP gets the good stuff — don’t miss out",
-                      ]
-                    : ["This takes you to the quick install + steps page", "iPhone app now • Android coming soon", "Then open the app to check in"]
-                }
-                footnote={oneQrMode ? "One QR = fastest flow (installs if needed)" : "Camera scan = install/help (does NOT check you in yet)"}
-                qrSrc={leftQr}
-                qrAlt={oneQrMode ? "One QR" : "Get the App QR"}
-                footnoteSingleLine={true}
+            {/* ROW 3: SINGLE QR (preferred) */}
+            {effectiveOneQrMode ? (
+              <SingleQrLane
+                qrSrc={oneQrSrc}
+                qrAlt="SSDT One QR"
+                title="ONE QR CHECK IN"
+                subtitle="Scan this QR with your CAMERA"
+                steps={[
+                  "App installed? It should open the app automatically",
+                  "No app? Install first — then scan again",
+                  "VIP gets the good stuff — don’t miss out",
+                ]}
+                footnote="One QR = fastest flow (installs if needed)"
               />
-
-              <AppLane
-                tone="have"
-                heading={oneQrMode ? "INSIDE THE APP" : "I HAVE THE APP"}
-                headline={oneQrMode ? "OPEN THE APP + FINISH CHECK IN" : "OPEN THE APP + SCAN (IN THE APP)"}
-                sub={oneQrMode ? "After it opens the app, do these steps:" : "Use the Sugarshack Downtown App scanner to get counted"}
-                bullets={
-                  oneQrMode
-                    ? [
-                        "Open the App → Login VIP/Guest",
-                        "Tap Check In → Tap Scan QR",
-                        "This opens the camera INSIDE the app",
-                      ]
-                    : ["Open the App → Login VIP/Guest", "Tap Check In → Tap Scan QR", "This opens the camera INSIDE the app"]
-                }
-                // REQUIRED: this line must NOT wrap in a way that causes overlap/cutoff
-                footnote="Important: phone camera scan won’t check you in — use the in-app scanner"
-                qrSrc={rightQr}
-                qrAlt="Venue Check-In QR"
-                footnoteSingleLine={true}
+            ) : (
+              // If you ever turn off one-QR mode, you can reintroduce the 2-lane layout later.
+              <SingleQrLane
+                qrSrc={helpQrSrc}
+                qrAlt="Get the App QR"
+                title="CHECK IN"
+                subtitle="Scan this QR with your CAMERA"
+                steps={["Install the app, then check in inside the app", "VIP gets the good stuff — don’t miss out", "Android coming soon"]}
+                footnote="Camera scan = install/help (does NOT check you in yet)"
               />
-            </div>
+            )}
 
             {/* ROW 4: COUNTS + VIP MOMENT (same height, no overlap) */}
             <div className="grid grid-cols-2 gap-[calc(1.35*var(--u))] min-h-0 items-stretch">
@@ -581,7 +520,7 @@ export default function TvKioskClient(props: {
                 </div>
 
                 <div className="mt-[calc(0.95*var(--u))] space-y-[calc(0.9*var(--u))]">
-                  <StepRowBig n={1} title="Install the app" desc="Scan the QR (camera) if you don’t have it yet." />
+                  <StepRowBig n={1} title="Scan the ONE QR" desc="Camera scan opens the app (or installs it)." />
                   <StepRowBig n={2} title="Login (Guest is OK)" desc="VIP is where the rewards live." />
                   <StepRowBig n={3} title="Check In → Scan QR" desc="Use the scanner inside the app to get counted." />
                 </div>
