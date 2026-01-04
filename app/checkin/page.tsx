@@ -7,9 +7,12 @@ export const dynamic = "force-static";
 const APP_STORE_URL =
   "https://apps.apple.com/us/app/sugarshack-downtown-app/id6755752186";
 
-// If you want the “ONE QR” page to be the default entry point later,
-// you can optionally reference /c here as well.
+// One-QR landing (universal link entry point)
 const ONE_QR_URL = "https://ssdtapp.byvenuecreative.com/c";
+
+// Optional: attempt to open the app directly (works when installed)
+// NOTE: this will only be useful once deep linking routes are mapped in the app.
+const APP_SCHEME_URL = "ssdtfresh://check-in";
 
 export default function CheckinHelpPage() {
   return (
@@ -47,6 +50,14 @@ export default function CheckinHelpPage() {
             Open in the App Store
           </a>
 
+          {/* Optional: Open the app (only helps if installed + scheme works) */}
+          <a
+            href={APP_SCHEME_URL}
+            className="w-full rounded-xl border border-white/20 bg-white/5 text-white font-bold py-4 text-lg sm:text-xl"
+          >
+            Already installed? Open the App
+          </a>
+
           {/* Backup link (some in-app browsers behave oddly) */}
           <Link
             href={APP_STORE_URL}
@@ -67,22 +78,32 @@ export default function CheckinHelpPage() {
               <span className="font-semibold">2)</span> Login as VIP (or continue as Guest)
             </li>
             <li>
-              <span className="font-semibold">3)</span> Tap <span className="font-semibold">Check In</span>
+              <span className="font-semibold">3)</span> Tap{" "}
+              <span className="font-semibold">Check In</span>
             </li>
             <li>
-              <span className="font-semibold">4)</span> Tap <span className="font-semibold">Scan QR</span> (this opens the camera inside the app)
+              <span className="font-semibold">4)</span> Tap{" "}
+              <span className="font-semibold">Scan QR</span> (this opens the camera inside the app)
             </li>
           </ol>
 
           <p className="mt-4 text-sm sm:text-base text-white/70 leading-relaxed">
             Want the simplest flow? Use the ONE QR link:
-            <span className="ml-2 font-semibold text-white">{ONE_QR_URL}</span>
           </p>
+
+          <a
+            href={ONE_QR_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-block text-white font-semibold underline underline-offset-4 break-all"
+          >
+            {ONE_QR_URL}
+          </a>
         </div>
 
         <p className="mt-8 text-xs sm:text-sm text-white/55">
-          Tip: phone camera scanning won’t complete check-in unless it opens the app flow.
-          Install the app first for VIP perks.
+          Tip: phone camera scanning won’t complete check-in unless it opens the app
+          flow. Install the app first for VIP perks.
         </p>
       </div>
     </main>
