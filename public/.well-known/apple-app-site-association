@@ -8,7 +8,9 @@
           "/c",
           "/c/*",
           "/checkin",
-          "/checkin/*"
+          "/checkin/*",
+          "/check-in",
+          "/check-in/*"
         ]
       }
     ]
