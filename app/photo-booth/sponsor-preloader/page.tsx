@@ -16,6 +16,19 @@ type Sponsor = {
   created_at: string | null;
 };
 
+type SponsorPreloaderContextConfig = {
+  enabled?: boolean;
+  vip_max_shows?: number; // override (optional)
+  max_sponsors?: number; // override (optional)
+
+  // V2 pointer (what your route.ts normalizes to)
+  pool?: string | null; // null/undefined/"global" => use global pool; any other string => pools[pool] allowlist
+
+  // Back-compat (some older values / UI state)
+  sponsor_ids?: string[] | null; // legacy allowlist
+  allowlist_ids?: string[] | null; // legacy allowlist
+};
+
 type SponsorPreloaderConfig = {
   enabled: boolean;
   title: string;
@@ -25,8 +38,14 @@ type SponsorPreloaderConfig = {
   ends_on: string | null; // YYYY-MM-DD
   max_sponsors: number;
 
-  // VIP daily cap (ET) – used by the app
-  vip_max_shows?: number; // 0 = never for VIP, N>0 = show up to N times per day (ET)
+  // VIP daily cap (ET) – used by the app as default
+  vip_max_shows?: number;
+
+  // V2 pools (route.ts may store allowlists here)
+  pools?: Record<string, string[]>; // must include global
+
+  // per-context controls
+  contexts?: Record<string, SponsorPreloaderContextConfig>;
 };
 
 const PRELOADER_SETTINGS_KEY = "sponsor_preloader";
@@ -40,7 +59,45 @@ const DEFAULT_PRELOADER: SponsorPreloaderConfig = {
   ends_on: null,
   max_sponsors: 8,
   vip_max_shows: 3,
+
+  // V2 defaults
+  pools: { global: [] },
+  contexts: {},
 };
+
+// ✅ Your app contexts (keys should match what the app uses)
+const CONTEXTS: Array<{ key: string; label: string; hint: string }> = [
+  { key: "check-in", label: "Check-in", hint: "Shown when entering Check-in page" },
+  { key: "tonight", label: "Tonight", hint: "Shown on Tonight page load" },
+  { key: "calendar", label: "Calendar", hint: "Shown on Calendar page load" },
+  { key: "artists", label: "Artists", hint: "Shown on Artists page load" },
+  { key: "photo-booth", label: "Photo Booth", hint: "Shown on Photo Booth page load" },
+  { key: "fan-wall", label: "Fan Wall", hint: "Shown on Fan Wall page load" },
+  { key: "rewards", label: "Rewards", hint: "Shown on Rewards home load" },
+];
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function normalizeIdArray(v: any) {
+  if (v === null) return null;
+  if (!Array.isArray(v)) return undefined;
+  return v.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 500);
+}
+
+function normalizePools(raw: any): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw)) {
+      const key = String(k || "").trim();
+      if (!key) continue;
+      out[key] = Array.isArray(v) ? (v as any[]).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 500) : [];
+    }
+  }
+  if (!out.global) out.global = [];
+  return out;
+}
 
 function clampConfig(raw: any): SponsorPreloaderConfig {
   const merged: SponsorPreloaderConfig = { ...DEFAULT_PRELOADER, ...(raw || {}) };
@@ -51,10 +108,10 @@ function clampConfig(raw: any): SponsorPreloaderConfig {
   merged.body = String(merged.body || DEFAULT_PRELOADER.body).slice(0, 400);
 
   const dur = Number(merged.duration_ms);
-  merged.duration_ms = Number.isFinite(dur) ? Math.min(8000, Math.max(800, dur)) : DEFAULT_PRELOADER.duration_ms;
+  merged.duration_ms = Number.isFinite(dur) ? clamp(dur, 800, 8000) : DEFAULT_PRELOADER.duration_ms;
 
   const max = Number(merged.max_sponsors);
-  merged.max_sponsors = Number.isFinite(max) ? Math.min(30, Math.max(1, max)) : DEFAULT_PRELOADER.max_sponsors;
+  merged.max_sponsors = Number.isFinite(max) ? clamp(max, 1, 30) : DEFAULT_PRELOADER.max_sponsors;
 
   const s = merged.starts_on ? String(merged.starts_on).slice(0, 10) : null;
   const e = merged.ends_on ? String(merged.ends_on).slice(0, 10) : null;
@@ -69,8 +126,81 @@ function clampConfig(raw: any): SponsorPreloaderConfig {
     vipRaw === 0
       ? 0
       : Number.isFinite(vip)
-      ? Math.min(50, Math.max(0, vip))
+      ? clamp(vip, 0, 50)
       : DEFAULT_PRELOADER.vip_max_shows;
+
+  // ✅ Pools (V2)
+  merged.pools = normalizePools((raw || {})?.pools);
+
+  // ✅ Contexts (support V2 pool pointer AND legacy sponsor_ids/allowlist_ids)
+  const ctx = (raw || {})?.contexts;
+  const outCtx: Record<string, SponsorPreloaderContextConfig> = {};
+
+  if (ctx && typeof ctx === "object" && !Array.isArray(ctx)) {
+    for (const [k, v] of Object.entries(ctx)) {
+      const key = String(k || "").trim();
+      if (!key) continue;
+
+      const vv: any = v && typeof v === "object" ? v : {};
+
+      const enabled =
+        typeof vv.enabled === "boolean"
+          ? vv.enabled
+          : vv.enabled != null
+          ? !!vv.enabled
+          : undefined;
+
+      const vipN = vv.vip_max_shows;
+      const vipNum = vipN === 0 ? 0 : Number(vipN);
+      const vipClamped =
+        vipN == null
+          ? undefined
+          : Number.isFinite(vipNum)
+          ? clamp(vipNum, 0, 50)
+          : undefined;
+
+      const maxN = vv.max_sponsors;
+      const maxNum = Number(maxN);
+      const maxClamped =
+        maxN == null
+          ? undefined
+          : Number.isFinite(maxNum)
+          ? clamp(maxNum, 1, 30)
+          : undefined;
+
+      // V2 pool pointer
+      const pool =
+        typeof vv.pool === "string"
+          ? vv.pool.trim()
+          : vv.pool === null
+          ? null
+          : undefined;
+
+      // legacy arrays
+      const sponsorIds = normalizeIdArray(vv.sponsor_ids);
+      const allowlistIds = normalizeIdArray(vv.allowlist_ids);
+
+      // If legacy allowlist exists but no pool pointer (or pool is global), convert to ctx:<key> pool
+      let finalPool: string | null | undefined = pool;
+      const legacyIds = Array.isArray(sponsorIds) ? sponsorIds : Array.isArray(allowlistIds) ? allowlistIds : null;
+
+      if ((finalPool === undefined || finalPool === null || finalPool === "" || finalPool === "global") && Array.isArray(legacyIds)) {
+        const generated = `ctx:${key}`;
+        merged.pools![generated] = legacyIds.slice(0, 500);
+        finalPool = generated;
+      }
+
+      outCtx[key] = {
+        ...(enabled === undefined ? {} : { enabled }),
+        ...(vipClamped === undefined ? {} : { vip_max_shows: vipClamped }),
+        ...(maxClamped === undefined ? {} : { max_sponsors: maxClamped }),
+        ...(finalPool === undefined ? {} : { pool: finalPool }),
+      };
+    }
+  }
+
+  merged.contexts = outCtx;
+  if (!merged.pools!.global) merged.pools!.global = [];
 
   return merged;
 }
@@ -92,10 +222,16 @@ export default function SponsorPreloaderPage() {
   const [poolSaving, setPoolSaving] = useState(false);
   const [poolError, setPoolError] = useState<string | null>(null);
 
-  // Scalable selection UI (modal picker)
+  // Global pool modal picker
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerSearch, setPickerSearch] = useState("");
   const [pickerSelectedIds, setPickerSelectedIds] = useState<Record<string, boolean>>({});
+
+  // per-context allowlist picker
+  const [ctxPickerOpen, setCtxPickerOpen] = useState(false);
+  const [ctxPickerKey, setCtxPickerKey] = useState<string>("");
+  const [ctxPickerSearch, setCtxPickerSearch] = useState("");
+  const [ctxPickerSelectedIds, setCtxPickerSelectedIds] = useState<Record<string, boolean>>({});
 
   // Preview modal
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -127,7 +263,6 @@ export default function SponsorPreloaderPage() {
       .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
 
     if (!q) return base;
-
     return base.filter((s) => (s.name || "").toLowerCase().includes(q) || (s.tier || "").toLowerCase().includes(q));
   }, [sponsors, pickerSearch]);
 
@@ -138,6 +273,13 @@ export default function SponsorPreloaderPage() {
   }, [poolSorted, previewIndex]);
 
   const previewLogoUrl = useMemo(() => getLogoPublicUrl(previewSponsor?.logo_path || null), [previewSponsor]);
+
+  // ✅ Quick lookup for showing which sponsors are selected per context
+  const sponsorById = useMemo(() => {
+    const m = new Map<string, Sponsor>();
+    for (const s of sponsors) m.set(s.id, s);
+    return m;
+  }, [sponsors]);
 
   async function fetchConfig() {
     setLoadingConfig(true);
@@ -305,10 +447,131 @@ export default function SponsorPreloaderPage() {
     setPreviewIndex((i) => (i - 1 + poolSorted.length) % poolSorted.length);
   }
 
+  // -------------------------------
+  // Context Controls (V2 pools + pool pointer)
+  // -------------------------------
+
+  function getCtx(key: string): SponsorPreloaderContextConfig {
+    return (config.contexts && config.contexts[key]) || {};
+  }
+
+  function getCtxPoolName(key: string) {
+    const c = getCtx(key);
+    const p = typeof c.pool === "string" ? c.pool.trim() : c.pool;
+    if (!p || p === "global") return "global";
+    return p;
+  }
+
+  function getCtxAllowlistIds(key: string) {
+    const poolName = getCtxPoolName(key);
+    if (poolName === "global") return null;
+    const pools = config.pools || { global: [] };
+    const ids = pools[poolName];
+    return Array.isArray(ids) ? ids : [];
+  }
+
+  function setCtx(key: string, patch: Partial<SponsorPreloaderContextConfig>) {
+    setConfig((prev) => {
+      const next = clampConfig({
+        ...prev,
+        contexts: {
+          ...(prev.contexts || {}),
+          [key]: { ...(prev.contexts?.[key] || {}), ...patch },
+        },
+      });
+      return next;
+    });
+  }
+
+  function setPools(patch: Record<string, string[] | undefined>) {
+    setConfig((prev) => {
+      const pools = { ...(prev.pools || { global: [] }) } as Record<string, string[]>;
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === undefined) {
+          delete pools[k];
+        } else {
+          pools[k] = v;
+        }
+      }
+      if (!pools.global) pools.global = [];
+      return clampConfig({ ...prev, pools });
+    });
+  }
+
+  function isCtxEnabled(key: string) {
+    const c = getCtx(key);
+    if (typeof c.enabled === "boolean") return c.enabled;
+    return true;
+  }
+
+  function ctxUsesAllowlist(key: string) {
+    // allowlist mode when pool points to a non-global pool
+    const poolName = getCtxPoolName(key);
+    return poolName !== "global";
+  }
+
+  function openCtxPicker(key: string) {
+    setCtxPickerKey(key);
+    setCtxPickerSearch("");
+
+    const currentIds = getCtxAllowlistIds(key);
+    const map: Record<string, boolean> = {};
+    if (Array.isArray(currentIds)) {
+      for (const id of currentIds) map[id] = true;
+    }
+    setCtxPickerSelectedIds(map);
+
+    setCtxPickerOpen(true);
+  }
+
+  function closeCtxPicker() {
+    setCtxPickerOpen(false);
+    setCtxPickerKey("");
+    setCtxPickerSearch("");
+    setCtxPickerSelectedIds({});
+  }
+
+  function toggleCtxPickerId(id: string) {
+    setCtxPickerSelectedIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
+
+  const ctxPickerSelectedCount = useMemo(
+    () => Object.values(ctxPickerSelectedIds).filter(Boolean).length,
+    [ctxPickerSelectedIds]
+  );
+
+  const ctxPickerEligibleSponsors = useMemo(() => {
+    const q = ctxPickerSearch.trim().toLowerCase();
+    const base = [...sponsors].sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
+
+    if (!q) return base;
+    return base.filter((s) => (s.name || "").toLowerCase().includes(q) || (s.tier || "").toLowerCase().includes(q));
+  }, [sponsors, ctxPickerSearch]);
+
+  function saveCtxPickerSelection() {
+    const ids = Object.entries(ctxPickerSelectedIds)
+      .filter(([, v]) => !!v)
+      .map(([k]) => k);
+
+    // ✅ Persist using V2 pools + pointer
+    const poolName = `ctx:${ctxPickerKey}`;
+    setPools({ [poolName]: ids });
+    setCtx(ctxPickerKey, { pool: poolName });
+
+    closeCtxPicker();
+  }
+
+  function clearCtxAllowlist(key: string) {
+    const poolName = `ctx:${key}`;
+    // revert to global pool and remove the ctx pool (keeps db clean)
+    setCtx(key, { pool: null });
+    setPools({ [poolName]: undefined });
+  }
+
   return (
     <DashboardShell
       title="Sponsor Preloader"
-      subtitle="Edit preloader messaging (no app update), control VIP daily frequency, and manage which sponsors appear in the preloader."
+      subtitle="Edit preloader messaging (no app update), control VIP daily frequency, control per-page enablement, and manage which sponsors appear."
       activeTab="sponsors"
     >
       <div className="space-y-6">
@@ -345,7 +608,7 @@ export default function SponsorPreloaderPage() {
 
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-800">Enabled</label>
+              <label className="text-xs font-semibold text-slate-800">Enabled (global master)</label>
               <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
                 <input
                   type="checkbox"
@@ -353,7 +616,7 @@ export default function SponsorPreloaderPage() {
                   checked={!!config.enabled}
                   onChange={(e) => setConfig((p) => ({ ...p, enabled: e.target.checked }))}
                 />
-                Show sponsor preloader overlay in the app
+                Allow sponsor preloader overlay in the app (master switch)
               </label>
 
               <div className="grid gap-3 sm:grid-cols-2">
@@ -391,7 +654,7 @@ export default function SponsorPreloaderPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-800">Max sponsors shown</label>
+                  <label className="text-xs font-semibold text-slate-800">Max sponsors shown (global)</label>
                   <input
                     type="number"
                     inputMode="numeric"
@@ -405,7 +668,7 @@ export default function SponsorPreloaderPage() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-800">VIP max shows per day (ET)</label>
+                  <label className="text-xs font-semibold text-slate-800">VIP max shows per day (ET) (global)</label>
                   <input
                     type="number"
                     inputMode="numeric"
@@ -414,8 +677,7 @@ export default function SponsorPreloaderPage() {
                     onChange={(e) => setConfig((p) => ({ ...p, vip_max_shows: Number(e.target.value) }))}
                   />
                   <p className="text-[11px] text-slate-500">
-                    VIP users see the preloader up to this many times per day. Set to{" "}
-                    <span className="font-semibold">0</span> to never show VIP.
+                    VIP users see the preloader up to this many times per day. Set to <span className="font-semibold">0</span> to never show VIP.
                   </p>
                 </div>
               </div>
@@ -439,9 +701,7 @@ export default function SponsorPreloaderPage() {
                   value={config.body}
                   onChange={(e) => setConfig((p) => ({ ...p, body: e.target.value }))}
                 />
-                <p className="text-[11px] text-slate-500">
-                  Tip: keep it short + premium. This copy appears in the app overlay.
-                </p>
+                <p className="text-[11px] text-slate-500">Tip: keep it short + premium. This copy appears in the app overlay.</p>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">
@@ -458,13 +718,214 @@ export default function SponsorPreloaderPage() {
           </div>
         </section>
 
+        {/* Context controls */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3">
+            <h3 className="text-base font-semibold text-slate-900">Context controls</h3>
+            <p className="text-xs text-slate-600">
+              Control where the overlay appears, per-context VIP caps, and optionally select a sponsor allowlist for that page.
+              If you do <span className="font-semibold">not</span> set an allowlist, the app uses the global pool.
+            </p>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            {CONTEXTS.map((ctx) => {
+              const c = getCtx(ctx.key);
+              const enabled = isCtxEnabled(ctx.key);
+
+              const usesAllow = ctxUsesAllowlist(ctx.key);
+
+              const selectedIds = usesAllow ? (getCtxAllowlistIds(ctx.key) || []) : [];
+              const selectedCount = selectedIds.length;
+
+              const vipOverride = typeof c.vip_max_shows === "number" ? c.vip_max_shows : "";
+              const maxOverride = typeof c.max_sponsors === "number" ? c.max_sponsors : "";
+
+              // ✅ Build a human-friendly list of selected sponsors (for display only)
+              const selectedSponsors = usesAllow
+                ? (selectedIds.map((id) => sponsorById.get(id)).filter(Boolean) as Sponsor[])
+                : [];
+
+              const unknownCount = usesAllow ? selectedIds.filter((id) => !sponsorById.has(id)).length : 0;
+
+              const maxBadges = 3;
+              const badgeSponsors = selectedSponsors.slice(0, maxBadges);
+              const remaining = Math.max(0, selectedSponsors.length - badgeSponsors.length);
+
+              return (
+                <div key={ctx.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-900">{ctx.label}</div>
+                      <div className="mt-0.5 text-xs text-slate-600">{ctx.hint}</div>
+                      <div className="mt-2 text-[11px] text-slate-600">
+                        Context key: <span className="font-mono font-semibold">{ctx.key}</span>
+                      </div>
+                    </div>
+
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-800">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-sky-500"
+                        checked={enabled}
+                        onChange={(e) => setCtx(ctx.key, { enabled: e.target.checked })}
+                      />
+                      Enabled
+                    </label>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-800">VIP max/day (override)</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+                        placeholder={`Default: ${typeof config.vip_max_shows === "number" ? config.vip_max_shows : 3}`}
+                        value={vipOverride}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setCtx(ctx.key, { vip_max_shows: v === "" ? undefined : Number(v) });
+                        }}
+                      />
+                      <p className="text-[11px] text-slate-500">Blank = use global VIP max/day.</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-800">Max sponsors (override)</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+                        placeholder={`Default: ${config.max_sponsors}`}
+                        value={maxOverride}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setCtx(ctx.key, { max_sponsors: v === "" ? undefined : Number(v) });
+                        }}
+                      />
+                      <p className="text-[11px] text-slate-500">Blank = use global max sponsors.</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs font-semibold text-slate-900">Sponsor selection</div>
+
+                      <div className="flex items-center gap-2">
+                        {usesAllow ? (
+                          <span className="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800">
+                            Allowlist: {selectedCount}
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                            Using global pool
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ✅ show which sponsor(s) are selected */}
+                    {usesAllow ? (
+                      <div className="mt-2">
+                        <div className="flex flex-wrap gap-2">
+                          {badgeSponsors.map((s) => {
+                            const label = `${s.name || "Unnamed sponsor"}${s.tier ? ` • ${s.tier}` : ""}`;
+                            return (
+                              <span
+                                key={s.id}
+                                className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700"
+                                title={label}
+                              >
+                                {label}
+                              </span>
+                            );
+                          })}
+
+                          {remaining > 0 ? (
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600">
+                              +{remaining} more
+                            </span>
+                          ) : null}
+
+                          {unknownCount > 0 ? (
+                            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
+                              {unknownCount} unknown
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-2 text-[11px] text-slate-600">
+                          The app will rotate through this allowlist for <span className="font-mono font-semibold">{ctx.key}</span>.
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {!usesAllow ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Switch into allowlist mode (start empty in ctx:<key>)
+                            const poolName = `ctx:${ctx.key}`;
+                            setPools({ [poolName]: [] });
+                            setCtx(ctx.key, { pool: poolName });
+                            openCtxPicker(ctx.key);
+                          }}
+                          className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          Set allowlist…
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openCtxPicker(ctx.key)}
+                            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                          >
+                            Edit allowlist…
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => clearCtxAllowlist(ctx.key)}
+                            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            title="Revert to global pool"
+                          >
+                            Use global pool
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="mt-2 text-[11px] text-slate-600">
+                      Allowlist means this page only shows sponsors you select (even if they are not in the global pool).
+                      Global pool means this page uses sponsors with <span className="font-mono">is_preloader_enabled=true</span>.
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 flex items-center justify-end">
+            <button
+              type="button"
+              disabled={savingConfig}
+              onClick={() => void saveConfig(clampConfig(config))}
+              className="inline-flex items-center justify-center rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-sky-500/40 hover:bg-sky-400 disabled:opacity-60"
+            >
+              {savingConfig ? "Saving…" : "Save context settings"}
+            </button>
+          </div>
+        </section>
+
         {/* Pool manager */}
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold text-slate-900">Preloader sponsor pool</h3>
+              <h3 className="text-base font-semibold text-slate-900">Global preloader sponsor pool</h3>
               <p className="text-xs text-slate-600">
-                This is the sponsor set the app can feature in the preloader. Scalable selector (no permanent checkbox list).
+                This is the default sponsor set the app can feature when a context does not have an allowlist.
               </p>
             </div>
 
@@ -493,8 +954,7 @@ export default function SponsorPreloaderPage() {
 
           {poolSorted.length === 0 && !loadingSponsors ? (
             <p className="text-sm text-slate-600">
-              No sponsors in the preloader pool yet. Click{" "}
-              <span className="font-semibold">“Add sponsors”</span> to select some.
+              No sponsors in the global pool yet. Click <span className="font-semibold">“Add sponsors”</span> to select some.
             </p>
           ) : (
             <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -540,13 +1000,13 @@ export default function SponsorPreloaderPage() {
         </section>
       </div>
 
-      {/* Picker Modal */}
+      {/* Global Pool Picker Modal */}
       {pickerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">Add sponsors to preloader pool</h2>
+                <h2 className="text-lg font-semibold text-slate-900">Add sponsors to global pool</h2>
                 <p className="text-xs text-slate-600">
                   Search and select sponsors to add. This avoids a permanent checkbox next to every sponsor forever.
                 </p>
@@ -630,7 +1090,97 @@ export default function SponsorPreloaderPage() {
         </div>
       )}
 
-      {/* Preview Modal (MATCH APP ORDER + SAFE TOP + FIT) */}
+      {/* Context Allowlist Picker Modal */}
+      {ctxPickerOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-2xl border border-slate-200 bg-white px-5 py-6 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Context allowlist</h2>
+                <p className="text-xs text-slate-600">
+                  Choose exactly which sponsors can appear for{" "}
+                  <span className="font-mono font-semibold">{ctxPickerKey}</span>.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCtxPicker}
+                className="rounded-full border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <input
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40"
+                placeholder="Search sponsors by name or tier…"
+                value={ctxPickerSearch}
+                onChange={(e) => setCtxPickerSearch(e.target.value)}
+              />
+
+              <div className="flex items-center justify-end gap-2">
+                <span className="text-xs text-slate-600">{ctxPickerSelectedCount} selected</span>
+                <button
+                  type="button"
+                  onClick={saveCtxPickerSelection}
+                  className="inline-flex items-center justify-center rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-sky-500/40 hover:bg-sky-400"
+                >
+                  Save allowlist
+                </button>
+              </div>
+            </div>
+
+            {ctxPickerEligibleSponsors.length === 0 ? (
+              <p className="text-sm text-slate-600">No sponsors found.</p>
+            ) : (
+              <ul className="space-y-2">
+                {ctxPickerEligibleSponsors.map((s) => {
+                  const checked = !!ctxPickerSelectedIds[s.id];
+                  const logoUrl = getLogoPublicUrl(s.logo_path);
+
+                  return (
+                    <li
+                      key={s.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="h-10 w-10 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                          {logoUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={logoUrl} alt={s.name || "Sponsor"} className="h-full w-full object-contain p-2" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">
+                              No logo
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">{s.name || "Unnamed sponsor"}</p>
+                          <p className="text-[11px] text-slate-600">{s.tier || "—"}</p>
+                        </div>
+                      </div>
+
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-800">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-sky-500"
+                          checked={checked}
+                          onChange={() => toggleCtxPickerId(s.id)}
+                        />
+                        Select
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal (unchanged) */}
       {previewOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-3 py-4 sm:px-6 sm:py-6">
           <div className="w-full max-w-5xl max-h-[88vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -672,21 +1222,17 @@ export default function SponsorPreloaderPage() {
 
             <div className="max-h-[calc(88vh-72px)] overflow-auto">
               <div className="grid gap-4 p-4 sm:gap-6 sm:p-5 lg:grid-cols-[1fr_340px]">
-                {/* Left: phone preview */}
                 <div className="flex items-center justify-center">
                   <div className="w-full max-w-[420px]">
                     <div className="rounded-[34px] border border-slate-200 bg-slate-950 p-3 shadow-xl">
                       <div className="relative overflow-hidden rounded-[28px] bg-[#020617]">
-                        {/* Interior scroll-safe area (like small phones) */}
                         <div className="max-h-[68vh] overflow-auto px-6 pt-14 pb-10">
-                          {/* TITLE (top, with safe padding) */}
                           <div className="text-center">
                             <div className="mx-auto max-w-[320px] text-[26px] font-black leading-[30px] tracking-tight text-white">
                               {config.title || DEFAULT_PRELOADER.title}
                             </div>
                           </div>
 
-                          {/* Sponsor tier pill */}
                           <div className="mt-7 flex justify-center">
                             <div className="rounded-full border border-sky-500/30 bg-sky-500/10 px-6 py-2.5">
                               <span className="text-[12px] font-extrabold uppercase tracking-wide text-white">
@@ -695,7 +1241,6 @@ export default function SponsorPreloaderPage() {
                             </div>
                           </div>
 
-                          {/* LOGO (bigger + premium container) */}
                           <div className="mt-6 flex justify-center">
                             <div className="h-[230px] w-[230px] overflow-hidden rounded-[38px] border border-white/10 bg-white/[0.06] shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
                               <div className="flex h-full w-full items-center justify-center p-7">
@@ -713,21 +1258,18 @@ export default function SponsorPreloaderPage() {
                             </div>
                           </div>
 
-                          {/* Sponsor name */}
                           <div className="mt-6 text-center">
                             <div className="mx-auto max-w-[320px] text-[44px] font-black leading-[46px] tracking-tight text-white">
                               {previewSponsor?.name ? String(previewSponsor.name) : "Sponsor"}
                             </div>
                           </div>
 
-                          {/* BODY (under logo/name, slightly smaller) */}
                           <div className="mt-7 text-center">
                             <div className="mx-auto max-w-[340px] text-[14px] font-semibold leading-[20px] text-slate-300">
                               {config.body || DEFAULT_PRELOADER.body}
                             </div>
                           </div>
 
-                          {/* Tap */}
                           <div className="mt-8 text-center">
                             <div className="text-[12px] font-semibold text-slate-400">Tap anywhere to continue</div>
                           </div>
@@ -741,7 +1283,6 @@ export default function SponsorPreloaderPage() {
                   </div>
                 </div>
 
-                {/* Right: details panel */}
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <h3 className="text-sm font-semibold text-slate-900">Preview details</h3>
 
