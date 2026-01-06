@@ -110,20 +110,22 @@ function DoorCard(props: {
   qrSrc: string;
   qrAlt: string;
   foot: string;
+  qrU: number; // QR square size in "u" units
+  titleScale: number; // relative scale for title
 }) {
   const isVip = props.tone === "vip";
 
   return (
     <div
       className={[
-        "h-full min-h-0 overflow-hidden rounded-[calc(2.6*var(--u))] border bg-gradient-to-br",
+        "h-full min-h-0 overflow-hidden rounded-[calc(2.8*var(--u))] border bg-gradient-to-br",
         isVip
-          ? "border-amber-300/55 from-black/55 via-slate-950/55 to-black/45"
+          ? "border-amber-300/60 from-black/65 via-slate-950/60 to-black/55"
           : "border-slate-800 from-slate-900/55 via-black/40 to-slate-900/45",
       ].join(" ")}
-      style={{ boxShadow: isVip ? "0 0 0 1px rgba(251,191,36,0.15) inset" : "none" }}
+      style={{ boxShadow: isVip ? "0 0 0 1px rgba(251,191,36,0.18) inset" : "none" }}
     >
-      <div className="h-full min-h-0 grid grid-rows-[auto_minmax(0,1fr)_auto] px-[calc(2.4*var(--u))] py-[calc(2.2*var(--u))]">
+      <div className="h-full min-h-0 grid grid-rows-[auto_minmax(0,1fr)_auto] px-[calc(2.7*var(--u))] py-[calc(2.45*var(--u))]">
         {/* top copy */}
         <div className="min-w-0">
           <div
@@ -131,22 +133,25 @@ function DoorCard(props: {
               "uppercase tracking-[0.34em] font-extrabold",
               isVip ? "text-amber-300" : "text-slate-300",
             ].join(" ")}
-            style={{ fontSize: "calc(1.1*var(--u))" }}
+            style={{ fontSize: "calc(1.15*var(--u))" }}
           >
             {props.eyebrow}
           </div>
 
-          <div className="mt-[calc(0.65*var(--u))] font-extrabold text-slate-100 leading-[1.02]" style={{ fontSize: "calc(3.0*var(--u))" }}>
+          <div
+            className="mt-[calc(0.7*var(--u))] font-extrabold text-slate-100 leading-[1.02]"
+            style={{ fontSize: `calc(${3.35 * props.titleScale}*var(--u))` }}
+          >
             {props.title}
           </div>
 
-          <div className="mt-[calc(1.0*var(--u))] space-y-[calc(0.7*var(--u))]">
+          <div className="mt-[calc(1.05*var(--u))] space-y-[calc(0.75*var(--u))]">
             {props.bullets.map((b, i) => (
-              <div key={i} className="flex items-start gap-[calc(0.75*var(--u))]">
-                <div className={isVip ? "text-amber-300" : "text-slate-300"} style={{ fontSize: "calc(1.9*var(--u))", lineHeight: 1 }}>
+              <div key={i} className="flex items-start gap-[calc(0.8*var(--u))]">
+                <div className={isVip ? "text-amber-300" : "text-slate-300"} style={{ fontSize: "calc(2.05*var(--u))", lineHeight: 1 }}>
                   •
                 </div>
-                <div className="text-slate-100 font-extrabold" style={{ fontSize: "calc(1.75*var(--u))" }}>
+                <div className="text-slate-100 font-extrabold" style={{ fontSize: "calc(1.95*var(--u))" }}>
                   {b}
                 </div>
               </div>
@@ -156,8 +161,8 @@ function DoorCard(props: {
 
         {/* QR */}
         <div className="min-h-0 flex items-center justify-center">
-          <div className="rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.1*var(--u))]">
-            <div className="relative" style={{ width: "calc(26.0*var(--u))", height: "calc(26.0*var(--u))" }}>
+          <div className="rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.15*var(--u))]">
+            <div className="relative" style={{ width: `calc(${props.qrU}*var(--u))`, height: `calc(${props.qrU}*var(--u))` }}>
               <Image src={props.qrSrc} alt={props.qrAlt} fill className="object-contain" priority />
             </div>
           </div>
@@ -167,11 +172,11 @@ function DoorCard(props: {
         <div className="min-w-0">
           <div
             className={[
-              "rounded-[calc(1.8*var(--u))] border px-[calc(1.4*var(--u))] py-[calc(0.9*var(--u))]",
-              isVip ? "border-amber-300/30 bg-black/35" : "border-slate-800 bg-black/30",
+              "rounded-[calc(1.9*var(--u))] border px-[calc(1.55*var(--u))] py-[calc(1.0*var(--u))]",
+              isVip ? "border-amber-300/35 bg-black/35" : "border-slate-800 bg-black/30",
             ].join(" ")}
           >
-            <div className={isVip ? "text-amber-300" : "text-slate-200"} style={{ fontSize: "calc(1.45*var(--u))", fontWeight: 900 }}>
+            <div className={isVip ? "text-amber-300" : "text-slate-200"} style={{ fontSize: "calc(1.6*var(--u))", fontWeight: 900 }}>
               {props.foot}
             </div>
           </div>
@@ -195,7 +200,7 @@ export default function TvKioskClient(props: {
   venueQrSrc: string; // HAVE APP
   locationLabel: string;
 
-  oneQrMode?: boolean; // kept for compatibility but we’re not using it in Option A
+  oneQrMode?: boolean;
 
   gateOk?: boolean;
   gateReason?: string;
@@ -306,7 +311,6 @@ export default function TvKioskClient(props: {
       const safePct = Number.isFinite(pct) ? Math.max(50, Math.min(99, Math.floor(pct))) : goalAdvanceAtPct;
 
       setLiveGoal({ base: safeBase, step: safeStep, pct: safePct });
-
       didInitRef.current = false;
     } catch (e: any) {
       setGoalErr(e?.message ?? "Goal load error");
@@ -364,7 +368,7 @@ export default function TvKioskClient(props: {
   return (
     <div className="fixed inset-0 overflow-hidden text-white">
       <style jsx global>{`
-        :root { --u: calc(min(1vw, 1vh) * 0.95); }
+        :root { --u: calc(min(1vw, 1vh) * 0.98); }
 
         .tvSafe {
           padding:
@@ -420,26 +424,22 @@ export default function TvKioskClient(props: {
 
       <div className="relative h-[100svh] w-full tvSafe">
         <div className="mx-auto h-full w-full max-w-[1900px]">
-          {/* ✅ NEW STABLE LAYOUT: Header / Doors / Footer */}
-          <div className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-[calc(1.35*var(--u))]">
+          {/* ✅ Stable 4-row layout: Header / Goal / Doors / Status */}
+          <div className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-[calc(1.2*var(--u))]">
             {/* HEADER */}
             <div className="flex items-start justify-between gap-[calc(2.0*var(--u))]">
               <div className="flex items-start gap-[calc(2.2*var(--u))] min-w-0">
                 <div
                   className="relative shrink-0"
-                  style={{
-                    width: "calc(14.5*var(--u))",
-                    height: "calc(14.5*var(--u))",
-                    minWidth: "calc(14.5*var(--u))",
-                  }}
+                  style={{ width: "calc(14.8*var(--u))", height: "calc(14.8*var(--u))", minWidth: "calc(14.8*var(--u))" }}
                 >
                   <Image src={showLogoSrc} alt="Sugarshack Downtown" fill className="object-contain" priority />
                 </div>
 
                 <div className="min-w-0">
                   <div className="font-extrabold leading-[0.95]">
-                    <div style={{ fontSize: "calc(6.1*var(--u))" }}>CHECK IN</div>
-                    <div style={{ fontSize: "calc(5.2*var(--u))" }} className="text-amber-300">
+                    <div style={{ fontSize: "calc(6.0*var(--u))" }}>CHECK IN</div>
+                    <div style={{ fontSize: "calc(5.1*var(--u))" }} className="text-amber-300">
                       GET COUNTED
                     </div>
                   </div>
@@ -447,43 +447,13 @@ export default function TvKioskClient(props: {
                   <div className="mt-[calc(0.85*var(--u))] flex flex-wrap items-center gap-[calc(0.9*var(--u))]">
                     <div
                       className="rounded-[calc(1.6*var(--u))] border border-slate-800 bg-black/25 px-[calc(1.2*var(--u))] py-[calc(0.7*var(--u))]"
-                      style={{ fontSize: "calc(1.65*var(--u))" }}
+                      style={{ fontSize: "calc(1.6*var(--u))" }}
                     >
                       <span className="text-slate-200 font-extrabold">New app. New perks.</span>{" "}
                       <span className="text-amber-300 font-extrabold">VIP gets the good stuff</span>{" "}
                       <span className="text-slate-200 font-extrabold">— don’t miss out.</span>
                     </div>
                   </div>
-
-                  <div className="mt-[calc(0.7*var(--u))] flex flex-wrap items-center gap-x-[calc(0.9*var(--u))] gap-y-[calc(0.5*var(--u))] text-slate-400">
-                    <span style={{ fontSize: "calc(1.1*var(--u))" }}>
-                      ET: <span className="font-semibold text-slate-200">{etDateMdy}</span>
-                    </span>
-                    <span className="opacity-50">•</span>
-                    <span style={{ fontSize: "calc(1.1*var(--u))" }}>
-                      As of <span className="font-semibold text-slate-200">{asOfIso ? formatTime(asOfIso, etTz) : "—"}</span>
-                    </span>
-                    <span className="opacity-50">•</span>
-                    <span className="text-slate-200 font-semibold" style={{ fontSize: "calc(1.1*var(--u))" }}>
-                      {locLabel}
-                    </span>
-                    <span className="opacity-50">•</span>
-                    <span style={{ fontSize: "calc(1.1*var(--u))" }}>Auto-updates 5s</span>
-                    {goalErr ? (
-                      <>
-                        <span className="opacity-50">•</span>
-                        <span className="text-rose-300" style={{ fontSize: "calc(1.1*var(--u))" }}>
-                          Goal config issue
-                        </span>
-                      </>
-                    ) : null}
-                  </div>
-
-                  {err ? (
-                    <p className="mt-[calc(0.6*var(--u))] text-rose-300" style={{ fontSize: "calc(1.25*var(--u))" }}>
-                      Data loading issue: {err}
-                    </p>
-                  ) : null}
                 </div>
               </div>
 
@@ -491,13 +461,36 @@ export default function TvKioskClient(props: {
                 <div className="uppercase tracking-[0.34em] text-slate-400" style={{ fontSize: "calc(1.1*var(--u))" }}>
                   TOTAL TODAY
                 </div>
-                <div className="font-extrabold tabular-nums text-amber-300 leading-none" style={{ fontSize: "calc(11.6*var(--u))" }}>
+                <div className="font-extrabold tabular-nums text-amber-300 leading-none" style={{ fontSize: "calc(11.8*var(--u))" }}>
                   {total}
                 </div>
               </div>
             </div>
 
-            {/* DOORS (TWO GIANT QR TILES) */}
+            {/* GOAL (moved ABOVE doors for gamification) */}
+            <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/55 px-[calc(2.2*var(--u))] py-[calc(1.55*var(--u))]">
+              <div className="flex items-end justify-between gap-[calc(1.2*var(--u))]">
+                <div>
+                  <div className="text-slate-200 font-extrabold" style={{ fontSize: "calc(2.35*var(--u))" }}>
+                    Tonight’s Goal: <span className="text-emerald-300 tabular-nums">{dynamicGoal}</span>{" "}
+                    <span className="text-slate-400 font-semibold">({remainingToGoal} to go)</span>
+                  </div>
+                  <div className="text-slate-300 font-semibold" style={{ fontSize: "calc(1.45*var(--u))" }}>
+                    Hit the goal → it levels up 🔥 Bigger confetti when it advances 🎉
+                  </div>
+                </div>
+
+                <div className="text-slate-200 font-extrabold tabular-nums" style={{ fontSize: "calc(2.35*var(--u))" }}>
+                  {goalPct.toFixed(0)}%
+                </div>
+              </div>
+
+              <div className="mt-[calc(0.95*var(--u))] h-[calc(2.05*var(--u))] w-full rounded-full bg-slate-800 overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 transition-all" style={{ width: `${goalPct}%` }} />
+              </div>
+            </div>
+
+            {/* DOORS (bigger, VIP dominates) */}
             <div className="min-h-0">
               <div className="h-full min-h-0 grid grid-cols-2 gap-[calc(1.35*var(--u))] items-stretch">
                 <DoorCard
@@ -508,6 +501,8 @@ export default function TvKioskClient(props: {
                   qrSrc={venueQrSrc}
                   qrAlt="VIP Fast Lane QR"
                   foot="HAVE APP = FASTEST ENTRY"
+                  qrU={31}          /* VIP QR bigger */
+                  titleScale={1.12} /* VIP text slightly bigger */
                 />
 
                 <DoorCard
@@ -518,30 +513,46 @@ export default function TvKioskClient(props: {
                   qrSrc={helpQrSrc}
                   qrAlt="Get the App QR"
                   foot="INSTALL → THEN SCAN VIP FAST LANE"
+                  qrU={27}          /* Install QR slightly smaller */
+                  titleScale={1.00}
                 />
               </div>
             </div>
 
-            {/* FOOTER (GOAL STRIP) */}
-            <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/50 px-[calc(2.2*var(--u))] py-[calc(1.6*var(--u))]">
-              <div className="flex items-end justify-between gap-[calc(1.2*var(--u))]">
-                <div>
-                  <div className="text-slate-200 font-extrabold" style={{ fontSize: "calc(2.25*var(--u))" }}>
-                    Tonight’s Goal: <span className="text-emerald-300 tabular-nums">{dynamicGoal}</span>{" "}
-                    <span className="text-slate-400 font-semibold">({remainingToGoal} to go)</span>
-                  </div>
-                  <div className="text-slate-300 font-semibold" style={{ fontSize: "calc(1.4*var(--u))" }}>
-                    Hit the goal → it levels up 🔥 Bigger confetti when it advances 🎉
-                  </div>
-                </div>
+            {/* STATUS STRIP (tiny, low priority) */}
+            <div className="rounded-[calc(2.0*var(--u))] border border-slate-800 bg-black/25 px-[calc(2.0*var(--u))] py-[calc(1.1*var(--u))]">
+              <div className="flex flex-wrap items-center gap-x-[calc(1.0*var(--u))] gap-y-[calc(0.5*var(--u))] text-slate-400">
+                <span style={{ fontSize: "calc(1.2*var(--u))" }}>
+                  ET: <span className="font-semibold text-slate-200">{etDateMdy}</span>
+                </span>
+                <span className="opacity-50">•</span>
+                <span style={{ fontSize: "calc(1.2*var(--u))" }}>
+                  As of <span className="font-semibold text-slate-200">{asOfIso ? formatTime(asOfIso, etTz) : "—"}</span>
+                </span>
+                <span className="opacity-50">•</span>
+                <span className="text-slate-200 font-semibold" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                  {locLabel}
+                </span>
+                <span className="opacity-50">•</span>
+                <span style={{ fontSize: "calc(1.2*var(--u))" }}>Auto-updates 5s</span>
 
-                <div className="text-slate-200 font-extrabold tabular-nums" style={{ fontSize: "calc(2.25*var(--u))" }}>
-                  {goalPct.toFixed(0)}%
-                </div>
-              </div>
+                {goalErr ? (
+                  <>
+                    <span className="opacity-50">•</span>
+                    <span className="text-rose-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                      Goal config issue
+                    </span>
+                  </>
+                ) : null}
 
-              <div className="mt-[calc(0.95*var(--u))] h-[calc(2.0*var(--u))] w-full rounded-full bg-slate-800 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 transition-all" style={{ width: `${goalPct}%` }} />
+                {err ? (
+                  <>
+                    <span className="opacity-50">•</span>
+                    <span className="text-rose-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                      Data loading issue
+                    </span>
+                  </>
+                ) : null}
               </div>
             </div>
           </div>
