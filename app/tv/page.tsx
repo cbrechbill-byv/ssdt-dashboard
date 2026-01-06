@@ -7,12 +7,24 @@
 //
 // Canonical production TV URL:
 // https://ssdtapp.byvenuecreative.com/tv?key=ssdt-tv-2026
+//
+// ✅ IMPORTANT:
+// The QR rendered on this TV page must be an IMAGE FILE (PNG) that encodes the One-QR deep link
+// (NOT a QR that encodes /tv?key=...).
+//
+// Place the file here:
+// C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\public\qr\SSDT_ONEQR_TV_CHECKIN.png
+// It will be served at:
+// /qr/SSDT_ONEQR_TV_CHECKIN.png
 
 import TvKioskClient from "./ui";
 
 export const dynamic = "force-dynamic";
 
 const ET_TZ = "America/New_York";
+
+// ✅ Must match the PNG filename in /public/qr
+const ONE_QR_IMAGE_SRC = "/qr/SSDT_ONEQR_TV_CHECKIN.png";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -74,9 +86,9 @@ export default async function TvPage(props: { searchParams?: SearchParams }) {
       goalStep={50}
       goalAdvanceAtPct={90}
       showLogoSrc="/ssdt-logo.png"
-      // ✅ Use the new ONE QR image (same for help + venue)
-      helpQrSrc="/qr/SSDT_ONEQR_TV_CHECKIN.png"
-      venueQrSrc="/qr/SSDT_ONEQR_TV_CHECKIN.png"
+      // ✅ One-QR image (deep link QR)
+      helpQrSrc={ONE_QR_IMAGE_SRC}
+      venueQrSrc={ONE_QR_IMAGE_SRC}
       locationLabel={loc}
       oneQrMode={true}
       gateOk={gateOk}
