@@ -178,7 +178,7 @@ function DoorCard(props: {
               Fix: reserve space for QR by tightening the copy column (above),
               and keep QR centered in its column (below).
             */}
-            <div className="rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.15*var(--u))]">
+            <div className="rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.15*var(--u))] qrIdle">
               <div
                 className="relative"
                 style={{
@@ -447,7 +447,7 @@ export default function TvKioskClient(props: {
 
         .vipElite {
           position: relative;
-          animation: ssdtVipPulse 3.6s ease-in-out infinite;
+          animation: ssdtVipPulse 4.8s ease-in-out infinite;
         }
 
         /* Inner highlight line + top sheen */
@@ -470,7 +470,19 @@ export default function TvKioskClient(props: {
           mix-blend-mode: screen;
           opacity: 0.9;
         }
-      `}</style>
+      
+        @keyframes ssdtQrIdle {
+          0%   { transform: translateZ(0) scale(1); }
+          50%  { transform: translateZ(0) scale(1.015); }
+          100% { transform: translateZ(0) scale(1); }
+        }
+
+        .qrIdle {
+          animation: ssdtQrIdle 6.2s ease-in-out infinite;
+          transform-origin: center;
+          will-change: transform;
+        }
+`}</style>
 
       <div className="absolute inset-0 bg-gradient-to-br from-black via-slate-950 to-[#0b1220]" />
       <div className="pointer-events-none absolute inset-0 opacity-35">
@@ -643,3 +655,4 @@ export default function TvKioskClient(props: {
     </div>
   );
 }
+
