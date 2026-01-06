@@ -139,10 +139,7 @@ function DoorCard(props: {
               {props.eyebrow}
             </div>
 
-            <div
-              className="mt-[calc(0.7*var(--u))] font-extrabold text-slate-100 leading-[1.02]"
-              style={{ fontSize: `calc(${3.35 * props.titleScale}*var(--u))` }}
-            >
+            <div className="mt-[calc(0.7*var(--u))] font-extrabold text-slate-100 leading-[1.02] whitespace-nowrap" style={{ fontSize: `clamp(34px, calc(${3.10}*var(--u)), 86px)` }}>
               {props.title}
             </div>
 
@@ -534,13 +531,13 @@ export default function TvKioskClient(props: {
                 <DoorCard
                   tone="vip"
                   eyebrow="👑 VIP FAST LANE"
-                  title="HAVE THE APP"
+                  title="HAVE APP"
                   bullets={["Scan with your CAMERA", "Opens the app instantly", "You’re checked in"]}
                   qrSrc={venueQrSrc}
                   qrAlt="VIP Fast Lane QR"
                   foot="HAVE APP = FASTEST ENTRY"
                   qrU={34}          /* VIP QR bigger */
-                  titleScale={1.12} /* VIP text slightly bigger */
+                  titleScale={1.06} /* VIP text slightly bigger */
                 />
 
                 <DoorCard
@@ -552,7 +549,7 @@ export default function TvKioskClient(props: {
                   qrAlt="Get the App QR"
                   foot="INSTALL → THEN SCAN VIP FAST LANE"
                   qrU={30}          /* Install QR slightly smaller */
-                  titleScale={1.00}
+                  titleScale={0.98}
                 />
               </div>
             </div>
@@ -600,6 +597,7 @@ export default function TvKioskClient(props: {
     </div>
   );
 }
+
 
 
 
