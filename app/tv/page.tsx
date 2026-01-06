@@ -44,7 +44,11 @@ export default async function TvPage(props: { searchParams?: SearchParams }) {
 
   // TV-friendly gate (no redirect)
   let gateOk = true;
-  let gateReason: "missing_key" | "invalid_key" | "missing_server_key" | undefined = undefined;
+  let gateReason:
+    | "missing_key"
+    | "invalid_key"
+    | "missing_server_key"
+    | undefined = undefined;
 
   if (!requiredKey) {
     gateOk = false;
@@ -70,8 +74,9 @@ export default async function TvPage(props: { searchParams?: SearchParams }) {
       goalStep={50}
       goalAdvanceAtPct={90}
       showLogoSrc="/ssdt-logo.png"
-      helpQrSrc="/qr/ssdt_oneqr_c.png"
-      venueQrSrc="/qr/ssdt_oneqr_c.png"
+      // ✅ Use the new ONE QR image (same for help + venue)
+      helpQrSrc="/qr/SSDT_ONEQR_TV_CHECKIN.png"
+      venueQrSrc="/qr/SSDT_ONEQR_TV_CHECKIN.png"
       locationLabel={loc}
       oneQrMode={true}
       gateOk={gateOk}
