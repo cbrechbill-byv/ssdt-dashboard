@@ -120,33 +120,47 @@ function DoorCard(props: {
       className={[
         "h-full min-h-0 overflow-hidden rounded-[calc(2.8*var(--u))] border bg-gradient-to-br",
         isVip ? "vipElite" : "",
-        isVip ? "border-[2.5px] border-amber-300/80 from-black/70 via-slate-950/60 to-black/55" : "border-slate-800 from-slate-900/55 via-black/40 to-slate-900/45",
+        isVip
+          ? "border-[2.5px] border-amber-300/80 from-black/70 via-slate-950/60 to-black/55"
+          : "border-slate-800 from-slate-900/55 via-black/40 to-slate-900/45",
       ].join(" ")}
-      style={{ boxShadow: isVip ? "0 0 0 1px rgba(251,191,36,0.26) inset, 0 0 34px rgba(251,191,36,0.10)" : "none" }}
+      style={{
+        boxShadow: isVip
+          ? "0 0 0 1px rgba(251,191,36,0.26) inset, 0 0 34px rgba(251,191,36,0.10)"
+          : "none",
+      }}
     >
-      {/* ✅ 2-column layout: copy left, QR right, foot full-width bottom */}
+      {/* ✅ 2-row layout: top content, foot bottom (prevents overlap) */}
       <div className="h-full min-h-0 grid grid-rows-[minmax(0,1fr)_auto] px-[calc(2.7*var(--u))] py-[calc(2.45*var(--u))]">
-        <div className="min-h-0 grid grid-cols-[1fr_auto_1fr] gap-[calc(2.2*var(--u))] items-stretch">
+        {/* ✅ 2-column layout: copy left, QR right (NO spacer column) */}
+        <div className="min-h-0 grid grid-cols-[1.15fr_auto] gap-[calc(2.4*var(--u))] items-center">
           {/* COPY */}
-          <div className="min-w-0">
+          <div className="min-w-0 overflow-hidden">
             <div
-              className={[
-                "uppercase tracking-[0.34em] font-extrabold",
-                isVip ? "text-amber-300" : "text-slate-300",
-              ].join(" ")}
+              className={["uppercase tracking-[0.34em] font-extrabold", isVip ? "text-amber-300" : "text-slate-300"].join(
+                " "
+              )}
               style={{ fontSize: "calc(1.15*var(--u))" }}
             >
               {props.eyebrow}
             </div>
 
-            <div className="mt-[calc(0.7*var(--u))] font-extrabold text-slate-100 leading-[1.02] whitespace-nowrap" style={{ fontSize: `clamp(34px, calc(${3.10}*var(--u)), 86px)` }}>
+            {/* Title: keep one line, but do NOT allow it to run under the QR on TVs */}
+            <div
+              className="mt-[calc(0.7*var(--u))] font-extrabold text-slate-100 leading-[1.02] whitespace-nowrap overflow-hidden text-ellipsis"
+              style={{ fontSize: `clamp(34px, calc(${3.10 * (props.titleScale ?? 1)}*var(--u)), 86px)` }}
+              title={props.title}
+            >
               {props.title}
             </div>
 
             <div className="mt-[calc(1.05*var(--u))] space-y-[calc(0.75*var(--u))]">
               {props.bullets.map((b, i) => (
                 <div key={i} className="flex items-start gap-[calc(0.8*var(--u))]">
-                  <div className={isVip ? "text-amber-300" : "text-slate-300"} style={{ fontSize: "calc(2.05*var(--u))", lineHeight: 1 }}>
+                  <div
+                    className={isVip ? "text-amber-300" : "text-slate-300"}
+                    style={{ fontSize: "calc(2.05*var(--u))", lineHeight: 1 }}
+                  >
                     •
                   </div>
                   <div className="text-slate-100 font-extrabold" style={{ fontSize: "calc(1.95*var(--u))" }}>
@@ -158,17 +172,27 @@ function DoorCard(props: {
           </div>
 
           {/* QR */}
-          <div className="shrink-0 self-center flex items-center justify-center">
+          <div className="shrink-0 flex items-center justify-center">
+            {/* 
+              ✅ The bleed issue is caused by the title getting too wide on TVs.
+              Fix: reserve space for QR by tightening the copy column (above),
+              and keep QR centered in its column (below).
+            */}
             <div className="rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.15*var(--u))]">
-              <div className="relative" style={{ width: `calc(${props.qrU}*var(--u))`, height: `calc(${props.qrU}*var(--u))` }}>
+              <div
+                className="relative"
+                style={{
+                  width: `calc(${props.qrU}*var(--u))`,
+                  height: `calc(${props.qrU}*var(--u))`,
+                }}
+              >
                 <Image src={props.qrSrc} alt={props.qrAlt} fill className="object-contain" priority />
               </div>
             </div>
-          </div>          {/* spacer to keep QR visually centered */}
-          <div className="min-w-0" />
+          </div>
         </div>
 
-        {/* FOOT (full width, cannot overlap QR now) */}
+        {/* FOOT (full width, cannot overlap QR) */}
         <div className="mt-[calc(1.0*var(--u))] min-w-0">
           <div
             className={[
@@ -185,6 +209,7 @@ function DoorCard(props: {
     </div>
   );
 }
+
 export default function TvKioskClient(props: {
   kioskKey: string;
   etDateMdy: string;
@@ -367,32 +392,57 @@ export default function TvKioskClient(props: {
   return (
     <div className="fixed inset-0 overflow-hidden text-white">
       <style jsx global>{`
-        :root { --u: calc(min(1vw, 1vh) * 0.98); }
+        :root {
+          --u: calc(min(1vw, 1vh) * 0.98);
+        }
 
         .tvSafe {
-          padding:
-            calc(2.1 * var(--u) + env(safe-area-inset-top))
+          padding: calc(2.1 * var(--u) + env(safe-area-inset-top))
             calc(2.6 * var(--u) + env(safe-area-inset-right))
             calc(2.1 * var(--u) + env(safe-area-inset-bottom))
             calc(2.6 * var(--u) + env(safe-area-inset-left));
         }
 
         @keyframes ssdtLevelUpIn {
-          0% { transform: translateY(10px) scale(0.98); opacity: 0; }
-          25% { transform: translateY(0px) scale(1.02); opacity: 1; }
-          70% { transform: translateY(0px) scale(1.02); opacity: 1; }
-          100% { transform: translateY(-6px) scale(1); opacity: 0; }
+          0% {
+            transform: translateY(10px) scale(0.98);
+            opacity: 0;
+          }
+          25% {
+            transform: translateY(0px) scale(1.02);
+            opacity: 1;
+          }
+          70% {
+            transform: translateY(0px) scale(1.02);
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(-6px) scale(1);
+            opacity: 0;
+          }
         }
         @keyframes ssdtGlowPulse {
-          0% { filter: drop-shadow(0 0 0 rgba(251,191,36,0.0)); }
-          50% { filter: drop-shadow(0 0 34px rgba(251,191,36,0.65)); }
-          100% { filter: drop-shadow(0 0 0 rgba(251,191,36,0.0)); }
+          0% {
+            filter: drop-shadow(0 0 0 rgba(251, 191, 36, 0));
+          }
+          50% {
+            filter: drop-shadow(0 0 34px rgba(251, 191, 36, 0.65));
+          }
+          100% {
+            filter: drop-shadow(0 0 0 rgba(251, 191, 36, 0));
+          }
         }
-      
+
         @keyframes ssdtVipPulse {
-          0% { box-shadow: 0 0 0 1px rgba(251,191,36,0.26) inset, 0 0 34px rgba(251,191,36,0.10); }
-          50% { box-shadow: 0 0 0 1px rgba(251,191,36,0.34) inset, 0 0 58px rgba(251,191,36,0.16); }
-          100% { box-shadow: 0 0 0 1px rgba(251,191,36,0.26) inset, 0 0 34px rgba(251,191,36,0.10); }
+          0% {
+            box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.26) inset, 0 0 34px rgba(251, 191, 36, 0.1);
+          }
+          50% {
+            box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.34) inset, 0 0 58px rgba(251, 191, 36, 0.16);
+          }
+          100% {
+            box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.26) inset, 0 0 34px rgba(251, 191, 36, 0.1);
+          }
         }
 
         .vipElite {
@@ -405,26 +455,22 @@ export default function TvKioskClient(props: {
           content: "";
           position: absolute;
           inset: 0;
-          border-radius: calc(2.8*var(--u));
+          border-radius: calc(2.8 * var(--u));
           pointer-events: none;
 
-          /* Inner highlight ring */
-          box-shadow:
-            0 0 0 1px rgba(251,191,36,0.22) inset,
-            0 0 0 2px rgba(0,0,0,0.35) inset;
+          box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.22) inset, 0 0 0 2px rgba(0, 0, 0, 0.35) inset;
 
-          /* Top sheen */
           background: linear-gradient(
             180deg,
-            rgba(251,191,36,0.12) 0%,
-            rgba(251,191,36,0.05) 12%,
-            rgba(0,0,0,0.0) 38%,
-            rgba(0,0,0,0.0) 100%
+            rgba(251, 191, 36, 0.12) 0%,
+            rgba(251, 191, 36, 0.05) 12%,
+            rgba(0, 0, 0, 0) 38%,
+            rgba(0, 0, 0, 0) 100%
           );
           mix-blend-mode: screen;
           opacity: 0.9;
         }
-`}</style>
+      `}</style>
 
       <div className="absolute inset-0 bg-gradient-to-br from-black via-slate-950 to-[#0b1220]" />
       <div className="pointer-events-none absolute inset-0 opacity-35">
@@ -471,7 +517,7 @@ export default function TvKioskClient(props: {
                   <Image src={showLogoSrc} alt="Sugarshack Downtown" fill className="object-contain" priority />
                 </div>
 
-                <div className="min-w-0">
+                <div className="min-w-0 overflow-hidden">
                   <div className="font-extrabold leading-[0.95]">
                     <div style={{ fontSize: "calc(6.0*var(--u))" }}>CHECK IN</div>
                     <div style={{ fontSize: "calc(5.1*var(--u))" }} className="text-amber-300">
@@ -525,7 +571,7 @@ export default function TvKioskClient(props: {
               </div>
             </div>
 
-            {/* DOORS (bigger, VIP dominates) */}
+            {/* DOORS */}
             <div className="min-h-0">
               <div className="h-full min-h-0 grid grid-cols-2 gap-[calc(1.35*var(--u))] items-stretch">
                 <DoorCard
@@ -536,25 +582,25 @@ export default function TvKioskClient(props: {
                   qrSrc={venueQrSrc}
                   qrAlt="VIP Fast Lane QR"
                   foot="HAVE APP = FASTEST ENTRY"
-                  qrU={34}          /* VIP QR bigger */
-                  titleScale={1.06} /* VIP text slightly bigger */
+                  qrU={34}
+                  titleScale={1.06}
                 />
 
                 <DoorCard
                   tone="install"
-                  eyebrow="GET THE APP →"
+                  eyebrow="📲 GET THE APP"
                   title="NO APP YET"
                   bullets={["Scan to install", "Then use VIP FAST LANE", "VIP perks live in the app 👀"]}
                   qrSrc={helpQrSrc}
                   qrAlt="Get the App QR"
                   foot="INSTALL → THEN SCAN VIP FAST LANE"
-                  qrU={30}          /* Install QR slightly smaller */
+                  qrU={30}
                   titleScale={0.98}
                 />
               </div>
             </div>
 
-            {/* STATUS STRIP (tiny, low priority) */}
+            {/* STATUS STRIP */}
             <div className="rounded-[calc(2.0*var(--u))] border border-slate-800 bg-black/25 px-[calc(2.0*var(--u))] py-[calc(1.1*var(--u))]">
               <div className="flex flex-wrap items-center gap-x-[calc(1.0*var(--u))] gap-y-[calc(0.5*var(--u))] text-slate-400">
                 <span style={{ fontSize: "calc(1.2*var(--u))" }}>
@@ -597,12 +643,3 @@ export default function TvKioskClient(props: {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
