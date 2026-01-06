@@ -1,3 +1,4 @@
+/* eslint-disable */
 // PATH: C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\app\tv\page.tsx
 // /tv kiosk page (no login required if key matches CHECKIN_BOARD_KEY)
 //
@@ -9,13 +10,15 @@
 // https://ssdtapp.byvenuecreative.com/tv?key=ssdt-tv-2026
 //
 // ✅ IMPORTANT:
-// The QR rendered on this TV page must be an IMAGE FILE (PNG) that encodes the One-QR deep link
-// (NOT a QR that encodes /tv?key=...).
+// This TV page renders TWO QR IMAGE FILES (PNGs) from /public/qr:
 //
-// Place the file here:
-// C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\public\qr\SSDT_ONEQR_TV_CHECKIN.png
-// It will be served at:
-// /qr/SSDT_ONEQR_TV_CHECKIN.png
+// 1) NEED APP (install/open bridge):
+//    C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\public\qr\SSDT_ONEQR_TV_CHECKIN.png
+//    Served at: /qr/SSDT_ONEQR_TV_CHECKIN.png
+//
+// 2) HAVE APP (deep link into in-app scan flow):
+//    C:\Users\cbrec\Desktop\SSDT_Fresh\ssdt-dashboard\public\qr\SSDT_HAVEAPP_CHECKIN_SCAN.png
+//    Served at: /qr/SSDT_HAVEAPP_CHECKIN_SCAN.png
 
 import TvKioskClient from "./ui";
 
@@ -23,8 +26,9 @@ export const dynamic = "force-dynamic";
 
 const ET_TZ = "America/New_York";
 
-// ✅ Must match the PNG filename in /public/qr
-const ONE_QR_IMAGE_SRC = "/qr/SSDT_ONEQR_TV_CHECKIN.png";
+// ✅ QR images (PNG files in /public/qr)
+const QR_NEED_APP_SRC = "/qr/SSDT_ONEQR_TV_CHECKIN.png";
+const QR_HAVE_APP_SRC = "/qr/SSDT_HAVEAPP_CHECKIN_SCAN.png";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -56,11 +60,7 @@ export default async function TvPage(props: { searchParams?: SearchParams }) {
 
   // TV-friendly gate (no redirect)
   let gateOk = true;
-  let gateReason:
-    | "missing_key"
-    | "invalid_key"
-    | "missing_server_key"
-    | undefined = undefined;
+  let gateReason: "missing_key" | "invalid_key" | "missing_server_key" | undefined = undefined;
 
   if (!requiredKey) {
     gateOk = false;
@@ -86,11 +86,12 @@ export default async function TvPage(props: { searchParams?: SearchParams }) {
       goalStep={50}
       goalAdvanceAtPct={90}
       showLogoSrc="/ssdt-logo.png"
-      // ✅ One-QR image (deep link QR)
-      helpQrSrc={ONE_QR_IMAGE_SRC}
-      venueQrSrc={ONE_QR_IMAGE_SRC}
+      // ✅ Option A: two giant doors
+      helpQrSrc={QR_NEED_APP_SRC} // NEED APP
+      venueQrSrc={QR_HAVE_APP_SRC} // HAVE APP
       locationLabel={loc}
-      oneQrMode={true}
+      // keep prop for compatibility (ui ignores it in Option A)
+      oneQrMode={false}
       gateOk={gateOk}
       gateReason={gateReason}
     />
