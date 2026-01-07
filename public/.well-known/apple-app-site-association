@@ -10,7 +10,9 @@
           "/checkin",
           "/checkin/*",
           "/check-in",
-          "/check-in/*"
+          "/check-in/*",
+          "/check-in/scan",
+          "/check-in/scan/*"
         ]
       }
     ]
