@@ -5,21 +5,44 @@ type Props = {
   appStoreUrl: string;
 };
 
+// ✅ Play Store listing (manual install path for Android if app not installed)
+const PLAY_STORE_URL =
+  "https://play.google.com/store/apps/details?id=com.cbrechbill1.sugarshackdowntown";
+
+// ✅ This is the real One-QR deep link target (works when app is installed)
+// Uses Universal Links (iOS) + App Links (Android)
+const ONE_QR_DEEP_LINK =
+  "https://ssdtapp.byvenuecreative.com/check-in/scan?payload=SSDTVIP-CHECKIN";
+
+// Optional: scheme fallback for browsers that block universal/app links
 // Your Expo scheme from app.json is "ssdtfresh".
-// This is the fallback deep link attempt for browsers that don't trigger Universal Links.
-const APP_SCHEME_URL = "ssdtfresh://checkin";
+const APP_SCHEME_FALLBACK = "ssdtfresh://checkin";
+
+function isAndroid() {
+  if (typeof navigator === "undefined") return false;
+  return /Android/i.test(navigator.userAgent);
+}
 
 export default function OneQrClientActions({ appStoreUrl }: Props) {
   function handleOpenInApp() {
     const start = Date.now();
-    window.location.href = APP_SCHEME_URL;
 
+    // 1) Try the verified HTTPS deep link first (best path)
+    window.location.href = ONE_QR_DEEP_LINK;
+
+    // 2) If user is still here, try scheme fallback (some browsers block app links)
     window.setTimeout(() => {
-      // If user is still here, assume app didn't open.
       if (Date.now() - start < 1600) {
-        window.location.href = appStoreUrl;
+        window.location.href = APP_SCHEME_FALLBACK;
       }
-    }, 1200);
+    }, 700);
+
+    // 3) If still here, send to the correct store
+    window.setTimeout(() => {
+      if (Date.now() - start < 2600) {
+        window.location.href = isAndroid() ? PLAY_STORE_URL : appStoreUrl;
+      }
+    }, 1600);
   }
 
   return (
@@ -32,12 +55,12 @@ export default function OneQrClientActions({ appStoreUrl }: Props) {
       </button>
 
       <a
-        href={appStoreUrl}
+        href={isAndroid() ? PLAY_STORE_URL : appStoreUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="rounded-xl bg-white/10 border border-white/20 text-white font-bold py-4 text-lg sm:text-xl text-center"
       >
-        Install from App Store
+        {isAndroid() ? "Install from Google Play" : "Install from App Store"}
       </a>
     </div>
   );
