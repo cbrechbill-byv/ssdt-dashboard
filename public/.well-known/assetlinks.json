@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.cbrechbill1.sugarshackdowntown",
+      "sha256_cert_fingerprints": [
+        "4C:54:6D:9E:76:5F:F8:74:E7:02:F2:81:BC:90:8B:D1:33:8D:85:89:C6:72:CD:1E:5D:B3:B6:07:C4:E3:6C:F4"
+      ]
+    }
+  }
+]
