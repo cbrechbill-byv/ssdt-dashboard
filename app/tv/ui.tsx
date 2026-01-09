@@ -266,11 +266,9 @@ export default function TvKioskClient(props: {
   const [liveGoal, setLiveGoal] = useState<{ base: number; step: number; pct: number } | null>(null);
   const [goalErr, setGoalErr] = useState<string | null>(null);
 
-  // lineup (Now/Next)
   const [lineup, setLineup] = useState<TvLineupResponse | null>(null);
   const [lineupErr, setLineupErr] = useState<string | null>(null);
 
-  // NEW: local live countdown (ticks every 1s, API still refreshes lineup every 15s)
   const [liveNextStartsInSec, setLiveNextStartsInSec] = useState<number | null>(null);
 
   // sponsor (Presented by)
@@ -428,7 +426,6 @@ export default function TvKioskClient(props: {
     loadLineup();
     const l = window.setInterval(loadLineup, 15000);
 
-    // NEW: local 1s countdown ticker (NO extra network)
     const c = window.setInterval(() => {
       setLiveNextStartsInSec((prev) => {
         if (prev == null) return null;
@@ -436,7 +433,6 @@ export default function TvKioskClient(props: {
       });
     }, 1000);
 
-    // sponsor can be slower (schedule changes are rare)
     loadSponsor();
     const s = window.setInterval(loadSponsor, 30000);
 
@@ -466,7 +462,6 @@ export default function TvKioskClient(props: {
   const nextLabel = lineup?.next?.label ?? null;
   const nextStartsInSec = liveNextStartsInSec ?? lineup?.nextStartsInSec ?? null;
 
-  // “what am I about to miss” line (headline-style)
   const headerNowNextLine = useMemo(() => {
     const parts: string[] = [];
 
@@ -667,17 +662,23 @@ export default function TvKioskClient(props: {
                 </div>
               </div>
 
-              {/* CENTER (tight card so sponsor isn't far away) */}
+              {/* CENTER (LIVE LINEUP) */}
               <div className="flex-1 min-w-0 pt-[calc(0.7*var(--u))] px-[calc(1.2*var(--u))]">
                 <div
-                  className="mx-auto w-full max-w-[1120px] rounded-[calc(2.1*var(--u))] border border-slate-800/80 bg-black/20 px-[calc(1.6*var(--u))] py-[calc(1.2*var(--u))]"
+                  className="w-full max-w-[620px] rounded-[calc(2.1*var(--u))] border border-slate-800/80 bg-black/20 px-[calc(1.6*var(--u))] py-[calc(1.2*var(--u))]"
                   style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.03) inset" }}
                 >
-                  <div className="flex items-center gap-[calc(1.4*var(--u))] min-w-0">
+                  {/* ✅ UPDATED: 2-column layout (lineup left, sponsor right). Sponsor stays CLOSE to countdown. */}
+                  <div
+                    className="grid items-center gap-[calc(1.2*var(--u))]"
+                    style={{ gridTemplateColumns: "minmax(0, 40rem) auto", justifyContent: "start" }}
+                  >
+                    {/* LEFT: lineup copy */}
                     <div className="min-w-0">
                       <div className="uppercase tracking-[0.34em] text-slate-400 font-extrabold" style={{ fontSize: "calc(1.0*var(--u))" }}>
                         LIVE LINEUP
                       </div>
+
                       <div
                         className="mt-[calc(0.55*var(--u))] font-extrabold text-slate-100 truncate"
                         style={{ fontSize: "calc(2.25*var(--u))" }}
@@ -685,27 +686,59 @@ export default function TvKioskClient(props: {
                       >
                         {headerNowNextLine}
                       </div>
+
                       <div className="mt-[calc(0.35*var(--u))] text-slate-400 font-semibold" style={{ fontSize: "calc(1.25*var(--u))" }}>
                         Don’t miss the next set.
                       </div>
                     </div>
 
+                    {/* RIGHT: sponsor block (premium frame + name + logo) */}
                     {tvSponsor?.logoUrl ? (
-                      <div className="ml-auto shrink-0 flex items-center gap-[calc(0.9*var(--u))]">
-                        <div className="text-slate-400 font-extrabold uppercase tracking-[0.34em]" style={{ fontSize: "calc(0.95*var(--u))" }}>
-                          Presented by
-                        </div>
+                      <div
+                        className="shrink-0 rounded-[calc(1.7*var(--u))] border px-[calc(1.1*var(--u))] py-[calc(0.9*var(--u))]"
+                        style={{
+                          borderColor: "rgba(251,191,36,0.32)", // amber-ish (premium)
+                          background: "linear-gradient(180deg, rgba(0,0,0,0.28), rgba(0,0,0,0.18))",
+                          boxShadow:
+                            "0 0 0 1px rgba(251,191,36,0.10) inset, 0 14px 38px rgba(0,0,0,0.28)", // optional upgrade: subtle premium depth
+                        }}
+                      >
+                        <div className="flex items-center gap-[calc(1.0*var(--u))]">
+                          {/* Text stack */}
+                          <div className="min-w-0">
+                            <div
+                              className="text-slate-300 font-extrabold uppercase tracking-[0.34em]"
+                              style={{ fontSize: "calc(0.95*var(--u))" }}
+                            >
+                              Presented by
+                            </div>
 
-                        {/* IMPORTANT: No white background wrapper. Transparent + drop shadow only. */}
-                        <div
-                          className="relative"
-                          style={{
-                            width: "calc(15.5*var(--u))",
-                            height: "calc(4.3*var(--u))",
-                            filter: "drop-shadow(0 10px 18px rgba(0,0,0,0.55))",
-                          }}
-                        >
-                          <Image src={tvSponsor.logoUrl} alt={tvSponsor.name || "Sponsor"} fill className="object-contain" priority={false} />
+                            <div
+                              className="mt-[calc(0.25*var(--u))] font-extrabold text-slate-100 truncate"
+                              style={{ fontSize: "calc(1.35*var(--u))" }}
+                              title={tvSponsor.name ?? ""}
+                            >
+                              {tvSponsor.name ?? "Sponsor"}
+                            </div>
+                          </div>
+
+                          {/* Logo (square/round friendly, larger + crisp) */}
+                          <div
+                            className="relative shrink-0"
+                            style={{
+                              width: "calc(5.4*var(--u))",
+                              height: "calc(5.4*var(--u))",
+                              filter: "drop-shadow(0 10px 18px rgba(0,0,0,0.55))",
+                            }}
+                          >
+                            <Image
+                              src={tvSponsor.logoUrl}
+                              alt={tvSponsor.name || "Sponsor"}
+                              fill
+                              className="object-contain"
+                              priority={false}
+                            />
+                          </div>
                         </div>
                       </div>
                     ) : null}
@@ -776,7 +809,7 @@ export default function TvKioskClient(props: {
               </div>
             </div>
 
-            {/* STATUS STRIP (keep minimal + non-distracting) */}
+            {/* STATUS STRIP */}
             <div className="rounded-[calc(2.0*var(--u))] border border-slate-800 bg-black/25 px-[calc(2.0*var(--u))] py-[calc(1.1*var(--u))]">
               <div className="flex flex-wrap items-center gap-x-[calc(1.0*var(--u))] gap-y-[calc(0.5*var(--u))] text-slate-400">
                 <span style={{ fontSize: "calc(1.2*var(--u))" }}>
