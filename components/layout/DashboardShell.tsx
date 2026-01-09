@@ -3,9 +3,7 @@
 // Path: /components/layout/DashboardShell.tsx
 // Purpose: Top-level dashboard shell (header, auth status, primary nav pills, and optional dropdown submenus).
 //
-// Change: For tabs that have submenus (Dashboard, Rewards, Notifications, Admin Users, Sponsors),
-//         the top pill is now a PLACEHOLDER ONLY.
-//         The parent page link is included as the first item in the dropdown so users discover it.
+// Change: Add Dashboard submenu item "TV Board" -> /dashboard/tv-board
 
 "use client";
 
@@ -77,7 +75,7 @@ type SubMenuItem = {
 };
 
 const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
-  // ✅ NEW: Dashboard submenu
+  // ✅ Dashboard submenu (includes TV Board now)
   dashboard: [
     {
       label: "Dashboard",
@@ -88,6 +86,11 @@ const subMenus: Partial<Record<DashboardTab, SubMenuItem[]>> = {
       label: "Tonight Board",
       href: "/dashboard/tonight",
       description: "Live VIP + guest check-ins, conversions, points, redemptions.",
+    },
+    {
+      label: "TV Board",
+      href: "/dashboard/tv-board",
+      description: "Preview the TV board and schedule which sponsors display.",
     },
     {
       label: "Venue Health",
@@ -204,7 +207,7 @@ export default function DashboardShell({
       );
     }
 
-    // Dashboard should appear active for /dashboard and all sub-pages like /dashboard/tonight and /dashboard/venue-health
+    // Dashboard should appear active for /dashboard and all sub-pages like /dashboard/tonight, /dashboard/tv-board, /dashboard/venue-health
     if (tab.key === "dashboard") {
       return (
         activeTab === "dashboard" ||

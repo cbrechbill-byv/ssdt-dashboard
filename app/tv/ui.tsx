@@ -23,6 +23,35 @@ type TvGoalResponse = {
   error?: string;
 };
 
+type TvLineupResponse = {
+  ok: boolean;
+  dateEt: string;
+  now: null | { label: string; startTime: string | null; endTime: string | null };
+  next: null | { label: string; startTime: string };
+  nextStartsInSec: number | null;
+  error?: string;
+};
+
+type TvSponsorResponse = {
+  ok: boolean;
+  found: boolean;
+  todayEt: string;
+  schedule: {
+    id: string;
+    start_date: string;
+    end_date: string | null;
+    priority: number;
+  } | null;
+  sponsor: {
+    id: string;
+    name: string;
+    tier: string | null;
+    website_url: string | null;
+    sponsor_message: string | null;
+    logo_url: string | null;
+  } | null;
+};
+
 function clampPct(x: number) {
   if (!Number.isFinite(x)) return 0;
   return Math.max(0, Math.min(100, x));
@@ -57,6 +86,16 @@ function prettyLoc(loc: string) {
   const s = (loc || "").replace(/[-_]/g, " ").trim();
   if (!s) return "Entrance";
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatCountdown(sec: number) {
+  const s = Math.max(0, Math.floor(sec || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+  return `${m}:${String(r).padStart(2, "0")}`;
 }
 
 type ConfettiSize = "normal" | "big";
@@ -110,8 +149,8 @@ function DoorCard(props: {
   qrSrc: string;
   qrAlt: string;
   foot: string;
-  qrU: number; // QR square size in "u" units
-  titleScale: number; // relative scale for title
+  qrU: number;
+  titleScale: number;
 }) {
   const isVip = props.tone === "vip";
 
@@ -125,27 +164,19 @@ function DoorCard(props: {
           : "border-slate-800 from-slate-900/55 via-black/40 to-slate-900/45",
       ].join(" ")}
       style={{
-        boxShadow: isVip
-          ? "0 0 0 1px rgba(251,191,36,0.26) inset, 0 0 34px rgba(251,191,36,0.10)"
-          : "none",
+        boxShadow: isVip ? "0 0 0 1px rgba(251,191,36,0.26) inset, 0 0 34px rgba(251,191,36,0.10)" : "none",
       }}
     >
-      {/* ✅ 2-row layout: top content, foot bottom (prevents overlap) */}
       <div className="h-full min-h-0 grid grid-rows-[minmax(0,1fr)_auto] px-[calc(2.7*var(--u))] py-[calc(2.45*var(--u))]">
-        {/* ✅ 2-column layout: copy left, QR right (NO spacer column) */}
         <div className="min-h-0 grid grid-cols-[1.15fr_auto] gap-[calc(2.4*var(--u))] items-center">
-          {/* COPY */}
           <div className="min-w-0 overflow-hidden">
             <div
-              className={["uppercase tracking-[0.34em] font-extrabold", isVip ? "text-amber-300" : "text-slate-300"].join(
-                " "
-              )}
+              className={["uppercase tracking-[0.34em] font-extrabold", isVip ? "text-amber-300" : "text-slate-300"].join(" ")}
               style={{ fontSize: "calc(1.15*var(--u))" }}
             >
               {props.eyebrow}
             </div>
 
-            {/* Title: keep one line, but do NOT allow it to run under the QR on TVs */}
             <div
               className="mt-[calc(0.7*var(--u))] font-extrabold text-slate-100 leading-[1.02] whitespace-nowrap overflow-hidden text-ellipsis"
               style={{ fontSize: `clamp(34px, calc(${3.10 * (props.titleScale ?? 1)}*var(--u)), 86px)` }}
@@ -157,10 +188,7 @@ function DoorCard(props: {
             <div className="mt-[calc(1.05*var(--u))] space-y-[calc(0.75*var(--u))]">
               {props.bullets.map((b, i) => (
                 <div key={i} className="flex items-start gap-[calc(0.8*var(--u))]">
-                  <div
-                    className={isVip ? "text-amber-300" : "text-slate-300"}
-                    style={{ fontSize: "calc(2.05*var(--u))", lineHeight: 1 }}
-                  >
+                  <div className={isVip ? "text-amber-300" : "text-slate-300"} style={{ fontSize: "calc(2.05*var(--u))", lineHeight: 1 }}>
                     •
                   </div>
                   <div className="text-slate-100 font-extrabold" style={{ fontSize: "calc(1.95*var(--u))" }}>
@@ -171,28 +199,15 @@ function DoorCard(props: {
             </div>
           </div>
 
-          {/* QR */}
           <div className="shrink-0 flex items-center justify-center">
-            {/* 
-              ✅ The bleed issue is caused by the title getting too wide on TVs.
-              Fix: reserve space for QR by tightening the copy column (above),
-              and keep QR centered in its column (below).
-            */}
             <div className="rounded-[calc(2.2*var(--u))] bg-white p-[calc(1.15*var(--u))] qrIdle">
-              <div
-                className="relative"
-                style={{
-                  width: `calc(${props.qrU}*var(--u))`,
-                  height: `calc(${props.qrU}*var(--u))`,
-                }}
-              >
+              <div className="relative" style={{ width: `calc(${props.qrU}*var(--u))`, height: `calc(${props.qrU}*var(--u))` }}>
                 <Image src={props.qrSrc} alt={props.qrAlt} fill className="object-contain" priority />
               </div>
             </div>
           </div>
         </div>
 
-        {/* FOOT (full width, cannot overlap QR) */}
         <div className="mt-[calc(1.0*var(--u))] min-w-0">
           <div
             className={[
@@ -220,8 +235,8 @@ export default function TvKioskClient(props: {
   goalAdvanceAtPct: number;
 
   showLogoSrc: string;
-  helpQrSrc: string; // NEED APP
-  venueQrSrc: string; // HAVE APP
+  helpQrSrc: string;
+  venueQrSrc: string;
   locationLabel: string;
 
   oneQrMode?: boolean;
@@ -249,6 +264,14 @@ export default function TvKioskClient(props: {
 
   const [liveGoal, setLiveGoal] = useState<{ base: number; step: number; pct: number } | null>(null);
   const [goalErr, setGoalErr] = useState<string | null>(null);
+
+  // NEW: lineup (Now/Next)
+  const [lineup, setLineup] = useState<TvLineupResponse | null>(null);
+  const [lineupErr, setLineupErr] = useState<string | null>(null);
+
+  // NEW: TV Sponsor (Presented by)
+  const [tvSponsor, setTvSponsor] = useState<TvSponsorResponse | null>(null);
+  const [tvSponsorErr, setTvSponsorErr] = useState<string | null>(null);
 
   const lastTotalRef = useRef<number>(0);
   const lastGoalRef = useRef<number>(0);
@@ -341,6 +364,51 @@ export default function TvKioskClient(props: {
     }
   }
 
+  async function loadLineup() {
+    try {
+      setLineupErr(null);
+      const res = await fetch(`/api/tv-lineup`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`Lineup API ${res.status}`);
+      const json = (await res.json()) as TvLineupResponse;
+
+      if (!json?.ok) {
+        setLineupErr((json as any)?.error ?? "Failed to load lineup");
+        return;
+      }
+
+      setLineup(json);
+    } catch (e: any) {
+      setLineupErr(e?.message ?? "Lineup load error");
+    }
+  }
+
+  async function loadTvSponsor() {
+    try {
+      // Never block the TV on sponsor issues. Silent failure is fine.
+      setTvSponsorErr(null);
+
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 2500);
+
+      const res = await fetch(`/api/tv-sponsor?key=${encodeURIComponent(kioskKey)}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      }).finally(() => window.clearTimeout(timeout));
+
+      if (!res.ok) throw new Error(`Sponsor API ${res.status}`);
+      const json = (await res.json()) as TvSponsorResponse;
+
+      // If response is malformed, just ignore.
+      if (typeof json?.ok !== "boolean") return;
+
+      setTvSponsor(json);
+    } catch (e: any) {
+      // Don’t show hard errors on TV—just keep it quiet. (We still store a flag for internal debugging.)
+      setTvSponsorErr(e?.name === "AbortError" ? "Sponsor timeout" : e?.message ?? "Sponsor load error");
+      setTvSponsor(null);
+    }
+  }
+
   useEffect(() => {
     loadGoal();
     const g = window.setInterval(loadGoal, 30000);
@@ -348,9 +416,19 @@ export default function TvKioskClient(props: {
     load();
     const t = window.setInterval(load, 5000);
 
+    // Now/Next lineup (doesn’t need 5s; 10–15s is fine)
+    loadLineup();
+    const l = window.setInterval(loadLineup, 15000);
+
+    // TV sponsor (lightweight)
+    loadTvSponsor();
+    const s = window.setInterval(loadTvSponsor, 30000);
+
     return () => {
       window.clearInterval(t);
       window.clearInterval(g);
+      window.clearInterval(l);
+      window.clearInterval(s);
       if (levelUpTimerRef.current) window.clearTimeout(levelUpTimerRef.current);
     };
   }, []);
@@ -363,13 +441,34 @@ export default function TvKioskClient(props: {
   const step = liveGoal?.step ?? goalStep;
   const pct = liveGoal?.pct ?? goalAdvanceAtPct;
 
-  const dynamicGoal = useMemo(
-    () => computeDynamicGoal({ total, base, step, advanceAtPct: pct }),
-    [total, base, step, pct]
-  );
-
+  const dynamicGoal = useMemo(() => computeDynamicGoal({ total, base, step, advanceAtPct: pct }), [total, base, step, pct]);
   const goalPct = useMemo(() => clampPct(dynamicGoal > 0 ? (total / dynamicGoal) * 100 : 0), [total, dynamicGoal]);
   const remainingToGoal = Math.max(0, dynamicGoal - total);
+
+  const nowLabel = lineup?.now?.label ?? null;
+  const nextLabel = lineup?.next?.label ?? null;
+  const nextStartsInSec = lineup?.nextStartsInSec ?? null;
+
+  const nowNextLine = useMemo(() => {
+    const parts: string[] = [];
+
+    if (nowLabel) parts.push(`Now: ${nowLabel}`);
+    else if (nextLabel) parts.push(`Up next: ${nextLabel}`);
+    else parts.push(`Live music`);
+
+    if (nextLabel && Number.isFinite(nextStartsInSec as any)) {
+      parts.push(`Next set starts in ${formatCountdown(nextStartsInSec as number)}`);
+    } else if (nextLabel) {
+      parts.push(`Next set: ${nextLabel}`);
+    } else {
+      parts.push(`No more sets listed`);
+    }
+
+    return parts.join(" · ");
+  }, [nowLabel, nextLabel, nextStartsInSec]);
+
+  const sponsorLogoUrl = tvSponsor?.found ? tvSponsor?.sponsor?.logo_url ?? null : null;
+  const sponsorName = tvSponsor?.found ? tvSponsor?.sponsor?.name ?? null : null;
 
   if (!gateOk) {
     return (
@@ -450,16 +549,13 @@ export default function TvKioskClient(props: {
           animation: ssdtVipPulse 4.8s ease-in-out infinite;
         }
 
-        /* Inner highlight line + top sheen */
         .vipElite::before {
           content: "";
           position: absolute;
           inset: 0;
           border-radius: calc(2.8 * var(--u));
           pointer-events: none;
-
           box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.22) inset, 0 0 0 2px rgba(0, 0, 0, 0.35) inset;
-
           background: linear-gradient(
             180deg,
             rgba(251, 191, 36, 0.12) 0%,
@@ -470,11 +566,17 @@ export default function TvKioskClient(props: {
           mix-blend-mode: screen;
           opacity: 0.9;
         }
-      
+
         @keyframes ssdtQrIdle {
-          0%   { transform: translateZ(0) scale(1); }
-          50%  { transform: translateZ(0) scale(1.015); }
-          100% { transform: translateZ(0) scale(1); }
+          0% {
+            transform: translateZ(0) scale(1);
+          }
+          50% {
+            transform: translateZ(0) scale(1.015);
+          }
+          100% {
+            transform: translateZ(0) scale(1);
+          }
         }
 
         .qrIdle {
@@ -482,7 +584,7 @@ export default function TvKioskClient(props: {
           transform-origin: center;
           will-change: transform;
         }
-`}</style>
+      `}</style>
 
       <div className="absolute inset-0 bg-gradient-to-br from-black via-slate-950 to-[#0b1220]" />
       <div className="pointer-events-none absolute inset-0 opacity-35">
@@ -517,7 +619,6 @@ export default function TvKioskClient(props: {
 
       <div className="relative h-[100svh] w-full tvSafe">
         <div className="mx-auto h-full w-full max-w-[1900px]">
-          {/* ✅ Stable 4-row layout: Header / Goal / Doors / Status */}
           <div className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-[calc(1.2*var(--u))]">
             {/* HEADER */}
             <div className="flex items-start justify-between gap-[calc(2.0*var(--u))]">
@@ -560,7 +661,7 @@ export default function TvKioskClient(props: {
               </div>
             </div>
 
-            {/* GOAL (moved ABOVE doors for gamification) */}
+            {/* GOAL */}
             <div className="rounded-[calc(2.2*var(--u))] border border-slate-800 bg-slate-900/55 px-[calc(2.2*var(--u))] py-[calc(1.55*var(--u))]">
               <div className="flex items-end justify-between gap-[calc(1.2*var(--u))]">
                 <div>
@@ -626,6 +727,40 @@ export default function TvKioskClient(props: {
                 <span className="text-slate-200 font-semibold" style={{ fontSize: "calc(1.2*var(--u))" }}>
                   {locLabel}
                 </span>
+
+                {/* ✅ Now/Next line */}
+                <span className="opacity-50">•</span>
+                <span className="text-slate-200 font-semibold" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                  {nowNextLine}
+                </span>
+
+                {/* ✅ NEW: Presented by (only if sponsor found + logo exists) */}
+                {sponsorLogoUrl ? (
+                  <>
+                    <span className="opacity-50">•</span>
+                    <span className="text-slate-200 font-semibold" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                      Presented by
+                    </span>
+                    <span className="inline-flex items-center">
+                      <span
+                        className="relative inline-flex items-center justify-center rounded-[calc(0.9*var(--u))] border border-slate-700 bg-white/95 px-[calc(0.9*var(--u))] py-[calc(0.55*var(--u))]"
+                        title={sponsorName ?? "Sponsor"}
+                        style={{ height: "calc(3.0*var(--u))" }}
+                      >
+                        <span className="relative" style={{ width: "calc(8.6*var(--u))", height: "calc(2.3*var(--u))" }}>
+                          <Image
+                            src={sponsorLogoUrl}
+                            alt={sponsorName ?? "Sponsor"}
+                            fill
+                            className="object-contain"
+                            sizes="200px"
+                          />
+                        </span>
+                      </span>
+                    </span>
+                  </>
+                ) : null}
+
                 <span className="opacity-50">•</span>
                 <span style={{ fontSize: "calc(1.2*var(--u))" }}>Auto-updates 5s</span>
 
@@ -646,6 +781,18 @@ export default function TvKioskClient(props: {
                     </span>
                   </>
                 ) : null}
+
+                {lineupErr ? (
+                  <>
+                    <span className="opacity-50">•</span>
+                    <span className="text-rose-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                      Lineup issue
+                    </span>
+                  </>
+                ) : null}
+
+                {/* Sponsor error stays quiet; only show if you *want* it visible */}
+                {tvSponsorErr ? null : null}
               </div>
             </div>
           </div>
@@ -655,4 +802,3 @@ export default function TvKioskClient(props: {
     </div>
   );
 }
-
