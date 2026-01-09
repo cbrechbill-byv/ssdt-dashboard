@@ -35,14 +35,14 @@ type TvLineupResponse = {
 type TvSponsorResponse = {
   ok: boolean;
   found: boolean;
-  todayEt: string;
-  schedule: {
+  todayEt?: string;
+  schedule?: {
     id: string;
     start_date: string;
     end_date: string | null;
     priority: number;
   } | null;
-  sponsor: {
+  sponsor?: {
     id: string;
     name: string;
     tier: string | null;
@@ -50,6 +50,7 @@ type TvSponsorResponse = {
     sponsor_message: string | null;
     logo_url: string | null;
   } | null;
+  error?: string;
 };
 
 function clampPct(x: number) {
@@ -179,7 +180,7 @@ function DoorCard(props: {
 
             <div
               className="mt-[calc(0.7*var(--u))] font-extrabold text-slate-100 leading-[1.02] whitespace-nowrap overflow-hidden text-ellipsis"
-              style={{ fontSize: `clamp(34px, calc(${3.10 * (props.titleScale ?? 1)}*var(--u)), 86px)` }}
+              style={{ fontSize: `clamp(34px, calc(${3.1 * (props.titleScale ?? 1)}*var(--u)), 86px)` }}
               title={props.title}
             >
               {props.title}
@@ -265,13 +266,16 @@ export default function TvKioskClient(props: {
   const [liveGoal, setLiveGoal] = useState<{ base: number; step: number; pct: number } | null>(null);
   const [goalErr, setGoalErr] = useState<string | null>(null);
 
-  // NEW: lineup (Now/Next)
+  // lineup (Now/Next)
   const [lineup, setLineup] = useState<TvLineupResponse | null>(null);
   const [lineupErr, setLineupErr] = useState<string | null>(null);
 
-  // NEW: TV Sponsor (Presented by)
-  const [tvSponsor, setTvSponsor] = useState<TvSponsorResponse | null>(null);
-  const [tvSponsorErr, setTvSponsorErr] = useState<string | null>(null);
+  // NEW: local live countdown (ticks every 1s, API still refreshes lineup every 15s)
+  const [liveNextStartsInSec, setLiveNextStartsInSec] = useState<number | null>(null);
+
+  // sponsor (Presented by)
+  const [tvSponsor, setTvSponsor] = useState<{ name: string | null; logoUrl: string | null } | null>(null);
+  const [sponsorErr, setSponsorErr] = useState<string | null>(null);
 
   const lastTotalRef = useRef<number>(0);
   const lastGoalRef = useRef<number>(0);
@@ -377,34 +381,39 @@ export default function TvKioskClient(props: {
       }
 
       setLineup(json);
+      setLiveNextStartsInSec(
+        typeof json.nextStartsInSec === "number" && Number.isFinite(json.nextStartsInSec)
+          ? Math.max(0, Math.floor(json.nextStartsInSec))
+          : null
+      );
     } catch (e: any) {
       setLineupErr(e?.message ?? "Lineup load error");
     }
   }
 
-  async function loadTvSponsor() {
+  async function loadSponsor() {
     try {
-      // Never block the TV on sponsor issues. Silent failure is fine.
-      setTvSponsorErr(null);
-
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 2500);
-
-      const res = await fetch(`/api/tv-sponsor?key=${encodeURIComponent(kioskKey)}`, {
-        cache: "no-store",
-        signal: controller.signal,
-      }).finally(() => window.clearTimeout(timeout));
-
+      setSponsorErr(null);
+      const res = await fetch(`/api/tv-sponsor?key=${encodeURIComponent(kioskKey)}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`Sponsor API ${res.status}`);
       const json = (await res.json()) as TvSponsorResponse;
 
-      // If response is malformed, just ignore.
-      if (typeof json?.ok !== "boolean") return;
+      if (!json?.ok) {
+        setSponsorErr((json as any)?.error ?? "Failed to load sponsor");
+        setTvSponsor(null);
+        return;
+      }
 
-      setTvSponsor(json);
+      if (json.found && json.sponsor) {
+        setTvSponsor({
+          name: json.sponsor.name ?? null,
+          logoUrl: json.sponsor.logo_url ?? null,
+        });
+      } else {
+        setTvSponsor(null);
+      }
     } catch (e: any) {
-      // Don’t show hard errors on TV—just keep it quiet. (We still store a flag for internal debugging.)
-      setTvSponsorErr(e?.name === "AbortError" ? "Sponsor timeout" : e?.message ?? "Sponsor load error");
+      setSponsorErr(e?.message ?? "Sponsor load error");
       setTvSponsor(null);
     }
   }
@@ -416,18 +425,26 @@ export default function TvKioskClient(props: {
     load();
     const t = window.setInterval(load, 5000);
 
-    // Now/Next lineup (doesn’t need 5s; 10–15s is fine)
     loadLineup();
     const l = window.setInterval(loadLineup, 15000);
 
-    // TV sponsor (lightweight)
-    loadTvSponsor();
-    const s = window.setInterval(loadTvSponsor, 30000);
+    // NEW: local 1s countdown ticker (NO extra network)
+    const c = window.setInterval(() => {
+      setLiveNextStartsInSec((prev) => {
+        if (prev == null) return null;
+        return prev > 0 ? prev - 1 : 0;
+      });
+    }, 1000);
+
+    // sponsor can be slower (schedule changes are rare)
+    loadSponsor();
+    const s = window.setInterval(loadSponsor, 30000);
 
     return () => {
       window.clearInterval(t);
       window.clearInterval(g);
       window.clearInterval(l);
+      window.clearInterval(c);
       window.clearInterval(s);
       if (levelUpTimerRef.current) window.clearTimeout(levelUpTimerRef.current);
     };
@@ -447,28 +464,26 @@ export default function TvKioskClient(props: {
 
   const nowLabel = lineup?.now?.label ?? null;
   const nextLabel = lineup?.next?.label ?? null;
-  const nextStartsInSec = lineup?.nextStartsInSec ?? null;
+  const nextStartsInSec = liveNextStartsInSec ?? lineup?.nextStartsInSec ?? null;
 
-  const nowNextLine = useMemo(() => {
+  // “what am I about to miss” line (headline-style)
+  const headerNowNextLine = useMemo(() => {
     const parts: string[] = [];
 
-    if (nowLabel) parts.push(`Now: ${nowLabel}`);
-    else if (nextLabel) parts.push(`Up next: ${nextLabel}`);
-    else parts.push(`Live music`);
+    if (nowLabel) parts.push(`NOW: ${nowLabel}`);
+    else if (nextLabel) parts.push(`UP NEXT: ${nextLabel}`);
+    else parts.push(`LIVE MUSIC`);
 
     if (nextLabel && Number.isFinite(nextStartsInSec as any)) {
-      parts.push(`Next set starts in ${formatCountdown(nextStartsInSec as number)}`);
+      parts.push(`STARTS IN ${formatCountdown(nextStartsInSec as number)}`);
     } else if (nextLabel) {
-      parts.push(`Next set: ${nextLabel}`);
+      parts.push(`UP NEXT: ${nextLabel}`);
     } else {
-      parts.push(`No more sets listed`);
+      parts.push(`NO MORE SETS LISTED`);
     }
 
-    return parts.join(" · ");
+    return parts.join("  ·  ");
   }, [nowLabel, nextLabel, nextStartsInSec]);
-
-  const sponsorLogoUrl = tvSponsor?.found ? tvSponsor?.sponsor?.logo_url ?? null : null;
-  const sponsorName = tvSponsor?.found ? tvSponsor?.sponsor?.name ?? null : null;
 
   if (!gateOk) {
     return (
@@ -621,7 +636,8 @@ export default function TvKioskClient(props: {
         <div className="mx-auto h-full w-full max-w-[1900px]">
           <div className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-[calc(1.2*var(--u))]">
             {/* HEADER */}
-            <div className="flex items-start justify-between gap-[calc(2.0*var(--u))]">
+            <div className="flex items-start justify-between gap-[calc(1.8*var(--u))]">
+              {/* LEFT */}
               <div className="flex items-start gap-[calc(2.2*var(--u))] min-w-0">
                 <div
                   className="relative shrink-0"
@@ -651,6 +667,53 @@ export default function TvKioskClient(props: {
                 </div>
               </div>
 
+              {/* CENTER (tight card so sponsor isn't far away) */}
+              <div className="flex-1 min-w-0 pt-[calc(0.7*var(--u))] px-[calc(1.2*var(--u))]">
+                <div
+                  className="mx-auto w-full max-w-[1120px] rounded-[calc(2.1*var(--u))] border border-slate-800/80 bg-black/20 px-[calc(1.6*var(--u))] py-[calc(1.2*var(--u))]"
+                  style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.03) inset" }}
+                >
+                  <div className="flex items-center gap-[calc(1.4*var(--u))] min-w-0">
+                    <div className="min-w-0">
+                      <div className="uppercase tracking-[0.34em] text-slate-400 font-extrabold" style={{ fontSize: "calc(1.0*var(--u))" }}>
+                        LIVE LINEUP
+                      </div>
+                      <div
+                        className="mt-[calc(0.55*var(--u))] font-extrabold text-slate-100 truncate"
+                        style={{ fontSize: "calc(2.25*var(--u))" }}
+                        title={headerNowNextLine}
+                      >
+                        {headerNowNextLine}
+                      </div>
+                      <div className="mt-[calc(0.35*var(--u))] text-slate-400 font-semibold" style={{ fontSize: "calc(1.25*var(--u))" }}>
+                        Don’t miss the next set.
+                      </div>
+                    </div>
+
+                    {tvSponsor?.logoUrl ? (
+                      <div className="ml-auto shrink-0 flex items-center gap-[calc(0.9*var(--u))]">
+                        <div className="text-slate-400 font-extrabold uppercase tracking-[0.34em]" style={{ fontSize: "calc(0.95*var(--u))" }}>
+                          Presented by
+                        </div>
+
+                        {/* IMPORTANT: No white background wrapper. Transparent + drop shadow only. */}
+                        <div
+                          className="relative"
+                          style={{
+                            width: "calc(15.5*var(--u))",
+                            height: "calc(4.3*var(--u))",
+                            filter: "drop-shadow(0 10px 18px rgba(0,0,0,0.55))",
+                          }}
+                        >
+                          <Image src={tvSponsor.logoUrl} alt={tvSponsor.name || "Sponsor"} fill className="object-contain" priority={false} />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              {/* RIGHT */}
               <div className="shrink-0 text-right">
                 <div className="uppercase tracking-[0.34em] text-slate-400" style={{ fontSize: "calc(1.1*var(--u))" }}>
                   TOTAL TODAY
@@ -713,7 +776,7 @@ export default function TvKioskClient(props: {
               </div>
             </div>
 
-            {/* STATUS STRIP */}
+            {/* STATUS STRIP (keep minimal + non-distracting) */}
             <div className="rounded-[calc(2.0*var(--u))] border border-slate-800 bg-black/25 px-[calc(2.0*var(--u))] py-[calc(1.1*var(--u))]">
               <div className="flex flex-wrap items-center gap-x-[calc(1.0*var(--u))] gap-y-[calc(0.5*var(--u))] text-slate-400">
                 <span style={{ fontSize: "calc(1.2*var(--u))" }}>
@@ -727,39 +790,6 @@ export default function TvKioskClient(props: {
                 <span className="text-slate-200 font-semibold" style={{ fontSize: "calc(1.2*var(--u))" }}>
                   {locLabel}
                 </span>
-
-                {/* ✅ Now/Next line */}
-                <span className="opacity-50">•</span>
-                <span className="text-slate-200 font-semibold" style={{ fontSize: "calc(1.2*var(--u))" }}>
-                  {nowNextLine}
-                </span>
-
-                {/* ✅ NEW: Presented by (only if sponsor found + logo exists) */}
-                {sponsorLogoUrl ? (
-                  <>
-                    <span className="opacity-50">•</span>
-                    <span className="text-slate-200 font-semibold" style={{ fontSize: "calc(1.2*var(--u))" }}>
-                      Presented by
-                    </span>
-                    <span className="inline-flex items-center">
-                      <span
-                        className="relative inline-flex items-center justify-center rounded-[calc(0.9*var(--u))] border border-slate-700 bg-white/95 px-[calc(0.9*var(--u))] py-[calc(0.55*var(--u))]"
-                        title={sponsorName ?? "Sponsor"}
-                        style={{ height: "calc(3.0*var(--u))" }}
-                      >
-                        <span className="relative" style={{ width: "calc(8.6*var(--u))", height: "calc(2.3*var(--u))" }}>
-                          <Image
-                            src={sponsorLogoUrl}
-                            alt={sponsorName ?? "Sponsor"}
-                            fill
-                            className="object-contain"
-                            sizes="200px"
-                          />
-                        </span>
-                      </span>
-                    </span>
-                  </>
-                ) : null}
 
                 <span className="opacity-50">•</span>
                 <span style={{ fontSize: "calc(1.2*var(--u))" }}>Auto-updates 5s</span>
@@ -791,8 +821,14 @@ export default function TvKioskClient(props: {
                   </>
                 ) : null}
 
-                {/* Sponsor error stays quiet; only show if you *want* it visible */}
-                {tvSponsorErr ? null : null}
+                {sponsorErr ? (
+                  <>
+                    <span className="opacity-50">•</span>
+                    <span className="text-rose-300" style={{ fontSize: "calc(1.2*var(--u))" }}>
+                      Sponsor issue
+                    </span>
+                  </>
+                ) : null}
               </div>
             </div>
           </div>
