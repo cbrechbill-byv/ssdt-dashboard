@@ -669,10 +669,7 @@ export default function TvKioskClient(props: {
                   style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.03) inset" }}
                 >
                   {/* ✅ UPDATED: 2-column layout (lineup left, sponsor right). Sponsor stays CLOSE to countdown. */}
-                  <div
-                    className="grid items-center gap-[calc(1.2*var(--u))]"
-                    style={{ gridTemplateColumns: "minmax(0, 40rem) auto", justifyContent: "start" }}
-                  >
+                  <div className="grid items-center gap-[calc(1.2*var(--u))]" style={{ gridTemplateColumns: "minmax(0, 32rem) auto", justifyContent: "start" }}>
                     {/* LEFT: lineup copy */}
                     <div className="min-w-0">
                       <div className="uppercase tracking-[0.34em] text-slate-400 font-extrabold" style={{ fontSize: "calc(1.0*var(--u))" }}>
@@ -699,22 +696,19 @@ export default function TvKioskClient(props: {
                         style={{
                           borderColor: "rgba(251,191,36,0.32)", // amber-ish (premium)
                           background: "linear-gradient(180deg, rgba(0,0,0,0.28), rgba(0,0,0,0.18))",
-                          boxShadow:
-                            "0 0 0 1px rgba(251,191,36,0.10) inset, 0 14px 38px rgba(0,0,0,0.28)", // optional upgrade: subtle premium depth
+                          boxShadow: "0 0 0 1px rgba(251,191,36,0.10) inset, 0 14px 38px rgba(0,0,0,0.28)", // optional upgrade: subtle premium depth
                         }}
                       >
-                        <div className="flex items-center gap-[calc(1.0*var(--u))]">
-                          {/* Text stack */}
-                          <div className="min-w-0">
-                            <div
-                              className="text-slate-300 font-extrabold uppercase tracking-[0.34em]"
-                              style={{ fontSize: "calc(0.95*var(--u))" }}
-                            >
+                        {/* ✅ UPDATED: Force a centered sponsor name under Presented by */}
+                        <div className="flex items-center justify-between gap-[calc(1.0*var(--u))]">
+                          {/* Text stack (flex-1 + centered) */}
+                          <div className="min-w-0 flex-1 text-center">
+                            <div className="text-slate-300 font-extrabold uppercase tracking-[0.34em]" style={{ fontSize: "calc(0.95*var(--u))" }}>
                               Presented by
                             </div>
 
                             <div
-                              className="mt-[calc(0.25*var(--u))] font-extrabold text-slate-100 truncate"
+                              className="mt-[calc(0.25*var(--u))] font-extrabold text-slate-100 truncate w-full text-center"
                               style={{ fontSize: "calc(1.35*var(--u))" }}
                               title={tvSponsor.name ?? ""}
                             >
@@ -731,13 +725,7 @@ export default function TvKioskClient(props: {
                               filter: "drop-shadow(0 10px 18px rgba(0,0,0,0.55))",
                             }}
                           >
-                            <Image
-                              src={tvSponsor.logoUrl}
-                              alt={tvSponsor.name || "Sponsor"}
-                              fill
-                              className="object-contain"
-                              priority={false}
-                            />
+                            <Image src={tvSponsor.logoUrl} alt={tvSponsor.name || "Sponsor"} fill className="object-contain" priority={false} />
                           </div>
                         </div>
                       </div>
