@@ -6,22 +6,35 @@ export const dynamic = "force-dynamic";
 
 const ET_TZ = "America/New_York";
 
-type LineupResponse =
-  | {
-      ok: true;
-      dateEt: string;
-      now: null | {
-        label: string; // artist name or title
-        startTime: string | null; // "HH:MM:SS" (from DB)
-        endTime: string | null;   // "HH:MM:SS" (from DB)
-      };
-      next: null | {
-        label: string;
-        startTime: string; // "HH:MM:SS"
-      };
-      nextStartsInSec: number | null;
-    }
-  | { ok: false; error: string };
+/**
+ * tv-lineup
+ * Returns Now/Next lineup info for the TV board status strip.
+ * Uses artist_events + artists relationship.
+ */
+
+type EventRow = {
+  id: string;
+  event_date: string; // YYYY-MM-DD
+  start_time: string | null; // ISO string or null depending on schema
+  end_time: string | null; // ISO string or null
+  title: string | null;
+  is_cancelled: boolean | null;
+  artist_id: string | null;
+
+  // Supabase relationship returns an ARRAY for nested select
+  artists?: { name: string | null }[] | null;
+};
+
+function jsonNoStore(body: any, init?: ResponseInit) {
+  return new NextResponse(JSON.stringify(body), {
+    ...(init || {}),
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      ...(init?.headers || {}),
+    },
+  });
+}
 
 function getEtYmd(now = new Date()): string {
   return now.toLocaleDateString("en-CA", {
@@ -32,153 +45,127 @@ function getEtYmd(now = new Date()): string {
   });
 }
 
-function jsonNoStore(body: LineupResponse, init?: { status?: number }) {
-  const res = NextResponse.json(body, { status: init?.status ?? 200 });
-  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.headers.set("Pragma", "no-cache");
-  res.headers.set("Expires", "0");
-  return res;
+function toIsoFromMaybe(value: any): string | null {
+  if (!value) return null;
+  // If it's already a string ISO, keep it.
+  if (typeof value === "string") return value;
+  // If it's a Date, toISOString.
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
 }
 
-function etNowMinutesSinceMidnight(now = new Date()): number {
-  // Extract hour/min/sec in ET using Intl parts so DST is always correct.
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: ET_TZ,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
-
-  const hh = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
-  const mm = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
-  const ss = Number(parts.find((p) => p.type === "second")?.value ?? "0");
-
-  return hh * 60 + mm + ss / 60;
+function pickArtistName(row: EventRow): string | null {
+  const a = row.artists;
+  if (!a) return null;
+  if (Array.isArray(a)) return a[0]?.name ?? null;
+  // Shouldn't happen, but keep safe
+  return (a as any)?.name ?? null;
 }
 
-function timeToMinutes(t: string | null | undefined): number | null {
-  if (!t) return null;
-  const s = String(t);
-  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (!m) return null;
-  const hh = Number(m[1]);
-  const mm = Number(m[2]);
-  const ss = Number(m[3] ?? "0");
-  if (!Number.isFinite(hh) || !Number.isFinite(mm) || !Number.isFinite(ss)) return null;
-  return hh * 60 + mm + ss / 60;
-}
+function normalizeLabel(row: EventRow): string {
+  const artistName = pickArtistName(row);
+  const t = (row.title || "").trim();
+  const a = (artistName || "").trim();
 
-function minutesToSecondsDelta(nowMin: number, startMin: number): number {
-  return Math.max(0, Math.round((startMin - nowMin) * 60));
-}
-
-type EventRow = {
-  id: string;
-  event_date: string; // YYYY-MM-DD
-  start_time: string | null; // "HH:MM:SS"
-  end_time: string | null;   // "HH:MM:SS"
-  title: string | null;
-  is_cancelled: boolean;
-  artist_id: string | null;
-  artists?: { name: string | null } | null;
-};
-
-function labelForEvent(e: EventRow): string {
-  const artistName = (e.artists?.name ?? "").trim();
-  if (artistName) return artistName;
-  const title = (e.title ?? "").trim();
-  if (title) return title;
+  // Prefer artist name; fallback to title; fallback to "Live Music"
+  if (a && t) return `${a} — ${t}`;
+  if (a) return a;
+  if (t) return t;
   return "Live Music";
+}
+
+function parseDate(iso: string): Date | null {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function secondsUntil(now: Date, futureIso: string | null): number | null {
+  if (!futureIso) return null;
+  const f = parseDate(futureIso);
+  if (!f) return null;
+  return Math.max(0, Math.floor((f.getTime() - now.getTime()) / 1000));
 }
 
 export async function GET(req: NextRequest) {
   try {
-    const dateEt = getEtYmd(new Date());
     const supabase = supabaseServer;
+    const todayEt = getEtYmd();
 
-    // Pull today's events + artist name if present
+    // Pull today’s artist events (not cancelled)
+    // NOTE: This assumes table name `artist_events` as per your project brief.
+    // If your actual table is different, this is the only line to adjust.
     const { data, error } = await supabase
       .from("artist_events")
       .select(
-        `
-        id,
-        event_date,
-        start_time,
-        end_time,
-        title,
-        is_cancelled,
-        artist_id,
-        artists:artist_id ( name )
-      `
+        "id,event_date,start_time,end_time,title,is_cancelled,artist_id,artists(name)"
       )
-      .eq("event_date", dateEt)
-      .eq("is_cancelled", false)
+      .eq("event_date", todayEt)
+      .or("is_cancelled.is.null,is_cancelled.eq.false")
       .order("start_time", { ascending: true });
 
     if (error) return jsonNoStore({ ok: false, error: error.message }, { status: 500 });
 
-    const events = ((data ?? []) as EventRow[])
-      .filter((e) => !!e.start_time) // must have a start to participate in now/next
+    const rows: EventRow[] = (Array.isArray(data) ? (data as unknown as EventRow[]) : []).filter(Boolean);
+
+    // Only events with a start_time can participate in now/next
+    const events = rows
+      .filter((e) => !!e.start_time)
       .map((e) => ({
         ...e,
-        startMin: timeToMinutes(e.start_time),
-        endMin: timeToMinutes(e.end_time),
+        start_time: toIsoFromMaybe(e.start_time),
+        end_time: toIsoFromMaybe(e.end_time),
+        label: normalizeLabel(e),
       }))
-      .filter((e: any) => Number.isFinite(e.startMin))
-      .sort((a: any, b: any) => (a.startMin ?? 0) - (b.startMin ?? 0));
+      .filter((e) => !!e.start_time) as Array<
+      EventRow & { start_time: string; end_time: string | null; label: string }
+    >;
 
-    const nowMin = etNowMinutesSinceMidnight(new Date());
+    const now = new Date();
 
-    // Find "next" as the first event that starts after now
-    const nextEvent: any = events.find((e: any) => (e.startMin ?? 0) > nowMin) ?? null;
+    // Find "now": an event whose window includes now (start <= now < end)
+    // If end_time is missing, treat it as "unknown duration" (don’t claim now; just use as upcoming)
+    const current =
+      events.find((e) => {
+        const s = parseDate(e.start_time);
+        if (!s) return false;
+        if (s.getTime() > now.getTime()) return false;
 
-    // Find "now" as an event that started and hasn't ended yet.
-    // If end_time is missing, treat it as "now" until the next event starts (or end of day).
-    let nowEvent: any = null;
+        if (!e.end_time) return false; // require end_time to confidently declare "now"
+        const en = parseDate(e.end_time);
+        if (!en) return false;
 
-    for (let i = 0; i < events.length; i++) {
-      const e: any = events[i];
-      const startMin = e.startMin ?? 0;
+        return now.getTime() >= s.getTime() && now.getTime() < en.getTime();
+      }) ?? null;
 
-      // Determine effective end
-      let endMin: number;
-      if (Number.isFinite(e.endMin)) {
-        endMin = e.endMin;
-      } else {
-        // if no explicit end, end at next event start; otherwise end of day
-        const nextStart = i + 1 < events.length ? (events[i + 1].startMin ?? 1440) : 1440;
-        endMin = nextStart;
-      }
+    // Find next:
+    // - If there is a current event: next is the next start_time after current.start_time
+    // - Otherwise: next is the next start_time after now
+    const next =
+      (current
+        ? events.find((e) => parseDate(e.start_time)?.getTime()! > parseDate(current.start_time)?.getTime()!)
+        : events.find((e) => parseDate(e.start_time)?.getTime()! > now.getTime())) ?? null;
 
-      if (startMin <= nowMin && nowMin < endMin) {
-        nowEvent = e;
-        break;
-      }
-    }
-
-    const nextStartsInSec =
-      nextEvent && Number.isFinite(nextEvent.startMin) ? minutesToSecondsDelta(nowMin, nextEvent.startMin) : null;
-
-    return jsonNoStore({
+    const payload: TvLineupResponse = {
       ok: true,
-      dateEt,
-      now: nowEvent
+      dateEt: todayEt,
+      now: current
         ? {
-            label: labelForEvent(nowEvent),
-            startTime: nowEvent.start_time ?? null,
-            endTime: nowEvent.end_time ?? null,
+            label: (current as any).label,
+            startTime: current.start_time ?? null,
+            endTime: current.end_time ?? null,
           }
         : null,
-      next: nextEvent
+      next: next
         ? {
-            label: labelForEvent(nextEvent),
-            startTime: nextEvent.start_time!,
+            label: (next as any).label,
+            startTime: next.start_time!,
           }
         : null,
-      nextStartsInSec,
-    });
+      nextStartsInSec: secondsUntil(now, next?.start_time ?? null),
+    };
+
+    return jsonNoStore(payload);
   } catch (e: any) {
-    return jsonNoStore({ ok: false, error: e?.message ?? "Unexpected error" }, { status: 500 });
+    return jsonNoStore({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }
 }
