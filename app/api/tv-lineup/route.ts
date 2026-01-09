@@ -5,6 +5,7 @@ import { supabaseServer } from "@/lib/supabaseServer";
 export const dynamic = "force-dynamic";
 
 const ET_TZ = "America/New_York";
+const DEFAULT_LEAD_MINUTES = 120;
 
 type LineupResponse =
   | {
@@ -20,6 +21,9 @@ type LineupResponse =
         startTime: string; // "HH:MM:SS"
       };
       nextStartsInSec: number | null;
+
+      // Helpful for dashboard preview/debug (safe to ignore in UI)
+      countdownLeadMinutes: number;
     }
   | { ok: false; error: string };
 
@@ -41,7 +45,6 @@ function jsonNoStore(body: LineupResponse, init?: { status?: number }) {
 }
 
 function etNowMinutesSinceMidnight(now = new Date()): number {
-  // Extract hour/min/sec in ET using Intl parts so DST is always correct.
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: ET_TZ,
     hour: "2-digit",
@@ -77,14 +80,14 @@ type ArtistRel = { name: string | null };
 
 type EventRow = {
   id: string;
-  event_date: string; // YYYY-MM-DD
-  start_time: string | null; // "HH:MM:SS"
-  end_time: string | null; // "HH:MM:SS"
+  event_date: string;
+  start_time: string | null;
+  end_time: string | null;
   title: string | null;
   is_cancelled: boolean;
   artist_id: string | null;
 
-  // IMPORTANT: Supabase may return a single object OR an array depending on relationship shape
+  // Supabase may return a single object OR an array depending on relationship shape
   artists?: ArtistRel | ArtistRel[] | null;
 };
 
@@ -105,13 +108,32 @@ function labelForEvent(e: EventRow): string {
   return "Live Music";
 }
 
-export async function GET(req: NextRequest) {
+async function loadLeadMinutes(): Promise<number> {
+  try {
+    const { data, error } = await supabaseServer
+      .from("tv_lineup_settings")
+      .select("countdown_lead_minutes")
+      .eq("id", "default")
+      .maybeSingle();
+
+    if (error) return DEFAULT_LEAD_MINUTES;
+
+    const n = Number((data as any)?.countdown_lead_minutes);
+    if (!Number.isFinite(n)) return DEFAULT_LEAD_MINUTES;
+
+    // clamp 0..1440
+    return Math.max(0, Math.min(24 * 60, Math.floor(n)));
+  } catch {
+    return DEFAULT_LEAD_MINUTES;
+  }
+}
+
+export async function GET(_req: NextRequest) {
   try {
     const dateEt = getEtYmd(new Date());
-    const supabase = supabaseServer;
+    const leadMinutes = await loadLeadMinutes();
 
-    // Pull today's events + artist name if present
-    const { data, error } = await supabase
+    const { data, error } = await supabaseServer
       .from("artist_events")
       .select(
         `
@@ -132,7 +154,7 @@ export async function GET(req: NextRequest) {
     if (error) return jsonNoStore({ ok: false, error: error.message }, { status: 500 });
 
     const events = ((data ?? []) as unknown as EventRow[])
-      .filter((e) => !!e.start_time) // must have a start to participate in now/next
+      .filter((e) => !!e.start_time)
       .map((e) => ({
         ...e,
         startMin: timeToMinutes(e.start_time),
@@ -143,23 +165,17 @@ export async function GET(req: NextRequest) {
 
     const nowMin = etNowMinutesSinceMidnight(new Date());
 
-    // Find "next" as the first event that starts after now
     const nextEvent: any = events.find((e: any) => (e.startMin ?? 0) > nowMin) ?? null;
 
-    // Find "now" as an event that started and hasn't ended yet.
-    // If end_time is missing, treat it as "now" until the next event starts (or end of day).
     let nowEvent: any = null;
-
     for (let i = 0; i < events.length; i++) {
       const e: any = events[i];
       const startMin = e.startMin ?? 0;
 
-      // Determine effective end
       let endMin: number;
       if (Number.isFinite(e.endMin)) {
         endMin = e.endMin;
       } else {
-        // if no explicit end, end at next event start; otherwise end of day
         const nextStart = i + 1 < events.length ? (events[i + 1].startMin ?? 1440) : 1440;
         endMin = nextStart;
       }
@@ -170,8 +186,26 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const nextStartsInSec =
+    let nextStartsInSec =
       nextEvent && Number.isFinite(nextEvent.startMin) ? minutesToSecondsDelta(nowMin, nextEvent.startMin) : null;
+
+    /**
+     * ✅ Lead window gating (ONLY before the FIRST set begins)
+     * Hide the long countdown during the day until we're within leadMinutes of the first set.
+     */
+    const firstEvent: any = events.length > 0 ? events[0] : null;
+    const firstStartMin: number | null = firstEvent && Number.isFinite(firstEvent.startMin) ? firstEvent.startMin : null;
+
+    if (firstStartMin != null && nowMin < firstStartMin) {
+      const leadSec = leadMinutes * 60;
+      const secUntilFirst = minutesToSecondsDelta(nowMin, firstStartMin);
+
+      const isNextFirst = nextEvent && firstEvent && nextEvent.id === firstEvent.id;
+
+      if (isNextFirst && secUntilFirst > leadSec) {
+        nextStartsInSec = null;
+      }
+    }
 
     return jsonNoStore({
       ok: true,
@@ -190,6 +224,7 @@ export async function GET(req: NextRequest) {
           }
         : null,
       nextStartsInSec,
+      countdownLeadMinutes: leadMinutes,
     });
   } catch (e: any) {
     return jsonNoStore({ ok: false, error: e?.message ?? "Unexpected error" }, { status: 500 });
