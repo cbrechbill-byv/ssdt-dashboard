@@ -5,6 +5,7 @@
 // - Preview the TV board (iframe)
 // - Manage which sponsors are scheduled to show on the TV board using public.tv_sponsor_schedule
 // - Control lineup countdown lead time (minutes before first set) using public.tv_lineup_settings
+// - Control sponsor rotation time (seconds) using public.tv_sponsor_settings
 // Notes:
 // - This page is SERVER-rendered and uses SERVICE ROLE via supabaseServer (safe on server).
 // - TV preview uses CHECKIN_BOARD_KEY in the iframe src; this is only visible to logged-in dashboard users.
@@ -18,6 +19,7 @@ export const revalidate = 0;
 
 const ET_TZ = "America/New_York";
 const DEFAULT_LEAD_MINUTES = 120;
+const DEFAULT_ROTATE_SECONDS = 20;
 
 type SponsorRow = {
   id: string;
@@ -41,6 +43,12 @@ type ScheduleRow = {
 type TvLineupSettingsRow = {
   id: string;
   countdown_lead_minutes: number;
+  updated_at: string;
+};
+
+type TvSponsorSettingsRow = {
+  id: string;
+  rotate_every_seconds: number;
   updated_at: string;
 };
 
@@ -69,6 +77,12 @@ function clampLeadMinutes(n: number) {
   if (!Number.isFinite(n)) return DEFAULT_LEAD_MINUTES;
   // 0..1440
   return Math.max(0, Math.min(24 * 60, Math.floor(n)));
+}
+
+function clampRotateSeconds(n: number) {
+  if (!Number.isFinite(n)) return DEFAULT_ROTATE_SECONDS;
+  // 5..600 seconds (5s..10m) — TV-friendly
+  return Math.max(5, Math.min(600, Math.floor(n)));
 }
 
 function getSponsorPublicUrl(logo_path: string | null) {
@@ -179,6 +193,31 @@ async function saveCountdownLead(formData: FormData) {
   revalidatePath("/dashboard/tv-board");
 }
 
+async function saveSponsorRotateSeconds(formData: FormData) {
+  "use server";
+
+  const raw = String(formData.get("rotate_every_seconds") ?? "").trim();
+  const n = clampRotateSeconds(Number(raw || DEFAULT_ROTATE_SECONDS));
+
+  const supabase = supabaseServer;
+
+  // Ensure the row exists and update it (single-row settings table)
+  const { error } = await supabase
+    .from("tv_sponsor_settings")
+    .upsert(
+      {
+        id: "default",
+        rotate_every_seconds: n,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/dashboard/tv-board");
+}
+
 export default async function TvBoardDashboardPage() {
   const supabase = supabaseServer;
   const todayEt = getEtYmd();
@@ -194,6 +233,19 @@ export default async function TvBoardDashboardPage() {
 
   const countdownLeadMinutes = clampLeadMinutes(
     Number((lineupSettingsData as TvLineupSettingsRow | null)?.countdown_lead_minutes ?? DEFAULT_LEAD_MINUTES)
+  );
+
+  // Load sponsor rotation settings (server-side)
+  const { data: sponsorSettingsData, error: sponsorSettingsErr } = await supabase
+    .from("tv_sponsor_settings")
+    .select("id,rotate_every_seconds,updated_at")
+    .eq("id", "default")
+    .maybeSingle();
+
+  if (sponsorSettingsErr) console.error("[tv-board] sponsor settings error", sponsorSettingsErr);
+
+  const rotateEverySeconds = clampRotateSeconds(
+    Number((sponsorSettingsData as TvSponsorSettingsRow | null)?.rotate_every_seconds ?? DEFAULT_ROTATE_SECONDS)
   );
 
   // Sponsors (active) for the dropdown
@@ -363,7 +415,7 @@ export default async function TvBoardDashboardPage() {
             artist/set info from your events data. The TV Board page here is the control center (preview + sponsor schedule).
           </div>
 
-          {/* ✅ NEW: Countdown lead time control (server action) */}
+          {/* ✅ Countdown lead time control (server action) */}
           <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -392,9 +444,7 @@ export default async function TvBoardDashboardPage() {
                   />
                   <div className="text-sm text-slate-700">minutes</div>
                 </div>
-                <div className="mt-1 text-[11px] text-slate-500">
-                  Example: 60 = show countdown starting 1 hour before first artist.
-                </div>
+                <div className="mt-1 text-[11px] text-slate-500">Example: 60 = show countdown starting 1 hour before first artist.</div>
               </div>
 
               <button
@@ -421,6 +471,50 @@ export default async function TvBoardDashboardPage() {
               </p>
             </div>
             <div className="text-xs text-slate-500">ET date: {todayEt}</div>
+          </div>
+
+          {/* ✅ NEW: Sponsor rotation control (server action) */}
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Sponsor rotation</div>
+                <div className="mt-1 text-[12px] text-slate-600">
+                  If multiple sponsors are scheduled for today, the TV rotates them at this interval.
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Stored in <code className="font-mono">tv_sponsor_settings</code>
+              </div>
+            </div>
+
+            <form action={saveSponsorRotateSeconds} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="max-w-sm">
+                <label className="text-xs font-semibold text-slate-700">Rotate every</label>
+                <div className="mt-1 flex items-center gap-2">
+                  <input
+                    name="rotate_every_seconds"
+                    type="number"
+                    min={5}
+                    max={600}
+                    defaultValue={rotateEverySeconds}
+                    className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30"
+                  />
+                  <div className="text-sm text-slate-700">seconds</div>
+                </div>
+                <div className="mt-1 text-[11px] text-slate-500">Example: 20 = rotate every 20 seconds.</div>
+              </div>
+
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black"
+              >
+                Save rotation time
+              </button>
+            </form>
+
+            <div className="mt-2 text-[11px] text-slate-500">
+              Current setting: <span className="font-semibold text-slate-800">{rotateEverySeconds} seconds</span>
+            </div>
           </div>
 
           {scheduledToday.length === 0 ? (

@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 
 const ET_TZ = "America/New_York";
 const SPONSOR_BUCKET = "sponsor-logos";
+const DEFAULT_ROTATE_EVERY_SECONDS = 20;
 
 function getEtYmd(now = new Date()): string {
   return now.toLocaleDateString("en-CA", {
@@ -16,6 +17,27 @@ function getEtYmd(now = new Date()): string {
   });
 }
 
+function etSecondsSinceMidnight(now = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ET_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+
+  const hh = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const mm = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  const ss = Number(parts.find((p) => p.type === "second")?.value ?? "0");
+  return hh * 3600 + mm * 60 + ss;
+}
+
+function clampRotateSeconds(n: number) {
+  if (!Number.isFinite(n)) return DEFAULT_ROTATE_EVERY_SECONDS;
+  // sensible bounds for TVs
+  return Math.max(5, Math.min(600, Math.floor(n)));
+}
+
 function jsonNoStore(body: any, init?: { status?: number }) {
   const res = NextResponse.json(body, { status: init?.status ?? 200 });
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -23,6 +45,22 @@ function jsonNoStore(body: any, init?: { status?: number }) {
   res.headers.set("Expires", "0");
   return res;
 }
+
+type SchedRow = {
+  id: string;
+  sponsor_id: string;
+  start_date: string;
+  end_date: string | null;
+  priority: number;
+  is_active: boolean;
+  created_at?: string;
+};
+
+type SponsorSettingsRow = {
+  id: string;
+  rotate_every_seconds: number;
+  updated_at: string;
+};
 
 export async function GET(req: NextRequest) {
   const envKey = process.env.CHECKIN_BOARD_KEY?.trim() ?? "";
@@ -36,35 +74,56 @@ export async function GET(req: NextRequest) {
   const supabase = supabaseServer;
   const todayEt = getEtYmd(new Date());
 
-  // Find the “best” schedule row for today:
-  // active, in date range, highest priority, most recent start_date
-  const { data: sched, error: schedErr } = await supabase
+  // ✅ Load rotation setting (single-row settings table)
+  const { data: settingsData, error: settingsErr } = await supabase
+    .from("tv_sponsor_settings")
+    .select("id,rotate_every_seconds,updated_at")
+    .eq("id", "default")
+    .maybeSingle();
+
+  if (settingsErr) return jsonNoStore({ ok: false, error: settingsErr.message }, { status: 500 });
+
+  const rotateEverySeconds = clampRotateSeconds(
+    Number((settingsData as SponsorSettingsRow | null)?.rotate_every_seconds ?? DEFAULT_ROTATE_EVERY_SECONDS)
+  );
+
+  // Pull ALL eligible schedules for today (so we can rotate them)
+  const { data: schedRows, error: schedErr } = await supabase
     .from("tv_sponsor_schedule")
-    .select("id,sponsor_id,start_date,end_date,priority,is_active")
+    .select("id,sponsor_id,start_date,end_date,priority,is_active,created_at")
     .eq("is_active", true)
     .lte("start_date", todayEt)
     .or(`end_date.is.null,end_date.gte.${todayEt}`)
     .order("priority", { ascending: false })
     .order("start_date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: false });
 
   if (schedErr) return jsonNoStore({ ok: false, error: schedErr.message }, { status: 500 });
 
-  if (!sched) {
+  const eligible = ((schedRows ?? []) as SchedRow[]).filter((r) => !!r?.sponsor_id);
+
+  if (eligible.length === 0) {
     return jsonNoStore({
       ok: true,
       found: false,
       todayEt,
+      rotateEverySeconds,
       schedule: null,
       sponsor: null,
     });
   }
 
+  // ✅ Option A: rotate deterministically by ET time slice
+  const sec = etSecondsSinceMidnight(new Date());
+  const slot = Math.floor(sec / rotateEverySeconds);
+  const idx = slot % eligible.length;
+
+  const picked = eligible[idx];
+
   const { data: sponsor, error: sponsorErr } = await supabase
     .from("sponsors")
     .select("id,name,logo_path,website_url,tier,sponsor_message")
-    .eq("id", sched.sponsor_id)
+    .eq("id", picked.sponsor_id)
     .maybeSingle();
 
   if (sponsorErr) return jsonNoStore({ ok: false, error: sponsorErr.message }, { status: 500 });
@@ -80,12 +139,21 @@ export async function GET(req: NextRequest) {
     ok: true,
     found: true,
     todayEt,
-    schedule: {
-      id: sched.id,
-      start_date: sched.start_date,
-      end_date: sched.end_date,
-      priority: sched.priority,
+    rotateEverySeconds,
+
+    // debug / confidence
+    rotation: {
+      eligibleCount: eligible.length,
+      index: idx,
     },
+
+    schedule: {
+      id: picked.id,
+      start_date: picked.start_date,
+      end_date: picked.end_date,
+      priority: picked.priority,
+    },
+
     sponsor: sponsor
       ? {
           id: sponsor.id,
