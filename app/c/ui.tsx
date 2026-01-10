@@ -9,59 +9,68 @@ type Props = {
 const PLAY_STORE_URL =
   "https://play.google.com/store/apps/details?id=com.cbrechbill1.sugarshackdowntown";
 
-// ✅ This is the real One-QR deep link target (works when app is installed)
-// Uses Universal Links (iOS) + App Links (Android)
-const ONE_QR_DEEP_LINK =
-  "https://ssdtapp.byvenuecreative.com/check-in/scan?payload=SSDTVIP-CHECKIN";
-
-// Optional: scheme fallback for browsers that block universal/app links
-// Your Expo scheme from app.json is "ssdtfresh".
-const APP_SCHEME_FALLBACK = "ssdtfresh://checkin";
+// ✅ Expo scheme fallback (does NOT hit your website, so no 404)
+// NOTE: This should match your app’s configured scheme.
+const APP_SCHEME_BASE = "ssdtfresh://check-in/scan";
+const DEFAULT_PAYLOAD = "SSDTVIP-CHECKIN";
 
 function isAndroid() {
   if (typeof navigator === "undefined") return false;
   return /Android/i.test(navigator.userAgent);
 }
 
+function getStoreUrl(appStoreUrl: string) {
+  return isAndroid() ? PLAY_STORE_URL : appStoreUrl;
+}
+
 export default function OneQrClientActions({ appStoreUrl }: Props) {
   function handleOpenInApp() {
+    const storeUrl = getStoreUrl(appStoreUrl);
+
+    // Scheme-first (prevents “Open in App” from sending users to a web 404 if app isn't installed)
+    // If app is installed -> it should open.
+    // If not installed -> user remains here -> we send them to the store after a short delay.
+    const schemeUrl = `${APP_SCHEME_BASE}?payload=${encodeURIComponent(
+      DEFAULT_PAYLOAD
+    )}`;
+
     const start = Date.now();
+    window.location.href = schemeUrl;
 
-    // 1) Try the verified HTTPS deep link first (best path)
-    window.location.href = ONE_QR_DEEP_LINK;
-
-    // 2) If user is still here, try scheme fallback (some browsers block app links)
+    // If still here after ~900ms, assume app didn't open -> send to store
     window.setTimeout(() => {
-      if (Date.now() - start < 1600) {
-        window.location.href = APP_SCHEME_FALLBACK;
+      // If the app opened, the browser is backgrounded; if not, we’re still here
+      if (Date.now() - start < 2000) {
+        window.location.href = storeUrl;
       }
-    }, 700);
-
-    // 3) If still here, send to the correct store
-    window.setTimeout(() => {
-      if (Date.now() - start < 2600) {
-        window.location.href = isAndroid() ? PLAY_STORE_URL : appStoreUrl;
-      }
-    }, 1600);
+    }, 900);
   }
 
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <button
-        onClick={handleOpenInApp}
-        className="rounded-xl bg-white text-black font-bold py-4 text-lg sm:text-xl"
-      >
-        Open in App
-      </button>
+  const storeUrl = getStoreUrl(appStoreUrl);
 
+  return (
+    <div className="grid grid-cols-1 gap-3">
+      {/* ✅ Primary CTA: INSTALL */}
       <a
-        href={isAndroid() ? PLAY_STORE_URL : appStoreUrl}
+        href={storeUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="rounded-xl bg-white/10 border border-white/20 text-white font-bold py-4 text-lg sm:text-xl text-center"
+        className="rounded-xl bg-white text-black font-extrabold py-4 text-lg sm:text-xl text-center"
       >
         {isAndroid() ? "Install from Google Play" : "Install from App Store"}
       </a>
+
+      {/* ✅ Secondary CTA: OPEN (fallback) */}
+      <button
+        onClick={handleOpenInApp}
+        className="rounded-xl bg-white/0 border border-white/25 text-white font-bold py-3 text-base sm:text-lg"
+      >
+        Already installed? Open the App
+      </button>
+
+      <div className="text-xs sm:text-sm text-white/55">
+        After installing, scan either TV QR again to check in.
+      </div>
     </div>
   );
 }

@@ -32,12 +32,15 @@ export default function OneQRLandingPage() {
         </div>
 
         <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight">
-          Check In
+          Get the App
         </h1>
 
         <p className="mt-4 text-base sm:text-lg text-white/80 leading-relaxed">
-          This is the ONE QR. If you have the app, tap Open in App.
-          If you don’t, install it first — then come back here and tap Open in App.
+          <span className="font-semibold text-white">Step 1:</span> Install the
+          Sugarshack Downtown app.
+          <br />
+          <span className="font-semibold text-white">Step 2:</span> After
+          installing, scan either TV QR again to check in for tonight.
         </p>
 
         {/* Client-side interactive buttons live here */}
@@ -46,18 +49,16 @@ export default function OneQRLandingPage() {
         </div>
 
         <div className="mt-10 rounded-2xl border border-white/15 bg-white/5 p-6 text-left">
-          <h2 className="text-xl font-bold">After you’re in the app</h2>
+          <h2 className="text-xl font-bold">After you install</h2>
           <ol className="mt-3 space-y-2 text-white/85">
             <li>
-              <span className="font-semibold">1)</span> Login VIP/Guest
+              <span className="font-semibold">1)</span> Open the app and login
+              (VIP or Guest)
             </li>
             <li>
-              <span className="font-semibold">2)</span> Tap{" "}
-              <span className="font-semibold">Check In</span>
-            </li>
-            <li>
-              <span className="font-semibold">3)</span> Tap{" "}
-              <span className="font-semibold">Scan QR</span>
+              <span className="font-semibold">2)</span> Scan the{" "}
+              <span className="font-semibold">VIP FAST LANE</span> TV QR to check
+              in
             </li>
           </ol>
 
@@ -71,8 +72,8 @@ export default function OneQRLandingPage() {
         </div>
 
         <p className="mt-8 text-xs sm:text-sm text-white/55">
-          If “Open in App” does nothing in an in-app browser, open this page in Safari
-          or install the app first and try again.
+          Tip: If you’re seeing this page inside Instagram/Facebook, open it in
+          Safari/Chrome for the smoothest install/open experience.
         </p>
       </div>
     </main>
