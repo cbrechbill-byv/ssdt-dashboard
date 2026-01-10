@@ -99,6 +99,31 @@ function formatCountdown(sec: number) {
   return `${m}:${String(r).padStart(2, "0")}`;
 }
 
+/**
+ * Times coming from DB are ET clock times ("HH:MM:SS").
+ * We format them as a simple 12-hour time like "10:00 PM".
+ * (No timezone conversion needed because the time is already ET.)
+ */
+function formatDbTimeEt(t: string | null | undefined): string | null {
+  if (!t) return null;
+  const s = String(t).trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+
+  let hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+
+  hh = Math.max(0, Math.min(23, hh));
+  const minutes = Math.max(0, Math.min(59, mm));
+
+  const isPm = hh >= 12;
+  const displayH = ((hh + 11) % 12) + 1; // 0->12, 13->1, etc.
+  const ampm = isPm ? "PM" : "AM";
+
+  return `${displayH}:${String(minutes).padStart(2, "0")} ${ampm}`;
+}
+
 type ConfettiSize = "normal" | "big";
 function burstConfetti(container: HTMLElement, size: ConfettiSize) {
   const colors = ["#FBBF24", "#34D399", "#22D3EE", "#A78BFA", "#FB7185", "#FFFFFF"];
@@ -459,26 +484,53 @@ export default function TvKioskClient(props: {
   const remainingToGoal = Math.max(0, dynamicGoal - total);
 
   const nowLabel = lineup?.now?.label ?? null;
+  const nowEndTime = lineup?.now?.endTime ?? null;
+
   const nextLabel = lineup?.next?.label ?? null;
   const nextStartsInSec = liveNextStartsInSec ?? lineup?.nextStartsInSec ?? null;
 
+  /**
+   * ✅ UPDATED LIVE LINEUP COPY
+   * - Always uses NOW PLAYING (not NOW)
+   * - If no next set, show UNTIL <end time> (if available) and do NOT show "NO MORE SETS LISTED"
+   * - If there IS a next set, show NEXT + countdown
+   */
   const headerNowNextLine = useMemo(() => {
     const parts: string[] = [];
 
-    if (nowLabel) parts.push(`NOW: ${nowLabel}`);
-    else if (nextLabel) parts.push(`UP NEXT: ${nextLabel}`);
-    else parts.push(`LIVE MUSIC`);
+    // CASE 1: Someone is playing now
+    if (nowLabel) {
+      parts.push(`NOW PLAYING: ${nowLabel}`);
 
-    if (nextLabel && Number.isFinite(nextStartsInSec as any)) {
-      parts.push(`STARTS IN ${formatCountdown(nextStartsInSec as number)}`);
-    } else if (nextLabel) {
-      parts.push(`UP NEXT: ${nextLabel}`);
-    } else {
-      parts.push(`NO MORE SETS LISTED`);
+      const until = formatDbTimeEt(nowEndTime);
+
+      // If next set exists, show next + countdown
+      if (nextLabel) {
+        parts.push(`NEXT: ${nextLabel}`);
+
+        if (typeof nextStartsInSec === "number" && Number.isFinite(nextStartsInSec)) {
+          parts.push(`STARTS IN ${formatCountdown(nextStartsInSec)}`);
+        }
+      } else {
+        // No next set: show UNTIL end time (if we have it). Otherwise, keep it clean.
+        if (until) parts.push(`UNTIL ${until}`);
+      }
+
+      return parts.join("  ·  ");
     }
 
-    return parts.join("  ·  ");
-  }, [nowLabel, nextLabel, nextStartsInSec]);
+    // CASE 2: Not playing now, but a next set exists
+    if (nextLabel) {
+      parts.push(`UP NEXT: ${nextLabel}`);
+      if (typeof nextStartsInSec === "number" && Number.isFinite(nextStartsInSec)) {
+        parts.push(`STARTS IN ${formatCountdown(nextStartsInSec)}`);
+      }
+      return parts.join("  ·  ");
+    }
+
+    // CASE 3: No lineup data
+    return "LIVE MUSIC";
+  }, [nowLabel, nowEndTime, nextLabel, nextStartsInSec]);
 
   if (!gateOk) {
     return (
@@ -669,7 +721,10 @@ export default function TvKioskClient(props: {
                   style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.03) inset" }}
                 >
                   {/* ✅ UPDATED: 2-column layout (lineup left, sponsor right). Sponsor stays CLOSE to countdown. */}
-                  <div className="grid items-center gap-[calc(1.2*var(--u))]" style={{ gridTemplateColumns: "minmax(0, 32rem) auto", justifyContent: "start" }}>
+                  <div
+                    className="grid items-center gap-[calc(1.2*var(--u))]"
+                    style={{ gridTemplateColumns: "minmax(0, 32rem) auto", justifyContent: "start" }}
+                  >
                     {/* LEFT: lineup copy */}
                     <div className="min-w-0">
                       <div className="uppercase tracking-[0.34em] text-slate-400 font-extrabold" style={{ fontSize: "calc(1.0*var(--u))" }}>
@@ -696,7 +751,7 @@ export default function TvKioskClient(props: {
                         style={{
                           borderColor: "rgba(251,191,36,0.32)", // amber-ish (premium)
                           background: "linear-gradient(180deg, rgba(0,0,0,0.28), rgba(0,0,0,0.18))",
-                          boxShadow: "0 0 0 1px rgba(251,191,36,0.10) inset, 0 14px 38px rgba(0,0,0,0.28)", // optional upgrade: subtle premium depth
+                          boxShadow: "0 0 0 1px rgba(251,191,36,0.10) inset, 0 14px 38px rgba(0,0,0,0.28)",
                         }}
                       >
                         {/* ✅ UPDATED: Force a centered sponsor name under Presented by */}
